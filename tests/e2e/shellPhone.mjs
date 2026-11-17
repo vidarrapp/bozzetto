@@ -42,12 +42,17 @@ const stripState = (page) =>
       const r = e.getBoundingClientRect();
       return { name: e.textContent.trim(), top: r.top, bottom: r.bottom, left: r.left, right: r.right, border: getComputedStyle(e).borderLeftWidth + getComputedStyle(e).borderRightWidth, fill: getComputedStyle(e).backgroundColor, shadow: getComputedStyle(e).boxShadow };
     });
-    const panel = document.querySelector('.panel');
+    // Where the panels start under the tab row (a phone's panels are docked at the bottom, so a probe, not a panel).
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;visibility:hidden;width:0;height:0;top:var(--bz-panel-top)';
+    strip.appendChild(probe);
+    const panelTop = parseFloat(getComputedStyle(probe).top);
+    probe.remove();
     return {
       strip: { top: sr.top, bottom: sr.bottom, height: sr.height },
       items,
       tabs,
-      panelTop: panel ? parseFloat(getComputedStyle(panel).top) : null,
+      panelTop,
       cssStrip: getComputedStyle(document.body).getPropertyValue('--bz-strip-h').trim(),
       pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
@@ -62,7 +67,7 @@ function tabRowChecks(t, s, where) {
   t.ok(row.length > 0 && row.every((x) => Math.abs(x.top - (s.strip.bottom + 4)) < 0.5 && Math.abs(x.bottom - x.top - 28) < 0.5), `${where}: the tab row stands 4px under the strip, 28px tall (${row.map((x) => `${x.name} ${x.top}-${x.bottom}`).join(', ')}; strip ends ${s.strip.bottom})`);
   const byLeft = [...row].sort((a, b) => a.left - b.left);
   const gaps = byLeft.slice(1).map((x, i) => x.left - byLeft[i].right).filter((g) => g < 40);
-  t.ok(gaps.every((g) => Math.abs(g - 1) < 0.5), `${where}: tabs on a side stand 1px apart (${gaps.join(', ')})`);
+  t.ok(gaps.every((g) => Math.abs(g - 1) < 0.5), `${where}: tabs on a side stand 1px apart (${gaps.join(', ')}; ${byLeft.map((x) => `${x.name} ${x.left}-${x.right}`).join(', ')})`);
   t.ok(row.every((x) => x.border === '0px0px'), `${where}: no tab has a border (${row.map((x) => x.border).join(', ')})`);
   // The 1px between two tabs shows the view; each tab paints its own colour into it, so it reads as no line.
   t.ok(row.every((x) => x.shadow.split('), ').length >= 1 && x.shadow !== 'none' && x.shadow.includes(x.fill)), `${where}: each tab fills the 1px beside it with its own colour (${row[0]?.shadow})`);
@@ -100,7 +105,7 @@ export const suites = {
       t.ok(s.pageOverflow <= 0, `Sculpt: nothing scrolls sideways (${s.pageOverflow})`);
       await menuChecks(p, t, 'Sculpt', 'View');
 
-      // A panel open: it starts under the tab row and the tab row keeps its place.
+      // A panel open: it is a sheet at the bottom and the tab row keeps its place.
       await p.evaluate(() => document.querySelector('.panel--render .panel__handle').click());
       await p.waitForTimeout(250);
       const open = await p.evaluate(() => {
@@ -108,7 +113,8 @@ export const suites = {
         return { top: r.top, bottom: r.bottom };
       });
       const s2 = await stripState(p);
-      t.ok(Math.abs(open.top - (s2.strip.bottom + 32)) < 0.5 && open.bottom <= 844, `Sculpt: an open panel starts under the tab row (${open.top}, strip ends ${s2.strip.bottom}) and ends on the screen (${open.bottom})`);
+      t.ok(open.top > s2.strip.bottom + 32 && open.bottom <= 844, `Sculpt: an open panel stands clear of the tab row (${open.top}, strip ends ${s2.strip.bottom}) and ends on the screen (${open.bottom})`);
+      tabRowChecks(t, s2, 'Sculpt with a panel open');
       await p.evaluate(() => document.querySelector('.panel--render .panel__handle').click());
       await p.waitForTimeout(150);
 
@@ -147,7 +153,7 @@ export const suites = {
         const fields = document.querySelector('.bz-edge .sculpt-slider');
         return { h: Math.round(r.height), fields: !!fields && fields.getClientRects().length > 0 && !fields.closest('[hidden]') };
       });
-      t.ok(mat.h > 400 && !mat.fields, `Sculpt: Material opens to its sections, the brush fields put away (${JSON.stringify(mat)})`);
+      t.ok(mat.h > 300 && !mat.fields, `Sculpt: Material opens to its sections, the brush fields put away (${JSON.stringify(mat)})`);
       // One panel at a time: the two sides would cover each other here.
       await tab('sculpt');
       await p.waitForTimeout(250);
@@ -204,6 +210,109 @@ export const suites = {
       await openSculpt(p, base);
       s = await stripState(p);
       t.ok(s.strip.height === 24 && s.cssStrip === '24px' && itemsFit(s) && s.panelTop === 56, `an iPad (820 wide, touch): the strip stays 24px, its items fit, the panels start at 56 (${showItems(s)}; panels ${s.panelTop})`);
+    });
+    t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
+
+  // The panels as a bottom sheet, the tool bar's cue, the touch targets, the viewer's title and the path menu.
+  async shellPhoneSheet(page, base, t) {
+    const errors = await inContext(page, PHONE, async (p) => {
+      await openSculpt(p, base);
+      const tab = (cls) => p.evaluate((c) => document.querySelector(`.panel--${c} .panel__handle`).click(), cls);
+      for (const cls of ['model', 'sculpt', 'render', 'material', 'scene']) {
+        await tab(cls);
+        await p.waitForTimeout(300);
+        const m = await p.evaluate((c) => {
+          const el = document.querySelector(`.panel--${c}`);
+          const r = el.getBoundingClientRect();
+          const bar = document.querySelector('.sculpt-toolbar__brushes').getBoundingClientRect();
+          const hit = document.elementFromPoint(innerWidth / 2, innerHeight * 0.25);
+          const body = el.querySelector('.panel__body');
+          return {
+            h: r.height, top: r.top, bottom: r.bottom, left: r.left, right: r.right, barTop: bar.top, vw: innerWidth, vh: innerHeight,
+            hit: hit ? hit.tagName + '.' + hit.className : null, isCanvas: !!hit && hit.tagName === 'CANVAS',
+            scrolls: getComputedStyle(body).overflowY,
+          };
+        }, cls);
+        t.ok(m.h <= m.vh * 0.5 + 0.5, `${cls}: the sheet is at most half the window (${Math.round(m.h)} of ${m.vh})`);
+        t.ok(m.bottom <= m.barTop + 0.5, `${cls}: and stands above the tool bar (ends ${Math.round(m.bottom)}, bar starts ${Math.round(m.barTop)})`);
+        t.ok(Math.abs(m.left) < 0.5 && Math.abs(m.right - m.vw) < 0.5, `${cls}: across the full width (${m.left}-${m.right})`);
+        t.ok(m.isCanvas, `${cls}: the model's upper half is clear, the canvas is under a finger at 25% height (${m.hit})`);
+        t.ok(m.scrolls === 'auto', `${cls}: the sheet scrolls inside`);
+        const row = await stripState(p);
+        tabRowChecks(t, row, `${cls} open`);
+        await tab(cls);
+        await p.waitForTimeout(150);
+      }
+
+      // The tool bar says it scrolls where it overflows.
+      const bar = await p.evaluate(() => {
+        const b = document.querySelector('.sculpt-toolbar__brushes');
+        const cs = getComputedStyle(b);
+        return { over: b.scrollWidth > b.clientWidth + 1, cue: b.dataset.scrollCue, mask: cs.maskImage || cs.webkitMaskImage, snap: cs.scrollSnapType };
+      });
+      t.ok(bar.over, `the tool bar overflows at 390 wide (${JSON.stringify(bar)})`);
+      t.ok(bar.cue === 'end' && bar.mask && bar.mask !== 'none', `and it fades at the cut edge (${bar.cue}, ${bar.mask})`);
+      t.ok(/x/.test(bar.snap), `and snaps (${bar.snap})`);
+      await p.evaluate(() => {
+        const b = document.querySelector('.sculpt-toolbar__brushes');
+        b.scrollLeft = b.scrollWidth;
+      });
+      await p.waitForTimeout(300);
+      const end = await p.evaluate(() => {
+        const b = document.querySelector('.sculpt-toolbar__brushes');
+        return `${b.dataset.scrollCue} at ${b.scrollLeft} of ${b.scrollWidth - b.clientWidth}`;
+      });
+      t.ok(/^(start|both)/.test(end), `scrolled to the end it fades on the other side (${end})`);
+
+      // Touch targets: every item in the strip has a 44px hit area while the strip stays 32px.
+      const targets = await p.evaluate(() => {
+        const strip = document.querySelector('.bz-strip');
+        const vis = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
+        return [...strip.querySelectorAll('.bz-menuname, .bz-strip__btn, .bz-strip__hide, .bz-ws__step')].filter(vis).map((e) => {
+          const r = e.getBoundingClientRect();
+          const a = getComputedStyle(e, '::after');
+          const extra = Math.abs(parseFloat(a.top)) + Math.abs(parseFloat(a.bottom));
+          const probe = document.elementFromPoint(r.left + r.width / 2, r.bottom + 3);
+          return { name: (e.textContent || e.title || e.className).trim().slice(0, 12), h: r.height, hit: r.height + (a.position === 'absolute' ? extra : 0), below: !!probe && e.contains(probe) };
+        });
+      });
+      t.ok(targets.length >= 5 && targets.every((x) => x.hit >= 44), `strip items are 44px touch targets (${targets.map((x) => `${x.name} ${x.hit}`).join(', ')})`);
+      t.ok(targets.every((x) => x.h === 32 || x.h === 24), `while they stay the strip's look (${targets.map((x) => x.h).join(', ')})`);
+      t.ok(targets.filter((x) => /^(File|Edit|View|Help)$/.test(x.name)).every((x) => x.below), 'and a press just under a menu name lands on it');
+
+      // The path: the step you are in opens a list of the three.
+      await p.evaluate(() => document.querySelector('.bz-ws__step[aria-current]').click());
+      const menu = await p.waitForFunction(() => {
+        const m = document.querySelector('.bz-ws-menu');
+        return m ? [...m.querySelectorAll('.file-menu__item')].map((b) => `${b.textContent}${b.disabled ? '!' : ''}${b.getAttribute('aria-checked') === 'true' ? '*' : ''}`) : null;
+      }, null, { timeout: 5000 }).then((h) => h.jsonValue());
+      t.eq(menu.join(','), 'Armature,Sculpt*,Present', 'a phone: the step you are in opens a list of Armature, Sculpt and Present');
+      await p.evaluate(() => [...document.querySelectorAll('.bz-ws-menu .file-menu__item')].find((b) => b.textContent === 'Present').click());
+      await p.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 10_000 });
+      t.ok(true, 'and Present is reached from it');
+      await p.waitForTimeout(300);
+      t.ok(!(await p.evaluate(() => !!document.querySelector('.bz-ws-menu'))), 'the list closes once a step is chosen');
+
+      // The public viewer keeps its title and its sheet.
+      await p.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
+      await p.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay') && !!document.querySelector('.bz-strip'), null, { timeout: 90_000 });
+      await p.waitForTimeout(300);
+      const title = await p.evaluate(() => {
+        const n = document.querySelector('.bz-readout__name');
+        const r = n ? n.getBoundingClientRect() : null;
+        const strip = document.querySelector('.bz-strip').getBoundingClientRect();
+        return { text: n?.textContent ?? '', shown: !!r && r.width > 20 && r.height > 0, inside: !!r && r.left >= 0 && r.right <= innerWidth, h: strip.height, over: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      });
+      t.ok(title.text.length > 0 && title.shown && title.inside && title.h === 32 && title.over <= 0, `the public viewer on a phone shows the project title (${JSON.stringify(title)})`);
+      await tab('render');
+      await p.waitForTimeout(300);
+      const vs = await p.evaluate(() => {
+        const r = document.querySelector('.panel--render').getBoundingClientRect();
+        const tr = document.querySelector('.transport--shell')?.getBoundingClientRect();
+        return { h: r.height, bottom: r.bottom, trTop: tr ? tr.top : null, vh: innerHeight };
+      });
+      t.ok(vs.h <= vs.vh * 0.5 + 0.5 && (vs.trTop === null || vs.bottom <= vs.trTop + 0.5), `the viewer's Render sheet is at most half the window and above the transport (${JSON.stringify(vs)})`);
     });
     t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   },
