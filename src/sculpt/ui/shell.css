@@ -2466,8 +2466,6 @@ body.bz-shell .rig-manage__name {
 /* Reset look at the foot of the Render tab, under a line. */
 body.bz-shell .panel__foot {
   margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--bz-line);
 }
 
 body.bz-shell .panel__foot .panel__reset {
