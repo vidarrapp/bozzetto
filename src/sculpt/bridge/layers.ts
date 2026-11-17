@@ -210,12 +210,17 @@ export class SculptLayers {
       return true;
     }
     for (let k = cur + 1; k <= top; k++) if (!st._meshes[k]._detailsXYZ) return false;
+    // Synthesis applies the details in the frame of the upper level's normals as they stood at its
+    // last visit, and a visit refreshes them: put them back, so a read leaves the next step up as
+    // it would have been had nobody looked.
+    const normals = st._meshes.slice(cur + 1).map((m) => new Float32Array(m.getNormals()));
     try {
       for (let k = cur; k < top; k++) st.higherLevel();
       fn(mesh.getVertices(), mesh.getNbVertices());
     } finally {
       st.setSelection(cur);
       st.updateResolution();
+      st._meshes.slice(cur + 1).forEach((m, i) => m.getNormals().set(normals[i]));
     }
     return true;
   }

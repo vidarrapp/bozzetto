@@ -267,6 +267,7 @@ place, each only where the place has it.
 
 - Scene panel
 - Model panel
+- Layers panel
 - Material panel
 - Tool panel
 - Reference panel
@@ -546,3 +547,31 @@ moved the layout later; that produced an in-between look and is dropped.
 
 Each step is compared against the mockup by screenshot, in both themes
 and at the desktop and iPad sizes, before it ships.
+
+
+## Sculpt layers
+
+The **Layers** tab, left, after Model (`panel--layers`; View menu item
+"Layers panel" after Model panel). From the top: **Add layer** (the one plain
+button, never orange), the list, **Flatten all**. The list is
+`src/ui/layerList.ts`, with no sculpt knowledge, so the Paint workspace can
+reuse it with one more control a row (a blend mode select).
+
+- Newest layer on top, a fixed **Base** row at the bottom. A row is an eye,
+  the name (a tap on the active row's name renames it), a menu (Rename,
+  Duplicate, Flatten into base, Delete in red) and under them a Weight
+  slider, 0 to 100% of travel, with typed values to plus or minus 1000%
+  (double tap or double click) shown as typed. The active row has the
+  selected-row fill; Base is active when no layer is. Hit areas are at least
+  44px high.
+- A layer's data lives on the object's highest level. Any level may be on
+  screen while sculpting with a layer active; only a hidden layer or one at
+  0% refuses a stroke ("Show the layer to sculpt on it."). Weight changes
+  apply live while the highest level is on screen and on release otherwise.
+- Changing the active layer, a weight or visibility, Add, Duplicate,
+  Flatten, Delete are undo steps. Remesh, merge, split and dynamic topology
+  ask to flatten the layers first ("Flatten the layers of "Sphere"?", button
+  "Flatten and remesh"); Cancel leaves everything.
+- Saved per object in the scene (`SavedMesh.layers`, version 1: name,
+  weight, visible, and the sparse displacements of the highest level), in the
+  autosave, `.bozz` files and the library.

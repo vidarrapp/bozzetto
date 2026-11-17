@@ -1,6 +1,6 @@
 import { div } from './dom';
 import { rowMenu, type RowMenuItem } from './rowMenu';
-import { sliderText, sliderValue, typedSlider } from './sliderEntry';
+import { setSliderValue, sliderText, sliderValue, typedSlider } from './sliderEntry';
 
 /**
  * A list of layers, newest on top, with a fixed base row at the bottom:
@@ -65,6 +65,7 @@ export class LayerList {
   private renaming: LayerId | null = null;
   private lastRows: LayerRowData[] = [];
   private lastActive: LayerId | null = null;
+  private signature = '';
 
   constructor(
     private readonly hooks: LayerListHooks,
@@ -80,6 +81,21 @@ export class LayerList {
   }
 
   render(rows: LayerRowData[], activeId: LayerId | null): void {
+    // Only the weights moved: the sliders are set where they stand. A rebuilt row would take a
+    // slider from under a double tap that is typing a value into it.
+    const sig = JSON.stringify([activeId, this.renaming, rows.map((r) => [r.id, r.name, r.visible, r.badge ?? '', !!r.extra])]);
+    if (sig === this.signature && this.el.childElementCount === rows.length + 1) {
+      this.lastRows = rows;
+      for (const r of rows) {
+        const input = this.el.querySelector<HTMLInputElement>(`[data-layer="${String(r.id)}"] input[type=range]`);
+        if (input && sliderValue(input) !== r.weight) {
+          input.value = String(Math.max(0, Math.min(1, r.weight)));
+          setSliderValue(input, r.weight);
+        }
+      }
+      return;
+    }
+    this.signature = sig;
     this.lastRows = rows;
     this.lastActive = activeId;
     const out: HTMLElement[] = rows.map((r) => this.row(r, r.id === activeId));

@@ -1942,7 +1942,8 @@ body.bz-shell .panel--layers {
   z-index: 40;
 }
 
-.file-menu__item--danger {
+.file-menu .file-menu__item.file-menu__item--danger,
+.file-menu .file-menu__item.file-menu__item--danger:hover:not(:disabled) {
   color: var(--bz-red-text);
 }
 
