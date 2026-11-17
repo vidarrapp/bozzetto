@@ -71,6 +71,7 @@ import { defaultGroupName, heldColor, PolyGroups } from './polyGroups';
 import { GROUP_COLOR_DEFAULT, GROUPS_V } from '../../../shared/bozz';
 import type { SavedGroups } from './groupsRecord';
 import { askWindow } from '../../ui/askWindow';
+import { SculptLayers } from './layers';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -328,6 +329,8 @@ export class SculptSession {
   private readonly stateManager = new StateManager(this);
   /** Every object's poly groups (polyGroups.ts). */
   readonly groups: PolyGroups;
+  /** Every object's sculpt layers (layers.ts). */
+  readonly layers: SculptLayers = new SculptLayers(this);
   private readonly sculptManager: SculptManager;
   private readonly picking: Picking;
   private readonly pickingSym: Picking;
@@ -662,6 +665,8 @@ export class SculptSession {
     const active = this.mesh;
     const list = [...this.meshes];
     step();
+    // An undo can give a layer back its level, or take it away: the panel follows.
+    this.layers.onChange?.();
     const listMoved =
       list.length !== this.meshes.length || list.some((m, i) => m !== this.meshes[i]);
     if (listMoved && this.mesh === active) this.activeChanged();
@@ -793,9 +798,12 @@ export class SculptSession {
       if (!mul || mul._sel !== mul._meshes.length - 1 || mul.getNbTriangles() * 4 !== next) return false;
     }
     const t0 = performance.now();
+    this.layers.sync(mul as unknown as SculptMesh);
     this.stateManager.pushStateMultiresolution(mul, StateMultiresolution.SUBDIVISION);
     mul.addLevel();
     this.setMesh(mul);
+    // Each layer's delta is rebuilt for the new top level.
+    this.layers.topAdded(mul as unknown as SculptMesh);
     perfLog.record('subdivision', performance.now() - t0, 'a level added');
     this.onLevelChange?.(mul._sel, mul._meshes.length);
     return true;
@@ -855,6 +863,8 @@ export class SculptSession {
     if (!mul || mul._meshes.length <= 1) return false;
     const t0 = performance.now();
     const sm = this.stateManager;
+    // What the active layer has taken so far is its own before a level goes.
+    this.layers.sync(mul as unknown as SculptMesh);
     const top = mul._meshes.length - 1;
     const from = mul._sel;
     let first = true;
@@ -873,6 +883,8 @@ export class SculptSession {
       push(StateMultiresolution.SELECTION);
       mul.selectResolution(from);
     }
+    // Each layer's delta is carried down to the level that is the top now.
+    this.layers.topDeleted(mul as unknown as SculptMesh);
     this.render();
     perfLog.record('subdivision', performance.now() - t0, 'the top level deleted');
     this.onLevelChange?.(mul._sel, mul._meshes.length);
@@ -998,11 +1010,14 @@ export class SculptSession {
     this.setRemeshResolution(resolution);
     // Wrapped like upstream's applyRemesh, so the result keeps a level stack.
     const newMesh = new Multimesh(this.remeshAt([mesh], mesh, this.remeshBox([mesh]))) as unknown as SculptMesh;
+    // A remesh rebuilds the surface: the layers become part of it (the window asks first; this is the net).
+    const flat = this.layers.flattenForOp([mesh]);
     this.markStale([mesh], newMesh);
     this.groups.transferNearest([mesh], newMesh);
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
+    this.layers.join(flat);
     this.replaceMesh(mesh, newMesh);
     perfLog.record('voxel remesh', performance.now() - t0, `resolution ${this.remeshResolution}`);
     return true;
@@ -1077,6 +1092,7 @@ export class SculptSession {
     if (!this.meshes.includes(mesh)) throw new Error('The object was removed while Quad remesh ran, so the result was not applied.');
     if (this.quadStamp(mesh) !== stamp) throw new Error('The object changed while Quad remesh ran, so the result was not applied. Run it again.');
     const t0 = performance.now();
+    const flat = this.layers.flattenForOp([mesh]);
     const base = new MeshStatic(null);
     base.setID(mesh.getID());
     base.setVertices(positions);
@@ -1115,6 +1131,7 @@ export class SculptSession {
     if (name) this.meshNames.set(newMesh, name);
     if (!mesh.isVisible()) newMesh.setVisible(false);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
+    this.layers.join(flat);
     const sel = this.selectMeshes.indexOf(mesh);
     if (sel >= 0) this.selectMeshes[sel] = newMesh;
     const wasActive = this.mesh === mesh;
@@ -1186,11 +1203,13 @@ export class SculptSession {
     if (!sources.includes(base)) base = sources[0];
     const t0 = performance.now();
     const merged = new Multimesh(this.remeshAt(sources, base, this.remeshBox(sources)));
+    const flat = this.layers.flattenForOp(sources);
     this.markStale(sources, merged as unknown as SculptMesh);
     this.groups.transferNearest(sources, merged as unknown as SculptMesh);
     this.meshNames.set(merged as unknown as SculptMesh, this.getMeshName(base));
     this.writeSymmetryAxis(this.getSymmetryAxis(), [merged as unknown as SculptMesh]);
     this.stateManager.pushStateAddRemove(merged, sources);
+    this.layers.join(flat);
     // The merged object takes the base's slot in the list, so the outliner
     // does not shuffle; the other sources leave from wherever they were.
     const at = this.meshes.indexOf(base);
@@ -1529,7 +1548,9 @@ export class SculptSession {
     this.markStale([mesh], parts[0]);
     for (const p of parts.slice(1)) this.markStale([mesh], p);
     this.writeSymmetryAxis(this.getSymmetryAxis(), parts);
+    const flat = this.layers.flattenForOp([mesh]);
     this.stateManager.pushStateAddRemove(parts, [mesh]);
+    this.layers.join(flat);
     const at = this.meshes.indexOf(mesh);
     this.meshes.splice(at < 0 ? this.meshes.length : at, at < 0 ? 0 : 1, ...parts);
     const eye = this.eyeVisible(mesh);
@@ -1998,6 +2019,7 @@ export class SculptSession {
   /** Map an object's every level by `a` in its local space, an OBJ record with it (bakeScale.ts). */
   private mapLocal(mesh: SculptMesh, a: mat4): void {
     transformLocal(mesh, a);
+    this.layers.mapLinear(mesh, a);
     const rec = this.sources.get(mesh);
     if (rec) composeBake(rec.source, a);
   }
@@ -2012,6 +2034,7 @@ export class SculptSession {
   bakeMeshScale(mesh: SculptMesh): boolean {
     const a = bakeScale(mesh);
     if (!a) return false;
+    this.layers.mapLinear(mesh, a);
     const rec = this.sources.get(mesh);
     if (rec) composeBake(rec.source, a);
     return true;
@@ -2058,6 +2081,7 @@ export class SculptSession {
   toggleDynamicTopology(): boolean {
     const mesh = this.mesh;
     if (!mesh) return false;
+    const flat = this.layers.flattenForOp([mesh]);
     const newMesh = !mesh.isDynamic
       ? (new MeshDynamic(mesh) as unknown as SculptMesh)
       : (new Multimesh(this.convertToStaticMesh(mesh)) as unknown as SculptMesh);
@@ -2066,6 +2090,7 @@ export class SculptSession {
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
+    this.layers.join(flat);
     this.replaceMesh(mesh, newMesh);
     return !!newMesh.isDynamic;
   }
@@ -2274,6 +2299,8 @@ export class SculptSession {
       ...(this.originalNumbering(mesh) === 'valid' ? { source: this.sources.get(mesh)!.source } : {}),
       // The poly groups, where the object has any: level 0's.
       ...(this.groups.hasGroups(mesh) ? { groups: this.groups.serialize(mesh) } : {}),
+      // The sculpt layers, where the object has any (layers.ts); the levels' vertices carry their effect already.
+      ...(this.layers.has(mesh) ? { layers: this.layers.serialize(mesh) } : {}),
     };
   }
 
@@ -2516,6 +2543,10 @@ export class SculptSession {
     }
     const mesh = this.buildLevels(saved);
     if (saved.groups) this.groups.restore(mesh as unknown as SculptMesh, saved.groups);
+    // A reflected record has its vertices turned over: its layers' deltas no longer fit, so they join the surface.
+    if (saved.layers && !reflected) {
+      this.layers.restore(mesh as unknown as SculptMesh, saved.layers, saved.levels[saved.levels.length - 1].nbVertices);
+    }
     // The file's numbering comes back with the object. A reflection baked
     // into the vertices (a mirror copy) is not the file's level 0 any more.
     if (source && !reflected && source.base.length === mesh._meshes[0].getNbVertices() * 3) {
@@ -2529,6 +2560,8 @@ export class SculptSession {
       mesh.selectResolution(Math.min(sel, mesh._meshes.length - 1));
       mesh.updateBuffers();
     }
+    // The active layer's reference copy, now that the level on screen is where the record had it.
+    this.layers.arm(mesh as unknown as SculptMesh);
     // The saved per-object axis is legacy: symmetry is per brush now, and
     // addNewMesh writes the brush's axis in.
     this.meshNames.set(mesh, typeof saved.name === 'string' ? saved.name : 'Sphere');

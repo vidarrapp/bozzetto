@@ -22,6 +22,7 @@ import type { Viewer } from '../../viewer/Viewer';
 import { REMESH_LIMITS, RemeshTooLarge } from '../bridge/remeshBudget';
 import { SidePanel } from './SidePanel';
 import { statusToast } from './statusToast';
+import { askFlatten, withLayersFlattened } from './layerGate';
 import { showWhileHeld, VoxelOverlay } from './VoxelOverlay';
 import { formatSceneLength } from '../../viewer/units';
 import { voxelGrid } from '../bridge/remeshBudget';
@@ -165,6 +166,7 @@ export class ModelPanel extends SidePanel {
             danger: true,
           });
           if (!ok) return;
+          if (!(await askFlatten(this.session, this.session.getMesh() ? [this.session.getMesh()!] : [], 'switch'))) return;
           this.session.toggleDynamicTopology();
           this.refreshState();
         })();
@@ -244,13 +246,16 @@ export class ModelPanel extends SidePanel {
     const row = div('sculpt-panel__row');
     row.appendChild(
       this.opButton('Voxel remesh', () => {
-        try {
-          this.session.voxelRemesh(this.remeshResolution);
-        } catch (err) {
-          // Too much for this device's memory: said, and nothing changed.
-          if (!(err instanceof RemeshTooLarge)) throw err;
-          statusToast('Remeshing...').fail(err.message);
-        }
+        const mesh = this.session.getMesh();
+        withLayersFlattened(this.session, mesh ? [mesh] : [], 'remesh', () => {
+          try {
+            this.session.voxelRemesh(this.remeshResolution);
+          } catch (err) {
+            // Too much for this device's memory: said, and nothing changed.
+            if (!(err instanceof RemeshTooLarge)) throw err;
+            statusToast('Remeshing...').fail(err.message);
+          }
+        });
       }),
     );
     // Merge goes through the same voxel grid, at this resolution, so it
@@ -351,6 +356,8 @@ export class ModelPanel extends SidePanel {
       statusToast('').fail('This object is locked. Unlock it in the Scene panel to quad remesh it.');
       return false;
     }
+    if (!(await askFlatten(this.session, [mesh], 'remesh'))) return false;
+    if (this.quadJob || this.session.getMesh() !== mesh) return false;
     const input = this.session.quadRemeshInput(mesh);
     if (!input) return false;
     const opts = { target: this.quadTarget, sharp: this.quadSharp, boundary: this.quadBoundary, adaptive: this.quadAdaptive, seed: 0 };

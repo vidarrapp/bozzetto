@@ -9,6 +9,7 @@ import { parseStoredCurve, parseV1Points, serializeAnchors, type StoredCurve } f
 import type { BrushSymmetry } from './symmetry';
 import { sanitizeSource } from './objSource';
 import { sanitizeGroups } from './groupsRecord';
+import { sanitizeLayers } from './layersRecord';
 
 /**
  * The one way a scene record comes in: a .bozz file, a shelf entry, a
@@ -155,6 +156,18 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
       fail(`object ${index + 1} has bad poly groups: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  // The sculpt layers, where there are any: held to the levels' vertex counts.
+  let layers: SavedMesh['layers'];
+  if (m.layers !== undefined) {
+    try {
+      layers = sanitizeLayers(
+        m.layers,
+        levels.map((l) => l.nbVertices),
+      );
+    } catch (err) {
+      fail(`object ${index + 1} has bad layers: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   const matrix = Array.prototype.every.call(m.matrix, (x: unknown) => typeof x === 'number' && Number.isFinite(x))
     ? Float32Array.from(m.matrix)
     : new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -172,6 +185,7 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
     painted: bool(m.painted),
     source,
     groups,
+    layers,
   });
 }
 

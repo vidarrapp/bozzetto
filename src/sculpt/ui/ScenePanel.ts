@@ -10,6 +10,7 @@ import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { MaterialLibrary } from '../bridge/materials';
 import { RemeshTooLarge } from '../bridge/remeshBudget';
 import { statusToast } from './statusToast';
+import { withLayersFlattened } from './layerGate';
 import { deviceStore } from '../../ui/deviceStorage';
 import { askText, askWindow } from '../../ui/askWindow';
 
@@ -397,6 +398,10 @@ export class ScenePanel extends SidePanel {
   mergeSelected(): void {
     const sources = this.targets();
     if (sources.length < 2) return;
+    withLayersFlattened(this.session, sources, 'merge', () => this.mergeNow(sources));
+  }
+
+  private mergeNow(sources: SculptMesh[]): void {
     const base = this.session.getMesh() && sources.includes(this.session.getMesh()!) ? this.session.getMesh()! : sources[0];
     this.library?.beginRestore();
     let merged: SculptMesh | null;
@@ -424,6 +429,10 @@ export class ScenePanel extends SidePanel {
   splitActive(kind: 'groups' | 'hidden' | 'delete-hidden'): void {
     const mesh = this.session.getMesh();
     if (!mesh) return;
+    withLayersFlattened(this.session, [mesh], 'split', () => this.splitNow(mesh, kind));
+  }
+
+  private splitNow(mesh: SculptMesh, kind: 'groups' | 'hidden' | 'delete-hidden'): void {
     this.library?.beginRestore();
     let out: { made: SculptMesh[]; flat: boolean } | null;
     try {
