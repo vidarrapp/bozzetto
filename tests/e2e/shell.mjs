@@ -582,7 +582,7 @@ export const suites = {
           const el = document.querySelector('.bz-ws__step[data-workspace="present"]');
           return { color: getComputedStyle(el).color, title: el.title, disabled: el.getAttribute('aria-disabled') };
         });
-        t.ok(dim.color === 'rgb(125, 125, 125)' && /sent to Sculpt first/.test(dim.title) && dim.disabled === 'true', `Present is dim, with a title saying a figure is sent to Sculpt first (${JSON.stringify(dim)})`);
+        t.ok(dim.color === 'rgb(125, 125, 125)' && /Go to Sculpt first/.test(dim.title) && dim.disabled === 'true', `Present is dim, with a title saying to go to Sculpt first (${JSON.stringify(dim)})`);
         await page.click('.bz-ws__step[data-workspace="present"]', { force: true });
         t.ok((await page.evaluate(() => !!window.__armature)) && new URL(page.url()).searchParams.get('armature') === '1', 'pressing it does nothing');
         t.eq(await page.evaluate(() => !!document.querySelector('.bz-strip .publish-window__chip')), false, 'Armature: no Publish button in the strip');

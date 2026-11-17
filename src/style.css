@@ -212,9 +212,12 @@ h1,
    context of its own: the overlay's z-index counts only inside it, and the
    strip, tabs and old top row that stand on the body (z-index 15 to 41)
    would show over the splash. While the overlay is up, #app stands over
-   them all. An error keeps the plain order. */
+   all of the interface (up to 80) but under the windows that ask something
+   (Preferences 200, the first visit's question and the ask window 300): the
+   question about keeping work on the device comes while the page loads, and
+   must be answerable then. An error keeps the plain order. */
 #app:has(> .overlay:not(.overlay--error)) {
-  z-index: 1000;
+  z-index: 100;
 }
 
 /* The finished splash fades out instead of being yanked. */
