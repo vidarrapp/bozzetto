@@ -1,6 +1,7 @@
 # Plan: the tool library, the dock, and tools built from nodes
 
-Status: design for Vidar, 2026-11-17. Nothing is built. It replaces the drafts
+Status: design for Vidar, 2026-11-17, with his answers of the same day worked in
+(section 11). Nothing is built. It replaces the drafts
 in `docs/plans/drafts/tool-nodes/` as the plan to build from; the drafts stay
 as the detailed record (how each tool works today, three full designs, two
 reviews). Section 12 lists what is taken from which draft.
@@ -46,7 +47,7 @@ What was asked for:
   a graph underneath either way. Picking each part from a short list suits
   the Pencil; drawing wires on a canvas is the largest and riskiest piece, and
   it can be added later without redoing anything. This is the one place the
-  plan departs from "Blueprints", and it is your call (section 11).
+  plan departs from "Blueprints"; agreed 2026-11-17.
 
 Order of work, each step shipping on its own:
 
@@ -65,18 +66,19 @@ Order of work, each step shipping on its own:
 Each workspace with tools has its own bar: **Sculpt** and **Paint**. Armature
 and Present have none.
 
-- **Order.** `[Select q] [place 1] … [place 10] [Transform t]`, then a
-  **Library** button set a little apart. Select and Transform are modes, not
-  library tools: they stay at the ends and cannot be lifted. In Paint the bar
-  is `[Select q] [places] [Library]`.
+- **Order.** `[Select q] [place 1] [place 2] … [Transform t]`. Select and
+  Transform are modes, not library tools: they stay at the ends and cannot be
+  lifted. In Paint the bar is `[Select q] [places]`. The library is opened
+  from the Tool panel's heading and the View menu, not from the bar.
 - **Keys follow the bar.** The keys 1 to 9 and 0 pick whatever sits in places
-  1 to 10. Move a tool and its key moves with it. The badges, the hotkey guide,
+  1 to 10. The bar may hold more tools than that; those past the tenth have
+  no number key. Move a tool and its key moves with it. The badges, the hotkey guide,
   Preferences and Help all read the place, so they are never wrong. A key for
   an empty place says "No tool in place 8. Open the Tool library to add one."
 - **The default bars are today's**, so nobody's keys change: Sculpt has
   Crease, Move, Standard clay, Inflate, Pinch, Flatten, Rake, Drag, Polish;
   Paint has Paint, Erase, Blur, Fill, Pick, Project. Calipers keeps its place
-  and its C key for now (question in section 11).
+  and its C key.
 - **Lift.** Pencil and finger: a long press (600 ms, the same as the Negative
   button's latch). Mouse: press and drag, or a long press. A lifted tile grows
   a little and follows the pointer; its name shows above it. Every place shows
@@ -88,8 +90,9 @@ and Present have none.
   says "Let go to remove". A notice follows: "Pinch is off the tool bar. It
   stays in the library." with Undo. Nothing is ever lost by this: the tool is
   still in the library with its settings.
-- **Ten places at most**, one per digit. On a full bar a tool dropped onto a
-  tile takes its place ("Replace Pinch").
+- **No fixed limit.** The first ten places have the digits. When the bar is
+  wider than the screen has room for, it scrolls sideways and keeps the tool
+  in hand in view.
 - **A tool in hand that is not on the bar** shows as one extra tile with no
   digit, as a running app does in the Dock. Lift it and drop it in to keep it.
 - **A long press that ends without moving** opens the tile's menu: Tool
@@ -103,13 +106,10 @@ shows no callout, and no pointer capture is used for touch.
 
 ## 3. The library
 
-- **Where.** A sheet that rises out of the bar, joined to it in the same fill,
-  opened by the Library button at the bar's end and by **View › Tool
-  library**. It is beside the bar because that is where tools are dragged to:
-  from the Tool panel the drag would cross the whole screen, and a menu in the
-  strip closes on the first press and cannot be dragged from. You suggested
-  the Tool panel or the top bar; the Tool panel's heading can carry a
-  Library button that opens the same sheet (question in section 11).
+- **Where.** Opened by a **Library** button in the Tool panel's heading and by
+  **View › Tool library** (decided). The library itself is a sheet that rises
+  out of the bar, joined to it in the same fill: tools are dragged to the bar,
+  and from inside the Tool panel that drag would cross the whole screen.
 - **What it lists**, in sections, two columns of rows on the iPad:
   - **Sculpt:** Standard clay, Crease, Move, Inflate, Pinch, Flatten, Polish,
     Rake, Drag, Smooth, and later Contrast.
@@ -120,15 +120,19 @@ shows no callout, and no pointer capture is used for touch.
     keep a second set of its settings."
 - **A row** is the tool's tile exactly as it looks on the bar, its name, one
   short line ("Sharp grooves and folds"), and its key in a small box if it is
-  on the bar.
+  on the bar. Worth trying: a small picture of the tool's stroke on a flat
+  plane, made from the tool itself, in place of the line of text.
 - **Tap** a row to take that tool in hand. **Lift** a row (same gesture as the
   bar) to drag it onto the bar. The row's menu has "Put on the tool bar" for
   those who would rather not drag, then Duplicate, Name and icon…, Edit…,
   Reset settings, Help, Delete….
-- **Smooth and Mask become tools you can put on the bar.** Today they are
-  reached only with Shift and Ctrl, so an iPad without a keyboard cannot paint
-  a mask at all. On the bar they have their own Size and Pressure rows. Shift
-  and Ctrl keep working from every tool as now.
+- **Smooth and Mask without a keyboard.** Today they are reached only with
+  Shift and Ctrl, so an iPad without a keyboard cannot paint a mask at all.
+  Still open: buttons beside the Carve button at the edge that arm Smooth or
+  Mask for the next strokes, as Carve arms itself (Vidar leans this way for
+  modifiers), tools in the library that can go on the bar, or both. Shift and
+  Ctrl keep working from every tool either way. Each tool picks which Smooth
+  mode its Shift uses; the size is the tool in hand's (decided).
 
 ### Copies
 
@@ -468,45 +472,31 @@ brushes, built with it.
 (they would change how the built-ins feel); tools shared through the
 Community; a combined undo so one tool may change shape and colour together.
 
-Steps 0 and 1 can start as soon as this plan is agreed. They do not depend on
-any answer below except where the library opens.
+Steps 0 and 1 can start now. The one open point, how Smooth and Mask are
+reached without a keyboard, does not hold them up.
 
 ---
 
-## 11. Questions for Vidar
+## 11. Decisions (Vidar, 2026-11-17) and what is still open
 
-These are also in `docs/HANDOFF.md`.
+Recorded in `docs/HANDOFF.md` as well.
 
-1. **Where the library opens.** A sheet rising from the tool bar, with a
-   Library button at the bar's end and View › Tool library (recommended), also
-   reachable from a button in the Tool panel's heading; or a section inside
-   the Tool panel; or a menu in the top bar.
-2. **The editor.** A column of stage cards first, with the wired canvas later
-   or never (recommended); or the wired canvas from the start, as in
-   Blueprints.
-3. **Moving a tool along the bar.** The others make room and the tools between
-   get new keys (as the Dock does, recommended); or the two tools swap and no
-   other key changes.
-4. **A full bar.** Ten places, and a drop replaces the tool under it
-   (recommended); or more than ten, the extra ones with no key.
-5. **Smooth and Mask as tools for the bar**, Shift and Ctrl still working
-   (recommended, since an iPad without a keyboard cannot mask today); or keep
-   them on the keys only.
-6. **Smooth's settings.** One Smooth: Shift from any brush uses the Smooth
-   tool's Strength and Mode with the size of the brush in hand, and Smooth on
-   the bar uses its own size (recommended; it keeps the 2026-10-27 decision of
-   one shared Smooth); or each tool may choose which Smooth its Shift uses.
-7. **Copies and later fixes.** A copy follows later fixes to the tool it came
-   from (recommended); or it stays exactly as it was made.
-8. **Twist and Local scale** are in the engine and cannot be reached. Put
-   them in the library: yes or no.
-9. **Calipers.** Keeps its fixed place beside Transform and its C key
-   (recommended for now); or becomes a library tool that takes a digit when
-   put on the bar.
-10. **Move's "Pressure: strength" row** does nothing today. Drop it when the
-    rows come from the recipe (recommended); or keep it.
-
----
+1. **Where the library opens:** a Library button in the Tool panel's heading,
+   and View › Tool library.
+2. **The editor:** a column of stage cards; the wired canvas later or never.
+   A thumbnail of the tool's stroke on a plane is worth trying.
+3. **Moving a tool along the bar:** dock style; the others make room and the
+   keys follow.
+4. **A full bar:** more than ten tools are allowed; only the first ten have
+   number keys.
+5. **Smooth and Mask without a keyboard:** still open. Possibly bar tools;
+   buttons beside Carve may suit modifiers better.
+6. **Smooth's settings:** each tool picks its own Smooth mode; the size comes
+   from the tool in hand.
+7. **Copies:** a copy follows later fixes to the tool it came from.
+8. **Twist and Local scale:** in the library.
+9. **Calipers:** keeps its place beside Transform and its C key.
+10. **Move's "Pressure: strength" row:** dropped.
 
 ## 12. What comes from which draft
 
