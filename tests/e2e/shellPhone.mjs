@@ -322,7 +322,7 @@ export const suites = {
     const errors = await inContext(page, PHONE, async (p) => {
       await openSculpt(p, base);
       await p.evaluate(() => {
-        for (const [cls, name, left] of [['layers', 'Layers', true], ['reference', 'Reference', false]]) {
+        for (const [cls, name, left] of [['layers', 'Layers', true], ['reference', 'Reference', false]].filter(([c]) => !document.querySelector(`.panel--${c}`))) {
           const root = document.createElement('div');
           root.className = `panel ${left ? 'panel--left ' : ''}panel--${cls} panel--collapsed`;
           const b = document.createElement('button');

@@ -72,8 +72,8 @@ export const suites = {
 
     // The tabs: Scene, Model at the left; Tool, Material, Render at the right.
     const row = await tabs(page);
-    t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Scene,Model', 'the left edge has Scene, Model, in that order');
-    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Tool,Material,Render', 'and the right edge Tool, Material, Render');
+    t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Scene,Model,Layers', 'the left edge has Scene, Model, Layers, in that order');
+    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Tool,Material,Reference,Render', 'and the right edge Tool, Material, Reference, Render');
     fitChecks(t, row, 1280, 'Sculpt at 1280');
 
     // At most one panel a side.
@@ -272,7 +272,7 @@ export const suites = {
     const errors = await onPhone(page, async (p) => {
       await openSculpt(p, base);
       const r = await tabs(p);
-      t.eq(r.map((x) => x.name).join(','), 'Scene,Model,Tool,Material,Render', 'on a phone the five tabs are Scene, Model, Tool, Material, Render');
+      t.eq(r.map((x) => x.name).join(','), 'Scene,Model,Layers,Tool,Material,Reference,Render', 'on a phone the seven tabs are Scene, Model, Layers, Tool, Material, Reference, Render');
       fitChecks(t, r, 390, 'Sculpt at 390');
       await tab(p, 'panel--material');
       await settle(p, 300);
@@ -317,7 +317,7 @@ export const suites = {
     await page.addStyleTag({ content: '.panel, .panel * { transition: none !important; }' });
     const row = await tabs(page);
     t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Armature', 'Armature has its own tab on the left');
-    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Material,Render', 'and Material, Render on the right');
+    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Material,Reference,Render', 'and Material, Reference, Render on the right');
     fitChecks(t, row, 1280, 'Armature');
     await tab(page, 'panel--material');
     t.ok(await isOpen(page, 'panel--material'), 'the Material tab opens its panel');
