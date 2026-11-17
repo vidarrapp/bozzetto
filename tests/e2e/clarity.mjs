@@ -183,16 +183,19 @@ export const suites = {
     await openSculpt(page, base);
     const rig = await page.evaluate(() => window.__bozzetto.lighting.state().map((l) => `${l.id}:${l.enabled}`).join(','));
     t.eq(rig, 'key:true,fill:false,rim:false', 'Sculpt opens with the key light alone');
+    // The rig select is the Lighting tab's, in Present.
+    await page.evaluate(() => window.__sculpt.present.enter());
+    await page.evaluate(() => document.querySelector('.panel--lighting > .panel__handle').click());
     let s = await sel();
-    t.eq(s?.text, 'Key only', 'and the Preset says so');
+    t.eq(s?.text, 'Key only', 'and the Rig says so');
     await page.evaluate(() => window.__bozzetto.lighting.setEnabled('fill', true));
     await page.evaluate(() => window.__bozzetto.lighting.setEnabled('rim', true));
     t.eq(await page.evaluate(() => window.__bozzetto.lighting.activePreset()), 'three_point', 'with the fill and the rim on it is Three-point');
     await page.evaluate(() => window.__bozzetto.lighting.setIntensity('key', 1.7));
     t.eq(await page.evaluate(() => window.__bozzetto.lighting.activePreset()), null, 'a changed light matches no preset');
+    await page.evaluate(() => window.dispatchEvent(new Event('bozzetto:controls-refresh')));
+    t.eq((await sel())?.text, 'Custom', 'and the Rig reads Custom');
     await openArmature(page, base);
     t.eq(await page.evaluate(() => window.__bozzetto.lighting.activePreset()), 'three_point', 'Armature opens with all three lights, which is Three-point');
-    s = await sel();
-    t.eq(s?.text, 'Three-point', 'and says so');
   },
 };

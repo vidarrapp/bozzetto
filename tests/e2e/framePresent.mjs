@@ -463,6 +463,8 @@ export const suites = {
       const cardPost = p.waitForResponse((res) => res.url().includes('/admin/api/projects/tl-demo/thumb') && res.request().method() === 'POST', { timeout: 30_000 });
       await p.evaluate(() => window.__bozzetto.scrubTo(3));
       await settle(p, 400);
+      // Output shares the edge with Project: Project is opened again for its button.
+      if (await p.evaluate(() => document.querySelector('.panel--project').classList.contains('panel--collapsed'))) await p.click('.panel--project > .panel__handle');
       await p.click('.panel--project button:has-text("Use this frame")');
       const card = await cardPost;
       t.ok(card.status() === 201 || card.status() === 200, `Use this frame sends the card picture (${card.status()})`);

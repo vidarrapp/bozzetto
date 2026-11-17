@@ -999,7 +999,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     // A second finger: a pinch or a two-finger pan, whatever the first was.
     if (down.size > 1) tap = null;
     if (lightHeld) {
-      if (lightArmed && lightPointer === -1) lightPointer = e.pointerId;
+      if (lightArmed && lightPointer === -1) {
+        lightPointer = e.pointerId;
+        lastPointer.x = e.clientX;
+        lastPointer.y = e.clientY;
+      }
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {

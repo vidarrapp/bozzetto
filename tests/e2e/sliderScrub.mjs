@@ -29,10 +29,11 @@ async function finger(page) {
   };
 }
 
-/** The Camera panel's slider row by its name: its value and travel, the input's box and the name's box, in CSS px. */
+let PANEL = '.panel--camera';
+/** The slider row by its name: its value and travel, the input's box and the name's box, in CSS px. */
 const rowOf = (page, name) =>
-  page.evaluate((n) => {
-    const row = [...document.querySelectorAll('.panel--camera label.compact')].find((l) => l.firstElementChild?.textContent === n);
+  page.evaluate(([n, panel]) => {
+    const row = [...document.querySelectorAll(`${panel} label.compact`)].find((l) => l.firstElementChild?.textContent === n);
     if (!row) return null;
     const input = row.querySelector('input[type=range]');
     const box = (e) => {
@@ -40,13 +41,13 @@ const rowOf = (page, name) =>
       return { x: r.x, y: r.y, w: r.width, h: r.height };
     };
     return { value: Number(input.value), min: Number(input.min), max: Number(input.max), input: box(input), name: box(row.firstElementChild) };
-  }, name);
+  }, [name, PANEL]);
 
 /** Put a slider at a value the way a hotkey would, and count the events that follow. */
 const prime = (page, name, v) =>
   page.evaluate(
-    ([n, val]) => {
-      const row = [...document.querySelectorAll('.panel--camera label.compact')].find((l) => l.firstElementChild?.textContent === n);
+    ([n, val, panel]) => {
+      const row = [...document.querySelectorAll(`${panel} label.compact`)].find((l) => l.firstElementChild?.textContent === n);
       const input = row.querySelector('input[type=range]');
       row.scrollIntoView({ block: 'center' });
       input.value = String(val);
@@ -58,7 +59,7 @@ const prime = (page, name, v) =>
         input.addEventListener('change', () => window.__events.change++);
       }
     },
-    [name, v],
+    [name, v, PANEL],
   );
 const events = (page) => page.evaluate(() => window.__events);
 
@@ -165,22 +166,28 @@ export const suites = {
       await p.waitForTimeout(100);
 
       // A vertical swipe scrolls the panel and leaves the value.
-      await prime(p, 'Focus', 0.4);
+      // The Camera panel is short; Lighting is long enough to scroll.
+      await p.click('.panel--lighting > .panel__handle');
+      await p.waitForTimeout(400);
+      PANEL = '.panel--lighting';
+      await p.selectOption('.panel--lighting select', 'built:three_point'); // all three lights, so there is more than a screen of rows
+      await p.waitForTimeout(200);
+      await prime(p, 'Softness', 4);
       const scroller = () =>
         p.evaluate(() => {
-          let e = document.querySelector('.panel--camera .dof-rows');
+          let e = document.querySelector('.panel--lighting .light:last-child label.compact');
           while (e && e.scrollHeight <= e.clientHeight + 1) e = e.parentElement;
           return e ? e.scrollTop : -1;
         });
-      await p.evaluate(() => document.querySelector('.panel--camera .dof-rows label.compact').scrollIntoView({ block: 'end' }));
+      await p.evaluate(() => document.querySelector('.panel--lighting .light:last-child label.compact').scrollIntoView({ block: 'end' }));
       await p.waitForTimeout(100);
-      r = await rowOf(p, 'Focus');
+      r = await rowOf(p, 'Softness');
       const top0 = await scroller();
       await f.swipe(r.input.x + r.input.w * 0.5 + 6, r.input.y + 12, r.input.x + r.input.w * 0.5 + 12, r.input.y - 90);
       const top1 = await scroller();
-      after = await rowOf(p, 'Focus');
+      after = await rowOf(p, 'Softness');
       t.ok(top1 > top0, `a swipe up from a row scrolls the panel (${top0} to ${top1})`);
-      t.ok(after.value === 0.4, `and leaves the slider where it was (${after.value})`);
+      t.ok(after.value === 4, `and leaves the slider where it was (${after.value})`);
       t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
     } finally {
       await ctx.close();

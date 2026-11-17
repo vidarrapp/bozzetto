@@ -1711,7 +1711,12 @@ export class InputShell {
    * navigate: holding the key is the deliberate part.
    */
   private heldKeyPress(e: PointerEvent): void {
-    if (this.lightArmed && this.lightPointer === -1) this.lightPointer = e.pointerId;
+    if (this.lightArmed && this.lightPointer === -1) {
+      this.lightPointer = e.pointerId;
+      // The drag starts here: a touch has no hover to have brought the last position along.
+      this.lastAbsX = e.clientX;
+      this.lastAbsY = e.clientY;
+    }
     if (this.adjust && this.adjustPointer === -1 && (e.pointerType !== 'mouse' || e.button === 0)) {
       this.adjustPointer = e.pointerId;
       this.adjustLastX = e.clientX;

@@ -339,18 +339,20 @@ export const suites = {
     await tapTab(page, 'panel--material');
     const cav = await page.evaluate(() => ({
       on: window.__bozzetto.getSculptAO().strength > 0,
-      rows: [...document.querySelectorAll('.panel--material .cavity-rows label > span:first-child')].map((s) => s.textContent),
+      rows: [...document.querySelectorAll('.panel--material .cavity-rows label.checkbox > span, .panel--material .cavity-rows label.compact > span:first-child')].map((s) => s.textContent),
     }));
     t.ok(cav.on && cav.rows.join() === 'Cavity,Strength,Radius', `the Material tab has Cavity on with Strength and Radius (${cav.rows})`);
     await page.evaluate(() => document.querySelector('.panel--material [data-role=cavity] input').click());
     t.eq(await page.evaluate(() => window.__bozzetto.getSculptAO().strength), 0, 'Cavity off sets no cavity');
-    t.eq(await page.evaluate(() => [...document.querySelectorAll('.panel--material .cavity-rows label > span:first-child')].map((s) => s.textContent).join()), 'Cavity', 'and folds its Strength and Radius away');
+    t.eq(await page.evaluate(() => [...document.querySelectorAll('.panel--material .cavity-rows label.checkbox > span, .panel--material .cavity-rows label.compact > span:first-child')].map((s) => s.textContent).join()), 'Cavity', 'and folds its Strength and Radius away');
     await page.evaluate(() => document.querySelector('.panel--material [data-role=cavity] input').click());
     t.ok((await page.evaluate(() => window.__bozzetto.getSculptAO().strength)) > 0, 'Cavity on again brings it back');
     await page.screenshot({ path: `${SHOTS}/sculpt-material-cavity.png` });
 
     // Armature: the same Move light.
     await openArmature(page, base);
+    await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+    await page.waitForTimeout(500);
     const f0 = await keyLight(page);
     await menuPick(page, 'View', 'Move light');
     await page.mouse.move(centre.x, centre.y);
