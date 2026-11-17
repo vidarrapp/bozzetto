@@ -1629,3 +1629,38 @@ Object.assign(suites, {
     await page.screenshot({ path: `${SHOTS}/paint-fill-1180.png` });
   },
 });
+
+Object.assign(suites, {
+  /** Undo all the way and redo all of it: each stroke ends up on the layer it was made on (the paint twin of sculptLayersUndo). */
+  async paintUndo(page, base, t) {
+    await openForInput(page, base);
+    await page.evaluate(install);
+    await page.evaluate(() => window.__sculpt.paintWorkspace.enter());
+    const lv = await page.evaluate(() => window.__pt.levels());
+    await page.evaluate((n) => window.__pt.go(n - 1), lv.n);
+    await page.evaluate(() => window.__pt.snap('plain'));
+    const P = (code) => page.evaluate(`(() => { const S = window.__sculpt; const m = window.__pt.mesh(); const pt = window.__pt; return (${code}); })()`);
+    await P(`(S.session.paint.add(m), pt.stroke(pt.T.PAINT, [0.9, 0.2, 0.1], 0, 0, 60, 1))`);
+    await P(`(S.session.paint.add(m), pt.stroke(pt.T.PAINT, [0.1, 0.3, 0.9], 0, 40, 60, 1))`);
+    await P(`(S.session.paint.setActive(m, pt.layer('Layer 1')), pt.stroke(pt.T.PAINT, [0.2, 0.8, 0.2], 0, -40, 60, 1))`);
+    await P(`S.session.paint.setMode(m, pt.layer('Layer 2'), 'multiply')`);
+    await page.evaluate(() => window.__pt.snap('all'));
+    // What hiding layer 1 alone shows, to compare with after the round trip.
+    await P(`S.session.paint.setVisible(m, pt.layer('Layer 1'), false)`);
+    await page.evaluate(() => window.__pt.snap('only2'));
+    await P(`pt.undo()`);
+    t.ok((await page.evaluate(() => window.__pt.diff('all'))) < 1e-6, 'undo of the eye');
+    const back = await P(`(() => { let n = 0; while (S.session.canUndo()) { S.session.undo(); n++; } return n; })()`);
+    t.ok(back >= 7, `the history holds the strokes and the layer steps (${back})`);
+    t.ok((await page.evaluate(() => window.__pt.diff('plain'))) < 1e-6 && (await P(`pt.layers().length`)) === 0, 'undone all the way, the object has its colours and no layers');
+    await P(`(() => { while (S.session.canRedo()) S.session.redo(); })()`);
+    t.ok((await page.evaluate(() => window.__pt.diff('all'))) < 1e-6, 'redone all the way, the colours are as they were');
+    t.eq(await P(`pt.layers().map((l) => l.name).sort().join()`), 'Layer 1,Layer 2', 'with both layers');
+    await P(`S.session.paint.setVisible(m, pt.layer('Layer 1'), false)`);
+    t.ok((await page.evaluate(() => window.__pt.diff('only2'))) < 1e-6, 'hiding layer 1 shows layer 2 alone: each stroke went to the layer it was made on');
+    // A second round trip, to be sure.
+    await P(`pt.undo()`);
+    await P(`(() => { while (S.session.canUndo()) S.session.undo(); while (S.session.canRedo()) S.session.redo(); })()`);
+    t.ok((await page.evaluate(() => window.__pt.diff('all'))) < 1e-6, 'and again');
+  },
+});
