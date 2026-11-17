@@ -107,8 +107,8 @@ export const suites = {
     const flatUp = await page.evaluate(dabInPage, { method: 'flatten', upstream: true, kind: 'flatten' });
     t.ok(flatUp.z < -1e-4, `control: the upstream loop, same dab, carries it through the plane (z ${flatUp.z})`);
 
-    // Paint (0): every channel ends between the old colour and the paint's.
-    await page.keyboard.press('0');
+    // Paint (the Paint workspace's first tool; no key in Sculpt): every channel ends between the old colour and the paint's.
+    await page.evaluate(() => window.__sculpt.input.selectBrush(8));
     const settings = await page.evaluate(() => {
       const { session, input } = window.__sculpt;
       const tool = session.getSculptManager().getTool(input.currentToolIndex());

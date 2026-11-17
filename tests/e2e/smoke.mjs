@@ -4308,7 +4308,12 @@ export const suites = {
     // Where the rail's nub sits for a size: log-mapped over 5..500.
     const railAt = (v) => (Math.log(v / 5) / Math.log(100)) * 100;
     const near = (a, b, tol = 0.01) => Math.abs(a - b) <= tol;
-    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    // Paint left Sculpt's bar (it is the Paint workspace's first tool): its size is read through the tool itself.
+    const paintSize = async () => {
+      await page.evaluate(() => window.__sculpt.input.selectBrush(8));
+      return Math.round((await size()).held * 100) / 100;
+    };
     // Every brush's size, by its key.
     const every = async () => {
       const out = {};
@@ -4339,11 +4344,12 @@ export const suites = {
     s = await size();
     t.ok(s.tool === 1 && near(s.held, 200) && s.slider === 200 && near(s.rail, railAt(200), 0.1), `Inflate from the toolbar comes back at 200, on the slider and the rail (${s.held.toFixed(2)}, slider ${s.slider}, rail ${s.rail}%)`);
     // Paint keeps its own size like any brush; the others are untouched.
-    await page.keyboard.press('0');
+    await page.evaluate(() => window.__sculpt.input.selectBrush(8));
     await setSize(90);
     const sized = await every();
+    sized['0'] = await paintSize();
     t.ok(
-      sized['3'] === 120 && sized['4'] === 200 && sized['0'] === 90 && keys.filter((k) => !'340'.includes(k)).every((k) => sized[k] === first),
+      sized['3'] === 120 && sized['4'] === 200 && sized['0'] === 90 && keys.filter((k) => !'34'.includes(k)).every((k) => sized[k] === first),
       `clay, Inflate and Paint keep their sizes and the rest the starting one (${JSON.stringify(sized)})`,
     );
 
@@ -4401,6 +4407,7 @@ export const suites = {
     });
     t.eq(told, 0, 'opening the file restores them silently');
     const opened = await every();
+    opened['0'] = await paintSize();
     t.ok(
       opened['3'] === 120 && opened['4'] === 200 && opened['0'] === 90 && opened['1'] === first,
       `and every brush comes back at its own size (${JSON.stringify(opened)})`,

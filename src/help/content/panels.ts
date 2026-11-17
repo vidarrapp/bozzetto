@@ -19,6 +19,7 @@ export const PANELS: Topic[] = [
       ),
       p('A layer works on any subdivision level: step up and down as you sculpt, and the layer takes the work from whichever level you are on. Its slider moves all of it. Adding a level with **Subdivide** keeps the layers working.'),
       p('Voxel remesh, Quad remesh, Merge, splitting into objects and dynamic topology rebuild the surface, so they ask first to flatten the layers; Cancel leaves everything as it was. Layers are saved with the project. Ctrl+Z undoes a stroke, a change of weight and a change of the active layer, each in one step.'),
+      p('In the **Paint** workspace this tab holds the object\'s paint layers instead. See the Paint workspace topic.'),
     ],
   },
   {

@@ -213,8 +213,9 @@ place, each only where the place has it.
 - **View:** Frame selected (where there is a selection), Frame all;
   Wireframe, Shadows, Poly group colours and Hotkeys on tools (Sculpt);
   the panel toggles for the tabs the place has, then Hide interface; then
-  Armature, Sculpt and Present where the place has the workspace path, the
-  one you are in and any that cannot be reached greyed out with the reason.
+  Armature, Sculpt, Paint and Present where the place has the workspace path,
+  the one you are in and any that cannot be reached greyed out with the reason.
+  In Paint the panel toggles are Scene, Layers, Material, Tool and Reference.
   In the viewer there is one subject, so one Frame all, on F. Cycle ground
   is G only, and stays in the hotkey guide.
 - **Help:** Help topics, Hotkeys, About and credits, from one list.
@@ -276,7 +277,7 @@ place, each only where the place has it.
 - Render panel
 - Hide interface
 
-- Present mode
+- Paint workspace (Shift+B) and Present mode
 
 Every toggle in View carries a check, so the menu keeps a check column.
 
@@ -635,6 +636,41 @@ reuse it with one more control a row (a blend mode select).
 - Saved per object in the scene (`SavedMesh.layers`, version 1: name,
   weight, visible, and the sparse displacements of the highest level), in the
   autosave, `.bozz` files and the library.
+## The Paint workspace
+
+A workspace of the Sculpt page, as Present from Sculpt is: **Armature ›
+Sculpt › Paint › Present**. Shift+B (the keymap's `ui.paint`, rebindable)
+toggles it; View, Paint and the path's Paint step go in, the path's Sculpt
+step and Shift+B come out. The page's address has `paint=1` while it is up
+(`/?sculpt=1&paint=1` opens in it). The body carries `paint-ws`.
+
+- **Bar.** Select on q, then Paint, Erase, Blur, Fill, Pick and Project on 1
+  to 6 (the keymap's `paint.*` rows, mode `paint`, which also lists the Sculpt
+  keys that still answer there). No brushes, Calipers, Transform or the left
+  edge's Negative; Undo, Redo, Solo and the size and strength fields stay.
+  Sculpt's bar has no paint tool and its 0 is free. Shift over Paint blurs;
+  over any other Paint tool it does nothing.
+- **Tabs.** Left: Scene, Layers (paint layers here, sculpt layers in Sculpt).
+  Right: Tool, Material, Reference. Model and Render are not Paint's (Render
+  returns in Present, entered from Paint).
+- **Present from Paint** returns to Paint (Esc, Shift+P). The View menu's panel
+  items are the workspace's own.
+- **Colour.** Entering Paint sets Colour to Sculpt colours where the look had
+  Plain colour, with a notice.
+- **Paint layers** use `ui/layerList.ts` with a reorder handle (a 44px grip at
+  the row's left, `touch-action: none`, a line shows the drop place), a blend
+  mode select (`ui/blendModes.ts`, 27 modes in Photoshop's six groups, a
+  disabled line between groups) and an Opacity slider (0 to 100%). Menu:
+  Rename, Duplicate, Merge down, Clear, Delete (red). Flatten all at the foot.
+  Base at the bottom is paintable. A stroke on a layer that is hidden or at 0%
+  does not start and says why; Erase with Base picked says to pick a layer.
+- **Data.** Four bytes a vertex of the highest level (sRGB colour, alpha) a
+  layer, allocated on its first stroke; Base is linear floats, three a vertex.
+  The mesh's own colours are the composite, so publishing and export use
+  them. Saved per object as `SavedMesh.paintLayers` (version 1, sparse). Every
+  stroke and every layer change is one undo step. Remesh, merge, split and
+  dynamic topology ask once to flatten the sculpt and the paint layers.
+
 ## Clarity rules (design critique, 2026-11)
 
 - The edge sliders' names (Size, Strength) show only while the slider is

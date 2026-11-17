@@ -320,24 +320,7 @@ export class SculptToolbar {
     onTap(this.measureBtn, () => this.onToggleMeasure?.());
     center.appendChild(this.measureBtn);
 
-    // The Paint workspace's own tools (setWorkspace shows them in place of the brushes): the
-    // Select tool stays, on q, and the six tools follow on 1 to 6.
-    const paintTools: Array<[number, string, string, string, string, string]> = [
-      [tools.PAINT, '1', 'Paint (alt: pick colour, shift: blur)', 'paint', 'fi-ss-palette', 'Paint'],
-      [tools.PAINT_ERASE, '2', 'Erase: lowers the layer\'s alpha', 'erase', 'fi-ss-eraser', 'Erase'],
-      [tools.BLUR, '3', 'Blur: softens the layer', 'blur', 'fi-ss-raindrops', 'Blur'],
-      [tools.FILL, '4', 'Fill: the layer, or the part that is not masked', 'fill', 'fi-ss-fill', 'Fill'],
-      [tools.PICK, '5', 'Pick: takes a colour from the model', 'pick', 'fi-ss-eye-dropper-half', 'Pick'],
-      [tools.PROJECT, '6', 'Project: paints a reference picture onto the model', 'project', 'fi-ss-projector', 'Project'],
-    ];
-    for (const [id, key, name, slot, icon, tip] of paintTools) {
-      const btn = toolButton(key, name, slot, icon, tip);
-      btn.classList.add('sculpt-toolbar__btn--paint');
-      btn.hidden = true;
-      onTap(btn, () => this.input.selectBrush(id));
-      this.paintBtns.set(id, btn);
-      center.appendChild(btn);
-    }
+    this.center = center;
 
     this.root.append(center);
     document.body.appendChild(this.root);
@@ -351,6 +334,35 @@ export class SculptToolbar {
     this.refresh();
   }
 
+  /** The bar's own box of buttons, which the Paint workspace adds its tools to. */
+  private center!: HTMLDivElement;
+
+  /**
+   * The Paint workspace's own tools, made the first time Paint is entered
+   * (Sculpt's bar has nothing of them): the Select tool stays, on q, and the
+   * six tools follow on 1 to 6.
+   */
+  private buildPaintButtons(): void {
+    if (this.paintBtns.size) return;
+    const tools = Enums.Tools;
+    const paintTools: Array<[number, string, string, string, string, string]> = [
+      [tools.PAINT, '1', 'Paint (alt: pick colour, shift: blur)', 'paint', 'fi-ss-palette', 'Paint'],
+      [tools.PAINT_ERASE, '2', "Erase: lowers the layer's alpha", 'erase', 'fi-ss-eraser', 'Erase'],
+      [tools.BLUR, '3', 'Blur: softens the layer', 'blur', 'fi-ss-raindrops', 'Blur'],
+      [tools.FILL, '4', 'Fill: the layer, or the part that is not masked', 'fill', 'fi-ss-fill', 'Fill'],
+      [tools.PICK, '5', 'Pick: takes a colour from the model', 'pick', 'fi-ss-eye-dropper-half', 'Pick'],
+      [tools.PROJECT, '6', 'Project: paints a reference picture onto the model', 'project', 'fi-ss-projector', 'Project'],
+    ];
+    for (const [id, key, name, slot, icon, tip] of paintTools) {
+      const btn = toolButton(key, name, slot, icon, tip);
+      btn.classList.add('sculpt-toolbar__btn--paint');
+      btn.hidden = true;
+      onTap(btn, () => this.input.selectBrush(id));
+      this.paintBtns.set(id, btn);
+      this.center.appendChild(btn);
+    }
+  }
+
   /**
    * The Paint workspace's bar, or Sculpt's: in Paint the Select tool and the
    * six paint tools stand (1 to 6 and q), and the brushes, Transform and
@@ -358,6 +370,7 @@ export class SculptToolbar {
    * and no paint tool.
    */
   setWorkspace(paint: boolean): void {
+    if (paint) this.buildPaintButtons();
     this.paintOn = paint;
     for (const b of this.brushBtns.values()) b.hidden = paint;
     for (const b of this.paintBtns.values()) b.hidden = !paint;

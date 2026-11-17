@@ -55,6 +55,7 @@ import { PublishWindow } from './ui/PublishWindow';
 import { FileMenu } from './ui/FileMenu';
 import { TopMenu, type MenuItem } from './ui/TopMenu';
 import { SHELL_LAYOUT_EVENT } from './ui/shellLayout';
+import * as blendModule from '../paint/blend';
 import { helpMenuItems } from '../help/menu';
 import { TitleStrip, type PathStep, type Workspace } from './ui/TitleStrip';
 import { mountAccountHandle } from '../ui/account/menu';
@@ -2313,6 +2314,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     library,
     gizmo, // transform modes, for the console and the tests
     present, // Present mode, its turntable and Save image
+    /** The Paint workspace, for the console and the tests. */
+    paintWorkspace: { enter: () => enterPaint(), leave: () => leavePaint(), isOn: () => paintOn },
+    blend: blendModule, // the blend arithmetic, for the tests
     scaleBanner, // Set scale, for a scene from before real units
     worldScale, // the brushes' world sizes
     /** An object's exact world box, as plain arrays (the units suite measures with it). */

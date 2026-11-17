@@ -427,7 +427,7 @@ export const suites = {
   },
 
   /**
-   * The workspace path (Armature > Sculpt > Present) in each workspace, Present as a
+   * The workspace path (Armature > Sculpt > Paint > Present) in each workspace, Present as a
    * workspace (its bar, its Output tab, Publish only there), and the Armature step's ask.
    */
   async shellWorkspaces(page, base, t) {
@@ -438,7 +438,7 @@ export const suites = {
     // --- Sculpt -------------------------------------------------------------
     await openSculpt(page, base);
     await page.addStyleTag({ content: '.panel { transition: none !important; }' });
-    t.eq(await path(), 'Armature > Sculpt* > Present', 'Sculpt: the path reads Armature, Sculpt, Present with Sculpt current');
+    t.eq(await path(), 'Armature > Sculpt* > Paint > Present', 'Sculpt: the path reads Armature, Sculpt, Paint, Present with Sculpt current');
     const look = await page.evaluate(() => {
       const css = (el) => getComputedStyle(el);
       const r = (el) => el.getBoundingClientRect();
@@ -475,7 +475,7 @@ export const suites = {
     // --- Present: pressing the step ------------------------------------------
     await step('present');
     await page.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 5000 });
-    t.eq(await path(), 'Armature > Sculpt > Present*', 'pressing Present enters it, Present current');
+    t.eq(await path(), 'Armature > Sculpt > Paint > Present*', 'pressing Present enters it, Present current');
     t.ok(await chip(), 'Present: Publish shows in the strip, signed in');
     const pub = await page.evaluate(() => {
       const el = document.querySelector('.publish-window__chip');
@@ -541,13 +541,13 @@ export const suites = {
     // --- Present > Sculpt, and Esc --------------------------------------------
     await step('sculpt');
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 });
-    t.eq(await path(), 'Armature > Sculpt* > Present', 'the Sculpt step leaves Present');
+    t.eq(await path(), 'Armature > Sculpt* > Paint > Present', 'the Sculpt step leaves Present');
     t.ok(!(await chip()) && !(await shown(page, '.panel--output .panel__handle')), 'Publish and the Output tab are gone with it');
     await page.keyboard.press('Shift+P');
     await page.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 5000 });
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 });
-    t.eq(await path(), 'Armature > Sculpt* > Present', 'Esc leaves too');
+    t.eq(await path(), 'Armature > Sculpt* > Paint > Present', 'Esc leaves too');
 
     // --- the Armature step asks ------------------------------------------------
     await step('armature');
@@ -574,7 +574,7 @@ export const suites = {
       await Promise.all([page.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 }), page.click('.bz-ask-yes')]);
       await page.waitForTimeout(300);
       if (round === 1) {
-        t.eq(await path(), 'Armature* > Sculpt > Present(dim)', 'Armature: the path has Armature current and Present dim');
+        t.eq(await path(), 'Armature* > Sculpt > Paint(dim) > Present(dim)', 'Armature: the path has Armature current and Present dim');
         const dim = await page.evaluate(() => {
           const el = document.querySelector('.bz-ws__step[data-workspace="present"]');
           return { color: getComputedStyle(el).color, title: el.title, disabled: el.getAttribute('aria-disabled') };
@@ -730,9 +730,9 @@ export const suites = {
     });
     t.eq(bar.b, bar.vh, 'the tool bar is flush to the bottom edge');
     t.near((bar.l + bar.r) / 2, 640, 1, 'and centred');
-    t.eq(bar.tools.length, 13, 'thirteen tools, Calipers the last');
+    t.eq(bar.tools.length, 12, 'twelve tools, Calipers the last (Paint has its own workspace)');
     t.ok(bar.tools.every((x) => x.w === 44 && x.h === 44), 'each a 44px square');
-    t.near(bar.w, 13 * 44 + 12 * 4 + 24, 1, 'in one box only as wide as its tools: 4px between, 12px at the sides');
+    t.near(bar.w, 12 * 44 + 11 * 4 + 24, 1, 'in one box only as wide as its tools: 4px between, 12px at the sides');
     t.ok(bar.pad === '8px 12px', `padding 8px 12px (${bar.pad})`);
     t.ok(/Martian/.test(bar.digit.font) && bar.digit.size === '11px' && /179, 179, 179/.test(bar.digit.color), `the digit is mono 11px, secondary (${bar.digit.font}, ${bar.digit.size})`);
     const active = await page.evaluate(() => {

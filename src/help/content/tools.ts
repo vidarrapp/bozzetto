@@ -150,18 +150,63 @@ export const TOOLS: Topic[] = [
   {
     id: 'tool-paint',
     title: 'Paint',
-    group: G,
+    group: 'Paint tools',
     tools: ['Paint'],
     blocks: [
-      p('Paints colour onto the surface, stored on the object. Default hotkey: **0**.'),
+      p('Paints colour onto the model, in the **Paint** workspace (**Shift+B**), into the layer you have picked in the Layers panel, or into Base. Default hotkey: **1**. The paint tools are the first of six: Paint, Erase, Blur, Fill, Pick and Project, on **1** to **6**; **Q** is still Select.'),
       options(
         ['Colour', 'The colour swatch opens a colour picker. Drag the swatch over the view to pick a colour off the screen.'],
-        ['Fill', 'The button beside the swatch (its tooltip says "Fill the object with this colour") covers the whole object in the colour, in one undo step.'],
-        ['Alt + click', 'Picks a colour from the surface ("Alt+click for color picker").'],
-        ['Profile', 'The falloff of the paint across the brush, with the presets Hard, Default, Soft and Airbrush.'],
+        ['Fill', 'The button beside the swatch covers the layer, or the part that is not masked, in the colour, in one undo step.'],
+        ['Alt + click', 'Picks a colour from the model ("Alt+click for color picker").'],
+        ['Profile', 'The falloff of the paint across the brush, with the presets Hard, Default, Soft and Airbrush. Erase, Blur and Project share it.'],
       ),
-      p('Hold **Shift** to blur the paint instead of smoothing the shape. The blur uses the same profile. **Strength** runs from 0 to 1.'),
-      p('Change the object\'s base look in the Material panel under **Surface**. See the Material panel topic.'),
+      p('Hold **Shift** to blur the paint. **Strength** runs from 0 to 1. Symmetry, the mask and hidden poly groups work as they do for the brushes. Change the object\'s base look in the Material panel under **Surface**. See the Paint workspace topic.'),
+    ],
+  },
+  {
+    id: 'tool-erase',
+    title: 'Erase',
+    group: 'Paint tools',
+    tools: ['Erase'],
+    blocks: [
+      p('Lowers the alpha of the layer you have picked under the brush, so the colour under the layer shows through. Default hotkey: **2**. It works on a layer, not on Base: with Base picked it says to add a layer or tap one first. Size, Strength and Profile are Paint\'s.'),
+    ],
+  },
+  {
+    id: 'tool-blur',
+    title: 'Blur',
+    group: 'Paint tools',
+    tools: ['Blur'],
+    blocks: [
+      p('Softens the colour and the alpha of the layer you have picked, pulling each point toward the average of its neighbours, so a hard edge between two colours softens the more you stroke it. Default hotkey: **3**. It works on Base too. Holding **Shift** with Paint does the same with Paint\'s size and strength.'),
+    ],
+  },
+  {
+    id: 'tool-fill',
+    title: 'Fill',
+    group: 'Paint tools',
+    tools: ['Fill'],
+    blocks: [
+      p('Tap the model to fill the layer you have picked (or Base) with the colour, as much as the mask lets it, in one undo step. Hidden poly groups are left out. Default hotkey: **4**.'),
+    ],
+  },
+  {
+    id: 'tool-pick',
+    title: 'Pick',
+    group: 'Paint tools',
+    tools: ['Pick'],
+    blocks: [
+      p('Tap or drag on the model to take its colour, as it shows with every layer in it, as the paint colour. Nothing is changed and there is no undo step. It is what **Alt** and click does with Paint. Default hotkey: **5**.'),
+    ],
+  },
+  {
+    id: 'tool-project',
+    title: 'Project',
+    group: 'Paint tools',
+    tools: ['Project'],
+    blocks: [
+      p('Paints a reference picture that is in the view onto the model under the brush. For each point under the brush, the pixel of the picture where that point stands on the screen goes through the brush\'s falloff and strength into the layer you have picked. Only points that face the camera, near where the pen touches the model, take colour. Default hotkey: **6**.'),
+      p('With no picture in the view it says "Drag a reference into the view first." Put a picture there from the Reference panel. The picture\'s own blend mode and opacity do not change what is projected; its mirror and greyscale do.'),
     ],
   },
   {
@@ -219,7 +264,7 @@ export const TOOLS: Topic[] = [
     title: 'Smooth (Shift)',
     group: G,
     blocks: [
-      p('Smooth has no toolbar button and no number key. Hold **Shift** while you drag with any brush to smooth instead. With the Paint brush, **Shift** blurs the paint.'),
+      p('Smooth has no toolbar button and no number key. Hold **Shift** while you drag with any brush to smooth instead. In the Paint workspace, **Shift** with the Paint tool blurs the paint.'),
       p('The settings are one set for every brush, in the **Smooth (Shift)** group at the foot of each brush\'s Tool panel. A change made under Clay shows under the Rake.'),
       options(
         ['Strength', 'From 0 to 1.'],

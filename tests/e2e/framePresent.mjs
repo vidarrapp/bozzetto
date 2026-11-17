@@ -255,11 +255,11 @@ export const suites = {
       t.ok(JSON.stringify(strip.menus) === JSON.stringify(['File', 'Edit', 'View', 'Help']), `the strip has File, Edit, View and Help (${strip.menus})`);
       checkShape(t, 'Present workspace', await readMenus(p, 'Present workspace'), { names: 'File,Edit,View,Help', edit: 'Preferences…', view: 'Shadows|Frames panel|Project panel|Material panel|Render panel|Output panel|Hide interface|Armature|Sculpt|Present' });
       t.ok(
-        strip.steps.map((s) => s.text).join() === 'Armature,Sculpt,Present' && strip.steps[2].current === 'step',
-        `the path reads Armature, Sculpt, Present with Present current (${JSON.stringify(strip.steps.map((s) => [s.text, s.current]))})`,
+        strip.steps.map((s) => s.text).join() === 'Armature,Sculpt,Paint,Present' && strip.steps[3].current === 'step',
+        `the path reads Armature, Sculpt, Paint, Present with Present current (${JSON.stringify(strip.steps.map((s) => [s.text, s.current]))})`,
       );
       t.ok(
-        strip.steps.slice(0, 2).every((s) => s.disabled === 'true' && s.title === 'This project has no sculpt scene'),
+        strip.steps.slice(0, 3).every((s) => s.disabled === 'true' && s.title === 'This project has no sculpt scene'),
         `Armature and Sculpt are dim, and say why in their title (${JSON.stringify(strip.steps.slice(0, 2).map((s) => s.title))})`,
       );
       t.ok(strip.save?.text === 'Save' && strip.save.bg === 'rgb(255, 90, 31)' && strip.hide, `the one orange Save and the hide button are at the right (${JSON.stringify(strip.save)})`);
