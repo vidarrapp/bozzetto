@@ -147,7 +147,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'view.ground', label: 'Cycle ground (shadow / floor / pedestal / off)', group: 'Material', mode: 'view', chord: 'g' },
   // --- armature mode ------------------------------------------------------
   { id: 'arm.symmetry', label: 'Mirror pose edits to the other side', group: 'Armature', mode: 'armature', chord: 'x' },
-  { id: 'arm.move', label: 'Move the figure (the pelvis, screen-plane centre)', group: 'Armature', mode: 'armature', chord: 'w' },
+  { id: 'arm.move', label: 'Move the figure, or the selected handle (move gizmo)', group: 'Armature', mode: 'armature', chord: 'w' },
   { id: 'arm.rotate', label: 'Rotate what is selected', group: 'Armature', mode: 'armature', chord: 'e' },
   { id: 'arm.gizmo', label: 'Move and rotate together', group: 'Armature', mode: 'armature', chord: 't' },
   { id: 'arm.scale', label: 'Scale the selected part (its size and length)', group: 'Armature', mode: 'armature', chord: 'r' },

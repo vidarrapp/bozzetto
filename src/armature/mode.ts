@@ -547,17 +547,27 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     panel.refresh(selected);
   };
 
-  /** A tap on an IK ball: that ball selected, and the move gizmo on it. */
-  const selectHandle = (id: string | null): void => {
+  /**
+   * A tap on a handle: that handle selected (its outline turns orange). No
+   * gizmo comes with it (owner call, 2026-11-17): a handle is moved by
+   * dragging it. `gizmo` puts the move gizmo on it, which Move (W) asks for
+   * on a selected handle, for a move along one axis.
+   */
+  let handleGizmo = false;
+  const selectHandle = (id: string | null, gizmo = false): void => {
     select(null);
+    handleGizmo = false;
     const ball = id ? handleMesh(id) : undefined;
     if (!id || !ball || !handlesOn) return;
     selectedHandle = id;
-    trimFreeRotate(false);
-    moveTc.attach(ball);
-    moveTc.enabled = true;
-    moveTc.getHelper().visible = true;
-    attached.add(moveTc);
+    handleGizmo = gizmo;
+    if (gizmo) {
+      trimFreeRotate(false);
+      moveTc.attach(ball);
+      moveTc.enabled = true;
+      moveTc.getHelper().visible = true;
+      attached.add(moveTc);
+    }
     syncHandles();
     placeControls();
   };
@@ -1289,7 +1299,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     last = snap();
     // Also syncs the handles and the panel.
-    if (selectedHandle) selectHandle(selectedHandle);
+    if (selectedHandle) selectHandle(selectedHandle, handleGizmo);
     else select(selected);
     panel.syncFigure();
     scheduleSave();
@@ -2037,6 +2047,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         commit();
         break;
       case 'arm.move':
+        // On a selected handle: its move gizmo. Otherwise the figure's, on the pelvis.
+        if (selectedHandle) {
+          selectHandle(selectedHandle, true);
+          break;
+        }
         gizmoMode = 'translate';
         select(armature.root.name);
         break;
