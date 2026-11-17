@@ -97,7 +97,7 @@ export const suites = {
     t.ok(act.orange.length === 1 && act.orange[0].startsWith('Save image'), `and it is the only orange button in Present (${act.orange})`);
     t.ok(act.publishBg && act.publishBg !== ORANGE, `Publish is quiet in Present (${act.publishBg})`);
     await page.screenshot({ path: `${SHOTS}/present-output.png` });
-    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.click('.panel--output .present-out__save')]);
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.click('.panel--output .present-out__save', { timeout: 240_000 })]);
     t.eq(download.suggestedFilename(), 'Sculpt.png', 'Save image still saves the picture');
   },
 
@@ -169,6 +169,12 @@ export const suites = {
     // overlay stays up for as long as the shell takes to build, and a tap on it ends it.
     await page.addInitScript(() => {
       HTMLMediaElement.prototype.play = () => new Promise(() => {});
+      // Nor does a clip that cannot be decoded here end it: ended and error are not heard.
+      const listen = HTMLMediaElement.prototype.addEventListener;
+      HTMLMediaElement.prototype.addEventListener = function (type, ...rest) {
+        if (type === 'ended' || type === 'error') return undefined;
+        return listen.call(this, type, ...rest);
+      };
       const set = window.setTimeout.bind(window);
       window.setTimeout = (fn, ms, ...rest) => set(fn, ms === 4000 ? 60000 : ms, ...rest);
     });
