@@ -26,7 +26,7 @@ import type { PathStep, Workspace } from '../sculpt/ui/TitleStrip';
 import { rememberPanels } from '../sculpt/ui/panelMemory';
 import '../sculpt/ui/shell.css';
 import { Armature, buildArmature, importArmature, SCENE_SCALE, type ArmatureState } from './Armature';
-import { HandleKit, RING_RADIUS, setHandleViewport, type HandleShape, type HandleState, type HandleView } from './handleViews';
+import { ARROW_TIP, HandleKit, RING_RADIUS, setHandleViewport, type HandleShape, type HandleState, type HandleView } from './handleViews';
 import { onCentimetres } from './units';
 import { UNITS } from '../viewer/units';
 import { fetchFigure, figureById, tuneRig } from './figures';
@@ -2218,7 +2218,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       const b = pickList.find((p) => ballName(p) === name);
       const at = b?.ball.visible && handlesOn ? ballOnScreen(b.ball) : null;
       if (!b || !at) return null;
-      const r = RING_RADIUS;
+      const r = b.kind === 'aim' || b.kind === 'look' ? ARROW_TIP : RING_RADIUS;
       return [at[0], at[1], r];
     },
     /**

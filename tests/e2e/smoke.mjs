@@ -2360,8 +2360,8 @@ export const suites = {
     });
     t.ok(hips.inside && hips.offMid < 1e-4, `the root's box is centred in the hips: ${showRoot(hips)}`);
     t.ok(
-      look.root.shape === 'rect' && look.reach.shape === 'ring' && look.aim.shape === 'arrow',
-      `the root is a frame, a reach handle a ring and a pole target an arrowhead (${look.root.shape}, ${look.reach.shape}, ${look.aim.shape})`,
+      look.root.shape === 'box' && look.reach.shape === 'ring' && look.aim.shape === 'arrow',
+      `the root is a box, a reach handle a ring and a pole target an arrowhead (${look.root.shape}, ${look.reach.shape}, ${look.aim.shape})`,
     );
     t.ok(
       [look.root, look.reach, look.aim].every((l) => l.colour === look.palette.rest && l.state === 'rest') && look.palette.rest !== look.palette.hot,

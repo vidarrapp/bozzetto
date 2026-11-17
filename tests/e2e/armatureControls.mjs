@@ -318,7 +318,8 @@ async function armatureControls(page, base, t) {
   const dropped = await page.evaluate(() => ({ root: window.__armature.state().root.position, look: window.__armature.handleLook('root'), at: window.__armature.onScreen(...window.__armature.rootBox().centre) }));
   t.ok(held.state === 'hot' && held.colour === palette.hot, 'the box is orange while it is dragged');
   t.ok(dist(dropped.root, edge.root) > 5 && dropped.look.state === 'rest', `a drag from an edge moves the figure (${dist(dropped.root, edge.root).toFixed(1)} cm) and the box is neutral after`);
-  t.ok(Math.hypot(dropped.at[0] - edge.centre[0] - 30, dropped.at[1] - edge.centre[1] + 40) < 8, 'the box follows the pointer, as a drag of the old handle did');
+  const lag = Math.hypot(dropped.at[0] - edge.centre[0] - 30, dropped.at[1] - edge.centre[1] + 40);
+  t.ok(lag < 8, `the box follows the pointer, as a drag of the old handle did (${lag.toFixed(1)} px off, from ${edge.centre.map((v) => v.toFixed(0))} to ${dropped.at.map((v) => v.toFixed(0))})`);
   await page.evaluate(() => window.__armature.undo());
 }
 

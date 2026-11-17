@@ -59,7 +59,7 @@ const RING_HALF = RING_RADIUS + 6;
 const DOT_RADIUS = RING_RADIUS * 0.31;
 const ARROW_HALF = 16;
 /** The arrowhead: its tip, the depth of its base below the middle, and half its base. */
-const ARROW_TIP = 11;
+export const ARROW_TIP = 11;
 const ARROW_BASE = 8;
 const ARROW_WING = 9.5;
 /** Half the width of the strip a dashed line is cut from, and the dash and its gap. */
