@@ -1421,7 +1421,7 @@ async function memberLibrary(server, o, a, t) {
   await clearNotices(p);
   await chooseFile(p, 'Save to library');
   let end = await savedToast(p);
-  t.ok(end.state === 'done' && /^Saved to My projects: Sculpt /.test(end.text), `Save to library saves to My projects ("${end.text}")`);
+  t.ok(end.state === 'done' && /^Saved to My projects: Study /.test(end.text), `Save to library saves to My projects ("${end.text}")`);
   let list = (await pageJson(p, '/api/me/projects')).body ?? [];
   const pid = list[0]?.id ?? '';
   t.ok(

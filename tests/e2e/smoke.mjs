@@ -4880,18 +4880,18 @@ export const suites = {
     // The probe has answered once the publish forms show their sign-in line.
     await page.waitForFunction(() => [...document.querySelectorAll('.gallery-form')].some((f) => !f.hidden), null, { timeout: 30_000 });
     const items = await fileItems(page);
-    const lib = items.find((i) => i.label === 'Save to library');
+    const lib = items.find((i) => i.label === 'Save file');
     const keep = items.find((i) => i.label === 'Keep on this device');
-    t.ok(!!lib && /\.bozz file/.test(lib.hint), `signed out, Save to library says it downloads a .bozz file ("${lib?.hint}")`);
+    t.ok(!!lib && !items.some((i) => /library/i.test(i.label)), `signed out with no accounts, File has Save file and no second item that only downloads (${items.map((i) => i.label).join(', ')})`);
     t.ok(!!keep && keep.hint === DEVICE_NOTE, `and Keep on this device is still offered, saying what it risks ("${keep?.hint}")`);
 
     await page.evaluate(() => window.__sculpt.session.addPrimitive('capsule'));
     t.eq(await page.evaluate(() => window.__sculpt.fileActions.hasWork()), true, 'a capsule added is work that exists nowhere else');
-    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30_000 }), chooseFile(page, 'Save to library')]);
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30_000 }), chooseFile(page, 'Save file')]);
     const name = download.suggestedFilename();
     const file = readFileSync(await download.path());
     const read = await readBozz(page, file);
-    t.ok(/^sculpt-\d{8}-\d{4}\.bozz$/.test(name) && read.objects === 2, `Save to library downloads the scene as ${name}, both objects in it`);
+    t.ok(/^sculpt-\d{8}-\d{4}\.bozz$/.test(name) && read.objects === 2, `Save file downloads the scene as ${name}, both objects in it`);
     t.eq(await page.evaluate(() => window.__sculpt.fileActions.hasWork()), false, 'and the downloaded scene counts as saved');
 
     await chooseFile(page, 'Keep on this device');
@@ -4965,12 +4965,12 @@ export const suites = {
       t.ok(!!progress, `while it uploads, the toast shows how far it has got ("${progress}")`);
       let end = await savedToast(owner);
       fake.opts.partDelay = 0;
-      t.ok(end.state === 'done' && /^Saved to Projects: Sculpt /.test(end.text), `and then that it is saved ("${end.text}")`);
+      t.ok(end.state === 'done' && /^Saved to Projects: Study /.test(end.text), `and then that it is saved ("${end.text}")`);
 
       const id = 'scene-test1';
       const creates = fake.calls.filter((c) => c.method === 'POST' && c.path === '/admin/api/projects').map((c) => fake.body(c.body));
       t.ok(
-        creates.length === 1 && creates[0].mode === 'scene' && /^Sculpt /.test(creates[0].title) && !('id' in creates[0]) && !('visibility' in creates[0]),
+        creates.length === 1 && creates[0].mode === 'scene' && /^Study /.test(creates[0].title) && !('id' in creates[0]) && !('visibility' in creates[0]),
         `it creates a scene project named like a shelf entry, leaving the id and the private default to the server (${JSON.stringify(creates)})`,
       );
       const parts = fake.calls.filter((c) => c.method === 'PUT' && c.path === `/admin/api/projects/${id}/scene`);

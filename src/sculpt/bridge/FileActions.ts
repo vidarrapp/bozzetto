@@ -6,11 +6,11 @@ import { IMPORT_SIZE } from './SculptSession';
 import { formatLength } from '../../viewer/units';
 import {
   cacheProjectScene,
-  defaultSceneName,
   deleteLibraryScene,
   findSentCopy,
   getLibraryEntry,
   keepUnsent,
+  newSceneName,
   saveToLibrary,
   type LibraryEntry,
 } from './SceneLibrary';
@@ -62,6 +62,8 @@ export interface FileActionHooks {
   presentation?(): Record<string, unknown> | null;
   /** The project link changed, so the autosave record has to learn it. */
   onLinkChange?(link: SceneLink | null): void;
+  /** The scene was renamed (FileActions.rename): the autosave record carries the name, so it is written. */
+  onNameChange?(): void;
   /** The scene's unsent copy changed (FileActions.unsentCopy): the same, for that. */
   onUnsentChange?(id: string | null): void;
   /**
@@ -129,6 +131,12 @@ export class FileActions {
   private unsent: string | null = null;
   private uploading = false;
   /**
+   * The scene's name, as the strip shows it. A scene that is a project is
+   * named by it (the link's title); this is the name of one that is not,
+   * and what the project's title will be when it becomes one.
+   */
+  private name = '';
+  /**
    * Bumped whenever the scene is replaced (New, Open). An upload started
    * before that must not, when it lands, link the scene now on screen to
    * the project it uploaded - the next save would overwrite that project
@@ -147,6 +155,29 @@ export class FileActions {
 
   get link(): SceneLink | null {
     return this.linked;
+  }
+
+  /** The scene's name: its project's title, or the name it has on its own. */
+  get sceneName(): string {
+    return this.linked?.title ?? this.name;
+  }
+
+  /** The boot scene's name, taken without telling anyone (the record it came from has it). */
+  adoptName(name: string): void {
+    this.name = name;
+  }
+
+  /**
+   * Give the scene a new name. A project's scene renames the link too, so
+   * the next Save to library carries it; either way the autosave record is
+   * written with it.
+   */
+  rename(name: string): void {
+    const next = name.trim().slice(0, 80);
+    if (!next || next === this.sceneName) return;
+    this.name = next;
+    if (this.linked) this.setLink({ ...this.linked, title: next });
+    else this.hooks.onNameChange?.();
   }
 
   /** True while an upload to Projects is running. */
@@ -200,6 +231,8 @@ export class FileActions {
     // Nor is the old one's unsent copy its own; that stays on the shelf.
     this.setLink(null);
     this.setUnsent(null);
+    this.name = await newSceneName();
+    this.hooks.onNameChange?.();
     this.hooks.onSceneClean();
     this.hooks.onNewScene?.();
   }
@@ -255,6 +288,9 @@ export class FileActions {
     this.generation++;
     this.setLink(link);
     this.setUnsent(null);
+    // A project is named by itself; a file has no name of its own to keep.
+    this.name = link?.title ?? (await newSceneName());
+    this.hooks.onNameChange?.();
     if (scene.look && this.hooks.look) await this.hooks.look.apply(scene.look);
     this.hooks.onSceneClean();
     return true;
@@ -284,7 +320,7 @@ export class FileActions {
   async keepOnDevice(): Promise<LibraryEntry> {
     const scene = this.serialize();
     const counts = this.counts();
-    return saveToLibrary(scene, { thumb: await this.thumb(), ...counts });
+    return saveToLibrary(scene, { name: this.sceneName, thumb: await this.thumb(), ...counts });
   }
 
   /**
@@ -330,7 +366,7 @@ export class FileActions {
       // A scene that waited on the shelf may have been renamed there; a new
       // project takes that name rather than a fresh "Sculpt <date>".
       const waiting = !target && unsent ? await getLibraryEntry(unsent) : null;
-      const title = target?.title ?? waiting?.name ?? defaultSceneName();
+      const title = target?.title ?? waiting?.name ?? this.sceneName;
       const scope = target?.scope;
       let link: SceneLink;
       try {
@@ -353,6 +389,7 @@ export class FileActions {
       // The copy an earlier failure kept is in Projects now, newer than it was.
       if (unsent && unsent !== link.id) await deleteLibraryScene(unsent);
       if (generation === this.generation) {
+        this.name = link.title;
         this.setLink(link);
         this.setUnsent(null);
         this.hooks.onSceneClean(at);

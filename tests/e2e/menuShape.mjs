@@ -11,7 +11,7 @@ const HELP = ['Help topics', 'Hotkeys', 'About and credits'];
 /** Where each File label sits in the order of its groups. */
 const FILE_RANK = new Map([
   ['New sculpt', 0], ['New armature', 0], ['Open…', 0], ['Open recent', 0],
-  ['Save file', 1], ['Save to library', 1], ['Keep on this device', 1], ['Save', 1],
+  ['Rename…', 1], ['Save file', 1], ['Save to library', 1], ['Sign in to save to library', 1], ['Keep on this device', 1], ['Save', 1],
   ['Import OBJ…', 2], ['Z-up OBJ import', 2], ['Load model…', 2], ['Export OBJ', 2], ['Send to Sculpt', 2], ['New sculpt from this', 2], ['Edit in Present', 2],
   ['Publish…', 3],
   ['Close', 4],

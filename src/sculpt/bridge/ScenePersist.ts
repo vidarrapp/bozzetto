@@ -261,6 +261,11 @@ export interface SavedScene {
    * .bozz file either.
    */
   synced?: boolean;
+  /**
+   * The scene's name, as the title strip shows it ("Study 14 Nov"). The
+   * autosave keeps it; a .bozz file leaves it out, as it does the link.
+   */
+  name?: string;
 }
 
 /**
@@ -275,6 +280,8 @@ export interface SceneStatus {
   project?: SceneLink;
   unsent?: string;
   synced: boolean;
+  /** The scene's name, for the card's title; absent in a record from before names. */
+  name?: string;
 }
 
 /** A scene project on the server, as the sculpt session refers to it. */
@@ -882,6 +889,11 @@ export class ScenePersist {
     this.markDirty(false);
   }
 
+  /** Whether the scene is as it was when last saved to its project (what the strip calls Saved). */
+  isSynced(): boolean {
+    return this.syncedAt === this.edits;
+  }
+
   /** The scene is not its project's as saved: a new link, or none. */
   unsync(): void {
     this.syncedAt = -1;
@@ -929,6 +941,7 @@ export class ScenePersist {
       synced: scene.synced === true,
       ...(scene.project ? { project: { ...scene.project } } : {}),
       ...(scene.unsent ? { unsent: scene.unsent } : {}),
+      ...(scene.name ? { name: scene.name } : {}),
     };
     perfLog.record('autosave serialise', performance.now() - t0);
     // This write takes everything there is. A write still armed (an event

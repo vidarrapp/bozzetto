@@ -192,12 +192,55 @@ body:is(.bz-shell, .bz-page) .bz-readout {
 }
 
 body:is(.bz-shell, .bz-page) .bz-readout__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 700;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout > :not(.bz-readout__name) {
+  flex: none;
 }
 
 body:is(.bz-shell, .bz-page) .bz-readout__edited {
   margin-left: -8px;
+  color: var(--bz-text-2);
   font-weight: 400;
+}
+
+/* The name, where a mode lets it be renamed: a tap puts a field in its place. */
+body:is(.bz-shell, .bz-page) .bz-readout__name--edit {
+  cursor: text;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__name--edit:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--bz-line);
+  text-underline-offset: 3px;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__name--edit:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__rename {
+  box-sizing: border-box;
+  width: 200px;
+  max-width: 40vw;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bz-viewport);
+  color: var(--bz-text);
+  font: 700 13px/20px var(--bz-font);
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__rename:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
 }
 
 body:is(.bz-shell, .bz-page) .bz-readout__item {
@@ -217,14 +260,73 @@ body:is(.bz-shell, .bz-page) .bz-readout__val {
 /* Narrow: the readout goes before the path does (under 1000px it would meet the path). */
 @media (max-width: 999px) {
   body:is(.bz-shell, .bz-page) .bz-strip {
-    grid-template-columns: minmax(min-content, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   body:is(.bz-shell, .bz-page) .bz-strip__right {
-    grid-column: 2;
+    grid-column: 3;
   }
 
+  /* Only the name and its state word stay: the name gives way (an ellipsis) before the word does. */
   body:is(.bz-shell, .bz-page) .bz-readout {
+    grid-column: 2;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__edited {
+    margin-left: 0;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout > :not(.bz-readout__name, .bz-readout__edited, .bz-readout__rename) {
+    display: none;
+  }
+}
+
+/* A phone: the menus and the path leave about 100px, so the name sits over its
+   state word, each cut with an ellipsis, and a finger gets a taller target. */
+@media (max-width: 520px) {
+  body:is(.bz-shell, .bz-page) .bz-readout {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0;
+    padding: 0 6px;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__name,
+  body:is(.bz-shell, .bz-page) .bz-readout__edited {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__name {
+    flex: none;
+    box-sizing: content-box;
+    padding: 6px 6px 0;
+    margin: -6px -6px 0;
+    font-size: 12px;
+    line-height: 15px;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__edited {
+    flex: none;
+    font-size: 10px;
+    line-height: 13px;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__rename {
+    width: 100%;
+    max-width: none;
+    height: 24px;
+    font-size: 16px; /* under 16px, iOS zooms the page when a field takes focus */
+  }
+
+  /* While the field is there it has the whole readout. */
+  body:is(.bz-shell, .bz-page) .bz-readout__rename ~ .bz-readout__edited {
     display: none;
   }
 }
