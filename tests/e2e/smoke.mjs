@@ -6363,7 +6363,7 @@ export const suites = {
       const row = await owner.evaluate(() => {
         const menus = [...document.querySelectorAll('.bz-strip__menus > *')].map((c) => c.textContent.trim());
         const right = [...document.querySelectorAll('.bz-strip__right > *')]
-          .filter((c) => !c.hidden)
+          .filter((c) => !c.hidden && !(c.classList.contains('bz-strip__account') && !c.textContent.trim()))
           .map((c) => (c.classList.contains('bz-strip__hide') ? 'hide' : c.textContent.trim()));
         const look = (el) => {
           const s = getComputedStyle(el);
@@ -6384,7 +6384,7 @@ export const suites = {
       await owner.evaluate(() => window.__sculpt.publishWindow.close());
       await enterPresent();
       const inPresent = await owner.evaluate(() => {
-        const right = [...document.querySelectorAll('.bz-strip__right > *')].filter((c) => !c.hidden).map((c) => (c.classList.contains('bz-strip__hide') ? 'hide' : c.textContent.trim()));
+        const right = [...document.querySelectorAll('.bz-strip__right > *')].filter((c) => !c.hidden && !(c.classList.contains('bz-strip__account') && !c.textContent.trim())).map((c) => (c.classList.contains('bz-strip__hide') ? 'hide' : c.textContent.trim()));
         const css = getComputedStyle(window.__sculpt.publishWindow.chip);
         return { right, bg: css.backgroundColor, color: css.color };
       });

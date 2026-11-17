@@ -6994,6 +6994,11 @@ progress {
    scale; orange only for the one main action, the page one is on and focus.
    ========================================================================== */
 
+/* A page with no title strip (the passkey check): its scroller starts at the top. */
+html.is-page :is(#app, #admin).page-scroll.page-scroll--bare {
+  top: 0;
+}
+
 /* --- the column --- */
 .page {
   max-width: 1080px;

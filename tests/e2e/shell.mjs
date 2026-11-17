@@ -465,12 +465,12 @@ export const suites = {
 
     // Publish is not in the strip in Sculpt, signed in or not.
     const chip = () => shown(page, '.publish-window__chip');
-    await page.evaluate(() => window.__sculpt.publishWindow.setAvailable(true));
+    await page.evaluate(() => void window.__sculpt.publishWindow.setAvailable(true));
     t.ok(!(await chip()), 'Sculpt: no Publish button in the strip, even signed in');
     await openMenu(page, 'File');
     t.ok(await pick(page, 'Publish…'), 'File has Publish…');
     t.ok(await page.evaluate(() => window.__sculpt.publishWindow.isOpen()), 'and File > Publish… opens the window in Sculpt');
-    await page.evaluate(() => window.__sculpt.publishWindow.close());
+    await page.evaluate(() => void window.__sculpt.publishWindow.close());
 
     // --- Present: pressing the step ------------------------------------------
     await step('present');
