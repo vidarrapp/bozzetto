@@ -345,11 +345,10 @@ export const suites = {
 
     // Sculpt mode shows its paint whatever a look says.
     await openForInput(page, base);
-    await page.keyboard.press('0'); // the Paint brush, whose colour the fill uses
+    // Paint is the Paint workspace's now: a fill layer of red on the sphere is the paint Sculpt shows.
     await page.evaluate(() => {
-      const { input } = window.__sculpt;
-      input.setPaintColor('#ff0000');
-      input.fillPaint();
+      const { session } = window.__sculpt;
+      session.paint.addFill(session.getMesh(), [1, 0, 0]);
     });
     await page.waitForTimeout(300);
     t.ok(reddish(await middle(page)), 'in Sculpt, a sphere filled with red paint renders red');
@@ -371,10 +370,10 @@ export const suites = {
   // release off it puts the colour back; and the drag opens no popover.
   async swatchPick(page, base, t) {
     await openForInput(page, base);
-    t.ok(await openPanel(page, 'Render'), 'Sculpt: the Render panel opens');
+    t.ok(await openPanel(page, 'Render'), "Sculpt: Present's Lighting tab opens");
     const sphere = await viewMiddle(page);
     // The key light, picked off the sphere it lights.
-    const keyAt = await swatchOf(page, 'Render', 'Colour', '.light');
+    const keyAt = await swatchOf(page, 'Lighting', 'Colour', '.light');
     const keyBefore = (await keyLight(page)).color;
     let drag = await pickDrag(page, keyAt, sphere.at, keyColourNot, keyBefore);
     t.ok(drag.sampling, "dragging the key light's swatch out starts a pick, with its stand-in cursor");
@@ -400,6 +399,7 @@ export const suites = {
     t.eq((await keyLight(page)).color, keyNow, 'a release over the panel cancels: the key light is as it was');
 
     // The background, a solid colour, picked off the sphere.
+    t.ok(await openPanel(page, 'Render tab'), "Present's Render tab opens");
     await page.evaluate(() => {
       const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Background').querySelector('select');
@@ -415,9 +415,12 @@ export const suites = {
     const bg = await page.evaluate(() => window.__bozzetto.environment.getState().bgColor);
     t.ok(near(bg, lit.hex) && /^#[0-9a-f]{6}$/.test(bg), `and keeps it on the release (${bg})`);
 
-    // The paint brush's swatch, on the same implementation.
-    await page.keyboard.press('0');
-    t.ok(await openPanel(page, 'Tool'), 'the Tool panel opens on the Paint brush');
+    // The paint brush's swatch, on the same implementation: in the Paint workspace's Tool panel.
+    await page.evaluate(() => window.__sculpt.present.leave());
+    await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 10_000 });
+    await page.keyboard.press('Shift+B');
+    await page.waitForFunction(() => document.body.classList.contains('paint-ws'), null, { timeout: 10_000 });
+    t.ok(await openPanel(page, 'Tool'), 'the Tool panel opens on the Paint brush in the Paint workspace');
     const paintAt = await swatchOf(page, 'Tool', 'Colour');
     const paintBefore = await page.evaluate(() => window.__sculpt.input.getPaintColor());
     const shown = await viewMiddle(page);
@@ -434,15 +437,7 @@ export const suites = {
     const paint = await page.evaluate(() => window.__sculpt.input.getPaintColor());
     t.ok(near(paint, shown.hex), `the paint swatch picks the same way (${paint}, frame ${shown.hex})`);
 
-    // Armature: the key light off the figure.
-    await openArmature(page, base);
-    await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
-    t.ok(await openPanel(page, 'Render'), 'Armature: the Render panel opens');
-    const fig = await viewMiddle(page);
-    const armKeyAt = await swatchOf(page, 'Render', 'Colour', '.light');
-    drag = await pickDrag(page, armKeyAt, fig.at, keyColourNot, (await keyLight(page)).color);
-    const armKey = (await keyLight(page)).color;
-    t.ok(drag.sampling && near(armKey, fig.hex), `the key light takes the colour under the pointer (${armKey}, frame ${fig.hex})`);
+    // Armature has no look panels (no light or background swatch to drag), so its part of this check is gone.
 
     // Create's preview, whose Render panel is the owner's editor's.
     await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
@@ -477,14 +472,15 @@ export const suites = {
   async pickerSize(page, base, t) {
     await page.setViewportSize({ width: 744, height: 1133 });
     await openForInput(page, base);
-    t.ok(await openPanel(page, 'Render'), 'the Render panel opens on a 744 x 1133 view');
-    const keyAt = await swatchOf(page, 'Render', 'Colour', '.light');
+    t.ok(await openPanel(page, 'Render'), "Present's Lighting tab opens on a 744 x 1133 view");
+    const keyAt = await swatchOf(page, 'Lighting', 'Colour', '.light');
     await page.mouse.click(...keyAt);
     const m = await page.evaluate(() => {
       const pop = [...document.querySelectorAll('.cpick__pop')].find((p) => !p.hidden);
-      const panel = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
+      const panel = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Lighting');
       const r = (el) => el.getBoundingClientRect();
       return {
+        panelLeft: panel.classList.contains('panel--left'),
         pop: r(pop).toJSON(),
         field: r(pop.querySelector('.cpick__field')).toJSON(),
         hue: r(pop.querySelector('.cpick__hue')).toJSON(),
@@ -496,8 +492,8 @@ export const suites = {
     t.ok(m.field.height >= 216 && m.field.width >= 290, `the saturation/value field is twice its 110 px: ${Math.round(m.field.width)} x ${Math.round(m.field.height)}`);
     t.ok(m.hue.width >= 27 && Math.abs(m.hue.height - m.field.height) < 1, `the hue strip twice its 14 px, as tall as the field (${Math.round(m.hue.width)} x ${Math.round(m.hue.height)})`);
     t.ok(
-      m.pop.left >= 0 && m.pop.right <= m.panel.left - 4 && m.pop.bottom <= 1133,
-      `it opens beside the open panel, on the screen (${Math.round(m.pop.left)}..${Math.round(m.pop.right)}, panel from ${Math.round(m.panel.left)})`,
+      m.pop.left >= 0 && m.pop.right <= 744 && m.pop.bottom <= 1133 && (m.panelLeft ? m.pop.left >= m.panel.right + 4 : m.pop.right <= m.panel.left - 4),
+      `it opens beside the open panel, on the screen (${Math.round(m.pop.left)}..${Math.round(m.pop.right)}, panel ${Math.round(m.panel.left)}..${Math.round(m.panel.right)}, ${m.panelLeft ? 'left' : 'right'} side)`,
     );
     t.ok(m.labels.join(',') === 'S,V' && m.ranges.join(',') === '100,100', `no H row: S and V only (${m.labels}, ${m.ranges})`);
 

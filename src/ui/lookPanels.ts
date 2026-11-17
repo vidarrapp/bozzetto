@@ -733,6 +733,8 @@ class RenderPanel extends LookPanel {
       // Cavity has no enable flag of its own; zero strength is "off".
       this.viewer.setSculptAO({ strength: 0 });
       show(mode);
+      // The Material tab's Cavity switch reads this too: it goes off with it.
+      window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
     };
 
     const options: [string, string][] = [['off', 'Off']];
