@@ -177,7 +177,7 @@ export const PANELS: Topic[] = [
       ),
       p('Each picture is made at most 2048 pixels on its long side and saved as a JPEG, so a photo from the camera is much smaller on the device, and its place and time (EXIF) are removed. The panel shows the pictures as a grid, newest first.'),
       h('Putting a picture in the view'),
-      p('**Drag a thumbnail into the view.** The picture follows your finger, the Pencil or the mouse and lands where you let go, at a size you can change. On a phone, press and hold the thumbnail a moment, then drag up out of the sheet; a quick sideways drag works too, and dragging up or down on its own scrolls the panel. **More**, **Place in view** does the same without dragging. A thumbnail with the grey fill is in the view. Several pictures can be in the view at once.'),
+      p('**Drag a thumbnail into the view.** The picture follows your finger, the Pencil or the mouse and lands where you let go, at a size you can change. With a finger, press and hold the thumbnail a moment before dragging (a quick sideways drag works too); dragging up or down on its own scrolls the panel. **More**, **Place in view** does the same without dragging. A thumbnail with the grey fill is in the view. Several pictures can be in the view at once.'),
       h('Arranging'),
       p('Putting a picture in the view turns **Arrange** on. Each picture then has a thin outline, corner marks and a row of buttons at its top edge. Drag the picture to move it, pinch or use the wheel to scale it, and drag a corner to resize it. The Pencil, a finger and the mouse all work.'),
       options(

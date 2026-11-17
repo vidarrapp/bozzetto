@@ -412,8 +412,7 @@ Tool and before Render.
   where it is let go at a default size, and Arrange turns on. A mouse or the
   Pencil starts the drag on a move of 6px; a finger starts it after a hold of
   350ms or a clear sideways move (14px, mostly across), because the panel
-  scrolls up and down under a finger; on the phone the sheet closes after the
-  drop so the picture shows. Delete asks first, in a window whose button is
+  scrolls up and down under a finger. Delete asks first, in a window whose button is
   red; the app's Undo is the stroke history and does not hold pictures.
 - **One kind of picture in the view.** A reference in the view is a floating
   picture with a place, a size, an opacity, a blend mode, mirror and

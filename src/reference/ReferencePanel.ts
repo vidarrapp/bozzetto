@@ -1,6 +1,5 @@
 import { SidePanel } from '../sculpt/ui/SidePanel';
 import { div } from '../ui/dom';
-import { setPanel } from '../sculpt/ui/panelMemory';
 import { rowMenu } from '../ui/rowMenu';
 import { askWindow } from '../ui/askWindow';
 import { mayStore } from '../ui/deviceStorage';
@@ -246,10 +245,7 @@ export class ReferencePanel extends SidePanel {
       const pid = down.pid;
       down = null;
       if (thumb.hasPointerCapture(pid)) thumb.releasePointerCapture(pid);
-      if (was && drop && this.placer?.(id, x, y) && window.matchMedia('(max-width: 599px)').matches) {
-        // On a phone the sheet covers the view: close it so the picture and its buttons show.
-        setPanel('reference', false);
-      }
+      if (was && drop) this.placer?.(id, x, y);
     };
     thumb.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;

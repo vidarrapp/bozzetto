@@ -102,7 +102,7 @@ export const suites = {
   async menuShape(page, base, t) {
     await openSculpt(page, base);
     const sculptFile = 'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
-    const sculptView = 'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Material panel|Tool panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present';
+    const sculptView = 'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Material panel|Tool panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present';
     const sculpt = await readMenus(page, 'Sculpt');
     checkShape(t, 'Sculpt', sculpt, { names: 'File,Edit,View,Help', file: sculptFile, view: sculptView });
     const ws = (menus) => Object.fromEntries(menus.View.filter((r) => ['Armature', 'Sculpt', 'Present'].includes(r.label)).map((r) => [r.label, r.disabled]));
@@ -119,8 +119,8 @@ export const suites = {
     checkShape(t, 'Armature', armature, {
       names: 'File,Edit,View,Help',
       file: 'New armature|Open…|Open recent|Rename…|Save file|Load model…|Send to Sculpt|Close',
-      view: 'Frame all|Wireframe|Shadows|Armature panel|Material panel|Render panel|Hide interface|Armature|Sculpt|Present',
-      edit: 'Undo|Redo|Preferences…',
+      view: 'Frame all|Wireframe|Shadows|References|Arrange references|Armature panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present',
+      edit: 'Undo|Redo|Paste picture|Preferences…',
     });
     const a = armature.View.filter((r) => ['Armature', 'Sculpt', 'Present'].includes(r.label));
     t.ok(a[0].disabled && !a[1].disabled && a[2].disabled && a[2].hint.length > 0, `Armature: Armature is where you are, Sculpt goes, Present is greyed out with its reason ("${a[2].hint}")`);

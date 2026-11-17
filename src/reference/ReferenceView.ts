@@ -119,7 +119,9 @@ export class ReferenceView {
     this.chrome = document.createElement('div');
     this.chrome.className = 'ref-chrome';
     this.chrome.hidden = true;
-    host.append(this.layer, this.chrome);
+    host.append(this.layer);
+    // The chrome stands outside the viewer's own container, whose pointer handling would take a press first; it is kept over the view's box.
+    document.body.appendChild(this.chrome);
     this.look = new LookPopup(board, () => this.lookFor);
     board.bindCamera(
       () => this.cameraNow(),
@@ -243,8 +245,11 @@ export class ReferenceView {
     if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return false;
     // Not over an open panel, even where its box has no element (a gap between its rows).
     for (const panel of document.querySelectorAll('.panel:not(.panel--collapsed)')) {
-      const pr = panel.getBoundingClientRect();
-      if (clientX >= pr.left && clientX <= pr.right && clientY >= pr.top && clientY <= pr.bottom) return false;
+      // A panel's root may be no box of its own: its tab and body are what cover the view.
+      for (const part of [panel, ...Array.from(panel.children)]) {
+        const pr = part.getBoundingClientRect();
+        if (clientX >= pr.left && clientX <= pr.right && clientY >= pr.top && clientY <= pr.bottom) return false;
+      }
     }
     const e = document.elementFromPoint(clientX, clientY);
     return !e || !e.closest('.panel, .file-menu, .float-window, .sculpt-toolbar, .bz-edge, .bz-strip');
@@ -349,6 +354,8 @@ export class ReferenceView {
 
   /** Positions only (a drag, a resize of the view): no decoding, no rebuilding. */
   private layout(): void {
+    const cr = this.viewer.captureCanvas.getBoundingClientRect();
+    Object.assign(this.chrome.style, { left: `${cr.left}px`, top: `${cr.top}px`, width: `${cr.width}px`, height: `${cr.height}px` });
     const items = this.visibleItems();
     const v = this.viewRect();
     for (const item of items) {

@@ -1957,9 +1957,8 @@ body.presenting .ref-chrome {
 /* What arranging draws: an outline, corner marks and a row of buttons per picture. Only the frames take a
    pointer; the model around them is worked as always. Tab hides it with the interface. */
 .ref-chrome {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
+  position: fixed;
+  z-index: 13;
   overflow: hidden;
   pointer-events: none;
 }
