@@ -299,6 +299,9 @@ big logotype and tagline in the page).
 - **File:** New sculpt, New armature, Import OBJ…. What the gallery's
   Create card offers, with the same question about saving on this device
   that Import OBJ asks.
+  The Create window lists New Sculpt (the one recommended, lime choice),
+  New Armature and Import OBJ; Create timelapse is added for the owner only
+  (timelapses are not offered to users, PRODUCT.md).
 - **Go:** Gallery, Community (with accounts), My projects (signed in, not
   suspended), Review with what waits in its name (owner and moderators),
   Owner tools (the owner). Each only for whoever may see it today; the page
@@ -426,6 +429,27 @@ Tool and before Render.
 - Where it does not fit (under about 620px wide) it scrolls sideways and
   keeps the active tool in view.
 - On devices with a home indicator it sits above the safe area.
+- **Calipers** (hotkey C) is the last button, after Transform. It is not
+  a brush: it measures between two points on the model and edits
+  nothing. Its icon is the Uicons ruler until a drawn calipers glyph is
+  dropped in as `icons/calipers.svg` in the tool bar's icon folder. In
+  a scene without real units its Tool panel says "Set the scene's scale
+  first" with a Set scale button.
+- **Calipers on the view.** A line with an end dot at each point, drawn
+  over the model with a dark halo so it reads on pale clay and on the
+  dark ground; the length in centimetres to one decimal in a small
+  label at the middle, in the mono face on a raised grey box, kept
+  inside the view. The one being made carries a Pin button in its
+  label. Orange appears only on the end held by the pen or a finger. A
+  pinned measurement is a lighter grey, a mirror is dashed. All of it is
+  interface: Tab and Present hide it. It never takes the Pencil away from
+  the model, and two fingers still navigate.
+- **Measure section** (Model panel, after Poly groups): the pinned
+  measurements of the selected object, a row each with its name (tap to
+  rename), its length in the mono face, a mirror toggle, the eye and the
+  trash. A mirrored one shows a line under it with the other length and
+  the difference. A delete is not a sculpt undo step; the section
+  offers Undo for the last one deleted.
 
 ### Edge controls
 
@@ -575,3 +599,16 @@ reuse it with one more control a row (a blend mode select).
 - Saved per object in the scene (`SavedMesh.layers`, version 1: name,
   weight, visible, and the sparse displacements of the highest level), in the
   autosave, `.bozz` files and the library.
+## Clarity rules (design critique, 2026-11)
+
+- The edge sliders' names (Size, Strength) show only while the slider is
+  pressed or hovered: Familjen Grotesk 11px, secondary grey, beside the
+  value, no box. The edge buttons (Solo, Negative, Undo, Redo) name
+  themselves on hover and on a long press, as the tool bar's do.
+- Esc closes the hotkey guide first; it scrolls inside, chips never wrap and
+  descriptions align left in one column.
+- Martian Mono capitals are for values and small section headers only;
+  buttons, chips and badges are Familjen Grotesk in sentence case.
+- Panel labels carry no hotkeys; the key is in the tooltip and the View menu.
+- The Render panel's Preset names the lights as they are: Three-point (all
+  three on), Key only (Sculpt's opening look), Raking key, or Custom.

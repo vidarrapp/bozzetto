@@ -148,6 +148,17 @@ export const PRESETS: LightingPreset[] = [
     ambient: { intensity: 0.35, sky: '#c4d4ff', ground: '#4a3b2f' },
   },
   {
+    // What Sculpt opens with (one light, plan 7.5): the three-point key and
+    // ambient with the fill and the rim off. Named so, the Preset select
+    // does not claim a rig the scene is not lit by.
+    id: 'key_only',
+    label: 'Key only',
+    key: { enabled: true, intensity: 3.0, color: '#fff3e6', azimuth: 35, elevation: 38, castShadow: true, softness: 5 },
+    fill: { enabled: false, intensity: 1.1, color: '#e6f0ff', azimuth: -55, elevation: 12, castShadow: true, softness: 9 },
+    rim: { enabled: false, intensity: 2.4, color: '#ffffff', azimuth: 160, elevation: 50, castShadow: true, softness: 6 },
+    ambient: { intensity: 0.35, sky: '#c4d4ff', ground: '#4a3b2f' },
+  },
+  {
     id: 'raking_key',
     label: 'Raking key (form study)',
     key: { enabled: true, intensity: 4.2, color: '#ffffff', azimuth: 70, elevation: 8, castShadow: true, softness: 3 },
@@ -223,6 +234,32 @@ export class Lighting {
 
   presets(): { id: string; label: string }[] {
     return PRESETS.map((p) => ({ id: p.id, label: p.label }));
+  }
+
+  /**
+   * The preset the lights are set to now, or null when they match none (a
+   * slider moved, a light switched). Compared on what lights the scene:
+   * each light's switch, intensity, colour and angles, and the ambient.
+   * Shadow settings are the person's own and do not count.
+   */
+  activePreset(): string | null {
+    const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-3;
+    const same = (a: DirLightConfig, b: DirLightConfig): boolean =>
+      a.enabled === b.enabled &&
+      (!a.enabled ||
+        (near(a.intensity, b.intensity) &&
+          a.color.toLowerCase() === b.color.toLowerCase() &&
+          near(a.azimuth, b.azimuth) &&
+          near(a.elevation, b.elevation)));
+    for (const p of PRESETS) {
+      if (!same(this.config.key, p.key) || !same(this.config.fill, p.fill) || !same(this.config.rim, p.rim)) continue;
+      const hemi = this.hemi;
+      if (!near(hemi.intensity, p.ambient.intensity)) continue;
+      if (`#${hemi.color.getHexString()}` !== p.ambient.sky.toLowerCase()) continue;
+      if (`#${hemi.groundColor.getHexString()}` !== p.ambient.ground.toLowerCase()) continue;
+      return p.id;
+    }
+    return null;
   }
 
   applyPreset(id: string): void {

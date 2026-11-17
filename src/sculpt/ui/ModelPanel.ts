@@ -25,6 +25,7 @@ import { statusToast } from './statusToast';
 import { askFlatten, withLayersFlattened } from './layerGate';
 import { showWhileHeld, VoxelOverlay } from './VoxelOverlay';
 import { formatSceneLength } from '../../viewer/units';
+import { lengthText, type Measure } from '../bridge/measure';
 import { voxelGrid } from '../bridge/remeshBudget';
 import {
   defaultQuadTarget,
@@ -142,6 +143,7 @@ export class ModelPanel extends SidePanel {
     this.buildQuadRemesh(this.body);
     this.buildMask(this.body);
     this.buildGroups(this.body);
+    this.buildMeasure(this.body);
     this.refreshTopology();
     this.refreshHeading();
   }
@@ -543,6 +545,128 @@ export class ModelPanel extends SidePanel {
     this.refreshGroups();
   }
 
+  // --- Measure: the pinned calipers measurements ---------------------------
+
+  private measureList?: HTMLDivElement;
+  private measureUnsub: (() => void) | null = null;
+  /** The measurement whose name is being typed, so a refresh mid-edit leaves the field be. */
+  private renamingMeasure: Measure | null = null;
+  /** Set scale, for a scene without real units (mode.ts opens the banner). */
+  onSetScale: (() => void) | null = null;
+
+  private buildMeasure(body: HTMLElement): void {
+    const sec = section(body, 'Measure');
+    sec.dataset.role = 'measure';
+    this.measureList = div('groups-list measure-list');
+    this.measureList.dataset.role = 'measure-list';
+    sec.appendChild(this.measureList);
+    this.measureUnsub = this.session.measure.subscribe(() => this.refreshMeasures());
+    this.refreshMeasures();
+  }
+
+  /** Redraw the Measure list for the active object (a pin, a rename, another object, symmetry). */
+  refreshMeasures(): void {
+    const list = this.measureList;
+    if (!list) return;
+    if (this.renamingMeasure && list.contains(document.activeElement)) return;
+    this.renamingMeasure = null;
+    list.replaceChildren();
+    const store = this.session.measure;
+    if (!this.session.getUnits()) {
+      const msg = div('sculpt-panel__hint');
+      msg.dataset.role = 'measure-needs-scale';
+      msg.textContent = "Set the scene's scale first";
+      const row = div('sculpt-panel__row');
+      row.appendChild(this.tapButton('Set scale', () => this.onSetScale?.()));
+      list.append(msg, row);
+      return;
+    }
+    const mesh = this.session.getMesh();
+    const items = store.list(mesh);
+    if (!items.length) {
+      const none = div('sculpt-panel__hint muted');
+      none.textContent = 'Nothing pinned on this object. Measure with the Calipers tool (C) and pin it.';
+      list.appendChild(none);
+    }
+    for (const m of items) {
+      const row = div('groups-row measure-row');
+      row.dataset.measure = String(m.id);
+      if (!m.visible) row.classList.add('groups-row--hidden');
+      const name = document.createElement('button');
+      name.type = 'button';
+      name.className = 'groups-row__name';
+      name.textContent = m.name;
+      name.title = `${m.name} (tap to rename)`;
+      name.dataset.role = 'measure-name';
+      onTap(name, () => this.renameMeasure(m, name));
+      const len = store.length(mesh!, m);
+      const value = document.createElement('span');
+      value.className = 'measure-row__len';
+      value.dataset.role = 'measure-length';
+      value.textContent = len === null ? '' : lengthText(len);
+      const flip = this.groupIcon('fi-ss-flip-horizontal', m.mirror ? 'Remove the mirror' : 'Mirror across the symmetry plane', () => {
+        if (m.mirror) store.removeMirror(m);
+        else store.addMirror(mesh!, m);
+      });
+      flip.dataset.role = 'measure-mirror';
+      flip.disabled = !m.mirror && !this.session.getSymmetry();
+      if (m.mirror) flip.classList.add('outliner__icon--on');
+      const eye = this.groupIcon(m.visible ? 'fi-ss-eye' : 'fi-ss-eye-crossed', m.visible ? 'Hide' : 'Show', () => store.setVisible(m, !m.visible));
+      eye.dataset.role = 'measure-eye';
+      const del = this.groupIcon('fi-ss-trash', 'Delete the measurement', () => store.remove(mesh!, m));
+      del.dataset.role = 'measure-delete';
+      row.append(name, value, flip, eye, del);
+      list.appendChild(row);
+      const other = m.mirror ? store.mirrorLength(mesh!, m) : null;
+      if (len !== null && other !== null) {
+        const pair = div('sculpt-panel__hint measure-pair');
+        pair.dataset.role = 'measure-pair';
+        pair.textContent = `Mirror ${lengthText(other)}, difference ${lengthText(Math.abs(len - other))}`;
+        list.appendChild(pair);
+      }
+    }
+    // Deleting a pinned measurement is not a sculpt undo step (the scene's
+    // history carries meshes only); the one deleted last can be brought back here.
+    const gone = store.lastDeleted;
+    if (gone && gone.mesh === mesh) {
+      const row = div('sculpt-panel__row measure-undo');
+      const text = div('sculpt-panel__hint muted');
+      text.textContent = `Deleted ${gone.measure.name}.`;
+      const undo = this.tapButton('Undo', () => store.restoreDeleted());
+      undo.dataset.role = 'measure-undo';
+      row.append(text, undo);
+      list.appendChild(row);
+    }
+  }
+
+  /** The name swapped for a field; Enter or leaving it renames, Escape keeps the name. */
+  private renameMeasure(m: Measure, nameEl: HTMLElement): void {
+    this.renamingMeasure = m;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'groups-row__rename';
+    input.dataset.role = 'measure-rename';
+    input.value = m.name;
+    input.maxLength = 200;
+    let done = false;
+    const finish = (commit: boolean): void => {
+      if (done) return;
+      done = true;
+      this.renamingMeasure = null;
+      if (commit) this.session.measure.rename(m, input.value);
+      this.refreshMeasures();
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // typing is not a hotkey
+      if (e.key === 'Enter') finish(true);
+      else if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', () => finish(true));
+    nameEl.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
   /** Make one group (Visible), saying which, or `none` when it made nothing. */
   private groupOne(run: (mesh: SculptMesh) => number, none: string): void {
     const mesh = this.session.getMesh();
@@ -900,6 +1024,7 @@ export class ModelPanel extends SidePanel {
     this.groupPickers = [];
     this.voxelOverlay?.dispose();
     this.voxelOverlay = null;
+    this.measureUnsub?.();
     super.dispose();
   }
 }

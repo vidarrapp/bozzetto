@@ -91,6 +91,8 @@ export const PANELS: Topic[] = [
         '**Ctrl + click** masks the group under the pointer. Add **Alt** to unmask it.',
         'Groups also come from an imported OBJ\'s `g` and `o` lines, and both OBJ exports write them back.',
       ),
+      h('Measure'),
+      p('The measurements you pinned with the Calipers tool on the selected object. Each row has its name, which you tap to rename, its length, a mirror button, the eye, and the trash. A measurement that has a mirror shows the other length and the difference under it. The eye hides one from the view. Deleting is not a sculpt undo step, so the section offers **Undo** for the last one you deleted. Pinned measurements are saved with the scene, in the library too, and they are drawn whenever their object is shown and the interface is.'),
     ],
   },
   {
@@ -156,7 +158,7 @@ export const PANELS: Topic[] = [
         ['Colour', 'While you present a sculpt, or over a published model with painted colours, **Sculpt colours** keeps the paint and **Plain colour** covers the object in its albedo.'],
         ['Albedo, Roughness, Metalness', 'In Present for a published project, in Lit (PBR), the model\'s own values (with Plain colour, if it has painted colours).'],
         ['Smooth shading', 'On by default. Off, the surface shows its flat facets.'],
-        ['Wireframe', 'Draws the triangle edges over the model. The label shows its hotkey, **Shift + W** by default.'],
+        ['Wireframe', 'Draws the triangle edges over the model. Its hotkey, **Shift + W** by default, is in the **View** menu and in the tooltip.'],
         ['Wire opacity', 'From 0 to 1.'],
       ),
     ],
@@ -198,7 +200,7 @@ export const PANELS: Topic[] = [
       h('Lighting'),
       options(
         ['Reset look', 'Puts the look back to the one the scene or project opened with. In the viewer that is the published look. The view stays where it is.'],
-        ['Preset', '**Three-point** or **Raking key (form study)**, a low light that shows the form.'],
+        ['Preset', '**Three-point**, **Key only** (what Sculpt opens with: the fill and the rim off) or **Raking key (form study)**, a low light that shows the form. It reads **Custom** once you change a light.'],
         ['Shadows', 'Turns every shadow on or off. Default hotkey **Shift+S**.'],
         ['Key, Fill, Rim / Back', 'The three lights. Each has a checkbox, which opens more rows, below.'],
         ['Intensity', 'From 0 to 5. Type a larger number to go past it.'],

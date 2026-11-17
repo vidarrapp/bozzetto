@@ -10,6 +10,7 @@ import type { BrushSymmetry } from './symmetry';
 import { sanitizeSource } from './objSource';
 import { sanitizeGroups } from './groupsRecord';
 import { sanitizeLayers } from './layersRecord';
+import { sanitizeMeasures } from './measure';
 import { MAX_REFERENCES, type FileReference, type FileReferences } from '../../reference/board';
 
 /**
@@ -187,6 +188,7 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
     source,
     groups,
     layers,
+    measures: sanitizeMeasures(m.measures),
   });
 }
 

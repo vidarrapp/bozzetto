@@ -46,6 +46,7 @@ import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
 import type { SavedLevel, SavedMesh, SavedScene } from './ScenePersist';
 import { SymmetryStore, type SymmetryAxis } from './symmetry';
+import { Measurements } from './measure';
 import { perfLog } from '../../viewer/perfLog';
 import { boxOfPositions, checkRemesh, REMESH_LIMITS } from './remeshBudget';
 import { PointGrid } from './quadMesh';
@@ -331,6 +332,11 @@ export class SculptSession {
   readonly groups: PolyGroups;
   /** Every object's sculpt layers (layers.ts). */
   readonly layers: SculptLayers = new SculptLayers(this);
+  /** The calipers' measurements, pinned and under way (measure.ts). Never in the sculpt history. */
+  readonly measure = new Measurements(
+    () => this.meshes,
+    (mesh) => ({ origin: mesh.getSymmetryOrigin(), normal: mesh.getSymmetryNormal() }),
+  );
   private readonly sculptManager: SculptManager;
   private readonly picking: Picking;
   private readonly pickingSym: Picking;
@@ -1014,6 +1020,7 @@ export class SculptSession {
     const flat = this.layers.flattenForOp([mesh]);
     this.markStale([mesh], newMesh);
     this.groups.transferNearest([mesh], newMesh);
+    this.measure.transfer(mesh, newMesh);
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
@@ -1127,6 +1134,7 @@ export class SculptSession {
     const newMesh = new Multimesh(base) as unknown as SculptMesh;
     this.markStale([mesh], newMesh);
     this.groups.transferNearest([mesh], newMesh);
+    this.measure.transfer(mesh, newMesh);
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     if (!mesh.isVisible()) newMesh.setVisible(false);
@@ -2087,6 +2095,7 @@ export class SculptSession {
       : (new Multimesh(this.convertToStaticMesh(mesh)) as unknown as SculptMesh);
     this.markStale([mesh], newMesh);
     this.groups.carryTopology(mesh, newMesh);
+    this.measure.transfer(mesh, newMesh);
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
@@ -2211,13 +2220,29 @@ export class SculptSession {
    * position in device px (as _mouseX/_mouseY), or null off the model.
    */
   surfacePointAt(mouseX: number, mouseY: number): [number, number, number] | null {
+    return this.surfaceHitAt(mouseX, mouseY)?.world ?? null;
+  }
+
+  /**
+   * The same pick with the object it landed on and the point in that
+   * object's local space (what a calipers point is kept in).
+   */
+  surfaceHitAt(
+    mouseX: number,
+    mouseY: number,
+  ): { mesh: SculptMesh; world: [number, number, number]; local: [number, number, number] } | null {
     const probe = (this.probe ??= new Picking(this));
     if (!probe.intersectionMouseMeshes(this.meshes, mouseX, mouseY)) return null;
     const mesh = probe.getMesh();
     if (!mesh) return null;
+    const local = probe.getIntersectionPoint();
     const out = vec3.create();
-    vec3.transformMat4(out, probe.getIntersectionPoint() as unknown as vec3, mesh.getMatrix());
-    return [out[0], out[1], out[2]];
+    vec3.transformMat4(out, local as unknown as vec3, mesh.getMatrix());
+    return {
+      mesh,
+      world: [out[0], out[1], out[2]],
+      local: [local[0], local[1], local[2]],
+    };
   }
 
   // --- reload persistence (bridge feature, see ScenePersist) --------------
@@ -2301,6 +2326,8 @@ export class SculptSession {
       ...(this.groups.hasGroups(mesh) ? { groups: this.groups.serialize(mesh) } : {}),
       // The sculpt layers, where the object has any (layers.ts); the levels' vertices carry their effect already.
       ...(this.layers.has(mesh) ? { layers: this.layers.serialize(mesh) } : {}),
+      // The pinned calipers measurements, in the object's own space.
+      ...(this.measure.serialize(mesh) ? { measures: this.measure.serialize(mesh) } : {}),
     };
   }
 
@@ -2312,6 +2339,7 @@ export class SculptSession {
    */
   restoreScene(saved: SavedScene): Multimesh {
     this.sceneEpoch++;
+    this.measure.reset();
     const built: Multimesh[] = [];
     for (const savedMesh of saved.meshes) {
       const mesh = this.buildRestoredMesh(savedMesh);
@@ -2461,6 +2489,7 @@ export class SculptSession {
    */
   newScene(): Multimesh {
     this.setSolo(false); // a new scene is not the one that was soloed
+    this.measure.reset();
     this.meshes.length = 0;
     this.selectMeshes.length = 0;
     this.mesh = null;
@@ -2547,6 +2576,7 @@ export class SculptSession {
     if (saved.layers && !reflected) {
       this.layers.restore(mesh as unknown as SculptMesh, saved.layers, saved.levels[saved.levels.length - 1].nbVertices);
     }
+    if (saved.measures) this.measure.restore(mesh as unknown as SculptMesh, saved.measures);
     // The file's numbering comes back with the object. A reflection baked
     // into the vertices (a mirror copy) is not the file's level 0 any more.
     if (source && !reflected && source.base.length === mesh._meshes[0].getNbVertices() * 3) {
