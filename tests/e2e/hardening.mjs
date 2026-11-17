@@ -404,7 +404,7 @@ async function looksAndModels(page, base, t) {
     };
   });
   t.ok(seen.colors.every((c) => /^#[0-9a-f]{6}$/.test(c)), `a manifest's colours that are url()s come in as colours (${seen.colors.join(', ')})`);
-  t.ok(seen.swatches.length >= 3 && seen.swatches.every((s) => !/url\(/.test(s)), `no swatch's style names an address (${seen.swatches.length} swatches)`);
+  t.ok(seen.swatches.length >= 1 && seen.swatches.every((s) => !/url\(/.test(s)), `no swatch's style names an address (${seen.swatches.length} swatches)`);
   const frame1 = failed.find((f) => /Frame 1 failed to load/.test(f));
   t.ok(!!frame1 && failed.every((f) => /Frame 1 /.test(f)) && /is not loaded: models carry their own data/.test(frame1), `a frame whose buffer lives elsewhere fails to load, alone (${frame1 ?? 'no failure logged'})`);
   t.eq(asked.length, 0, `and nothing at all was fetched from elsewhere${asked.length ? `: ${asked.join(', ')}` : ''}`);

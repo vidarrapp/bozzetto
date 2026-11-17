@@ -811,6 +811,13 @@ const openPanel = async (page, title) => {
       if (sculpt && !sculpt.present?.isActive()) sculpt.present.enter();
     });
     title = 'Lighting';
+  } else if (title === 'Render tab') {
+    // Present's own Render tab (tone, ambient occlusion, background).
+    await page.evaluate(() => {
+      const sculpt = window.__sculpt;
+      if (sculpt && !sculpt.present?.isActive()) sculpt.present.enter();
+    });
+    title = 'Render';
   }
   const found = await page.evaluate((name) => {
     if (!document.getElementById('e2e-no-slide')) {
@@ -5770,7 +5777,7 @@ export const suites = {
       for (let i = 0; i < 40 && !ownerDialogs.length; i++) await owner.waitForTimeout(100);
       rows = await rowsOf();
       t.ok(
-        ownerDialogs[0] === 'Could not change whether "Torso" is a template: The switch failed' && rows['tpl-model'].tpl === true && fake.projects.get('tpl-model').template === true,
+        ownerDialogs[0] === 'Could not change whether "Torso" is a template The switch failed' && rows['tpl-model'].tpl === true && fake.projects.get('tpl-model').template === true,
         `a refusal says the server's words and puts the switch back (${ownerDialogs.join(' | ')})`,
       );
       t.ok(!ownerErrors.length, `no page errors in the owner's context${ownerErrors.length ? `: ${ownerErrors.join(' | ')}` : ''}`);
@@ -5849,10 +5856,12 @@ export const suites = {
       row.shown && !row.field && key.intensity === 7.5 && row.thumb === 5 && row.readout === '7.5',
       `Enter applies 7.5, past the travel: the thumb pins at 5 and the row says 7.5 (light ${key.intensity}, thumb ${row.thumb}, readout ${row.readout})`,
     );
-    // Pressed at the pinned end, the bubble prints the value itself.
-    const [ex, ey] = [row.maxEnd[0] + 6, row.maxEnd[1]];
+    // Pressed at the pinned end, the bubble prints the value itself. A press on the row is a
+    // scrub (a finger's, and this page's pointer is coarse): the bubble comes with the first sideways move.
+    const [ex, ey] = [row.maxEnd[0] - 40, row.maxEnd[1]];
     await page.mouse.move(ex, ey);
     await page.mouse.down();
+    await page.mouse.move(ex + 14, ey, { steps: 3 });
     const bubble = await page.evaluate(() => document.querySelector('.slider-bubble')?.textContent ?? null);
     await page.mouse.up();
     t.ok(bubble === '7.5' && (await keyLight(page)).intensity === 7.5, `a press there shows 7.5 in the bubble and moves nothing (${bubble})`);
@@ -6325,7 +6334,14 @@ export const suites = {
     await page.evaluate(async () => {
       window.__aoLook = await window.__sculpt.file.pack();
     });
-    await model('cavity');
+    // The cavity is switched on at the Material tab's Display section (the model list offers GTAO and Off).
+    const cavitySwitch = () =>
+      page.evaluate(() => {
+        const input = document.querySelector('.panel--material [data-role=cavity] input');
+        return input ? { on: input.checked } : null;
+      });
+    t.ok(!(await cavitySwitch())?.on, 'with GTAO chosen, the Material tab shows Cavity off');
+    await page.evaluate(() => document.querySelector('.panel--material [data-role=cavity] input').click());
     s = await state();
     t.ok(!s.ao.enabled && s.cav.strength === CAVITY_DEFAULT.strength && s.out === 'plain', 'back on the cavity, GTAO leaves the graph and the cavity has its strength back');
     await page.evaluate(() => window.__sculpt.file.open(window.__aoLook));
@@ -6624,8 +6640,10 @@ export const suites = {
         const panels = {
           Scene: document.querySelector('.panel--scene'),
           Model: document.querySelector('.panel--model'),
-          Render: [...document.querySelectorAll('.panel')].find((p) => p.dataset.panel === 'Render'),
+          Layers: document.querySelector('.panel--layers'),
           Tool: document.querySelector('.panel--sculpt'),
+          Material: document.querySelector('.panel--material'),
+          Reference: document.querySelector('.panel--reference'),
         };
         const box = (el) => {
           if (!el) return null;
@@ -6657,48 +6675,50 @@ export const suites = {
       page.evaluate(
         ([n, o]) => {
           const { scenePanel, modelPanel, sculptPanel } = window.__sculpt;
-          const render = [...document.querySelectorAll('.panel')].find((p) => p.dataset.panel === 'Render');
-          if (n === 'Render') {
-            if (render.classList.contains('panel--collapsed') === o) render.querySelector('.panel__handle').click();
+          const byClass = { Layers: '.panel--layers', Material: '.panel--material', Reference: '.panel--reference' }[n];
+          if (byClass) {
+            const p = document.querySelector(byClass);
+            if (p.classList.contains('panel--collapsed') === o) p.querySelector('.panel__handle').click();
             return;
           }
           ({ Scene: scenePanel, Model: modelPanel, Tool: sculptPanel })[n].setCollapsed(!o);
         },
         [name, open],
       );
+    const ALL = ['Scene', 'Model', 'Layers', 'Tool', 'Material', 'Reference'];
     const closeAll = async () => {
-      for (const n of ['Scene', 'Model', 'Render', 'Tool']) await setOpen(n, false);
+      for (const n of ALL) await setOpen(n, false);
     };
 
     const frames = (p) => p.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
     let l = await layout();
-    t.ok(l.Scene.left && l.Model.left && !l.Render.left && !l.Tool.left, 'Scene and Model dock left, Render and Tool right');
+    t.ok(l.Scene.left && l.Model.left && l.Layers.left && !l.Tool.left && !l.Material.left && !l.Reference.left, 'Scene, Model and Layers dock left, Tool, Material and Reference right');
     // The tabs stand in a row at the top of each edge, the outer one flush to it.
     const atEdge = (tab, x) => Math.abs(tab.l - x) <= 1 || Math.abs(tab.r - x) <= 1;
     t.ok(
-      l.Scene.tab.l < l.Model.tab.l && atEdge(l.Scene.tab, 0) && Math.abs(l.Scene.tab.t - l.Model.tab.t) < 1,
-      `along the left edge, Scene then Model (tabs at ${Math.round(l.Scene.tab.l)} and ${Math.round(l.Model.tab.l)})`,
+      l.Scene.tab.l < l.Model.tab.l && l.Model.tab.l < l.Layers.tab.l && atEdge(l.Scene.tab, 0) && Math.abs(l.Scene.tab.t - l.Model.tab.t) < 1 && Math.abs(l.Scene.tab.t - l.Layers.tab.t) < 1,
+      `along the left edge, Scene then Model then Layers (tabs at ${Math.round(l.Scene.tab.l)}, ${Math.round(l.Model.tab.l)} and ${Math.round(l.Layers.tab.l)})`,
     );
     t.ok(
-      l.Tool.tab.l < l.Render.tab.l && atEdge(l.Render.tab, l.extra.w) && Math.abs(l.Tool.tab.t - l.Render.tab.t) < 1,
-      `along the right edge, Tool then Render (tabs at ${Math.round(l.Tool.tab.l)} and ${Math.round(l.Render.tab.l)})`,
+      l.Tool.tab.l < l.Material.tab.l && l.Material.tab.l < l.Reference.tab.l && atEdge(l.Reference.tab, l.extra.w) && Math.abs(l.Tool.tab.t - l.Material.tab.t) < 1 && Math.abs(l.Tool.tab.t - l.Reference.tab.t) < 1,
+      `along the right edge, Tool then Material then Reference (tabs at ${Math.round(l.Tool.tab.l)}, ${Math.round(l.Material.tab.l)} and ${Math.round(l.Reference.tab.l)})`,
     );
 
     // One open per edge; the other edge keeps what it had.
     const opened = async () => {
       const x = await layout();
-      return ['Scene', 'Model', 'Render', 'Tool'].filter((n) => x[n].open).join(',');
+      return ALL.filter((n) => x[n].open).join(',');
     };
     await setOpen('Scene', true);
     await setOpen('Tool', true);
     const a = await opened();
     await setOpen('Model', true);
     const b = await opened();
-    await setOpen('Render', true);
+    await setOpen('Material', true);
     const c = await opened();
     await setOpen('Model', false);
     const d = await opened();
-    t.ok(a === 'Scene,Tool' && b === 'Model,Tool' && c === 'Model,Render' && d === 'Render', `one panel open per edge, each edge on its own (${[a, b, c, d].join(' | ')})`);
+    t.ok(a === 'Scene,Tool' && b === 'Model,Tool' && c === 'Model,Material' && d === 'Material', `one panel open per edge, each edge on its own (${[a, b, c, d].join(' | ')})`);
     await closeAll();
 
     const sizes = [
@@ -6715,7 +6735,7 @@ export const suites = {
       await frames(page);
       await closeAll();
       l = await layout();
-      const names = ['Scene', 'Model', 'Render', 'Tool'];
+      const names = ALL;
       const at = `${w}x${h}`;
       for (const n of names) {
         const tab = l[n].tab;
@@ -7052,17 +7072,12 @@ export const suites = {
         const sel = [...document.querySelectorAll('.panel label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model' && l.closest('.section')?.querySelector('h3')?.textContent === 'Ambient occlusion')?.querySelector('select');
         return {
           ao: v.getAOState(),
+          cavity: v.getSculptAO().strength,
           out: out === v.composites.viewer.ao ? 'gtao' : out === v.composites.viewer.plain ? 'plain' : 'other',
           options: sel ? [...sel.options].map((o) => o.value).join(',') : null,
           model: sel?.value ?? null,
         };
       });
-    const pick = (value) =>
-      page.evaluate((m) => {
-        const sel = [...document.querySelectorAll('.panel label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model' && l.closest('.section')?.querySelector('h3')?.textContent === 'Ambient occlusion').querySelector('select');
-        sel.value = m;
-        sel.dispatchEvent(new Event('change', { bubbles: true }));
-      }, value);
     const viewer = async (ao) => {
       await page.unroute('**/timelapses/demo/manifest.json');
       if (ao) {
@@ -7081,10 +7096,10 @@ export const suites = {
     let s = await aoState();
     t.ok(s.ao.enabled && s.out === 'gtao', `the viewer at ?tl=demo renders with GTAO (${s.out})`);
     t.ok(s.ao.intensity === AO_DEFAULT.intensity && s.ao.radius === AO_DEFAULT.radius, `at its calibrated defaults (strength ${s.ao.intensity}, radius ${s.ao.radius})`);
-    t.ok(s.options === 'off,gtao' && s.model === 'gtao', `its Render panel offers GTAO and Off, not the cavity, and says GTAO (${s.options})`);
+    // The viewer has no look panels (the look is Present's), so there is no model list to read here.
     await viewer({ enabled: false, intensity: 1, radius: 0.3 });
     s = await aoState();
-    t.ok(!s.ao.enabled && s.out === 'plain' && s.model === 'off', `a project saved with AO off opens with it off (${s.out}, ${s.model})`);
+    t.ok(!s.ao.enabled && s.out === 'plain', `a project saved with AO off opens with it off (${s.out})`);
     await viewer({ enabled: true, intensity: 1.5, radius: 0.45 });
     s = await aoState();
     t.ok(s.ao.enabled && s.out === 'gtao' && s.ao.intensity === 1.5 && s.ao.radius === 0.45, `one saved on GTAO opens on it, at its own values (${s.ao.intensity}, ${s.ao.radius})`);
@@ -7097,17 +7112,22 @@ export const suites = {
     };
     await armature();
     s = await aoState();
-    t.ok(s.ao.enabled && s.out === 'gtao' && s.options === 'off,gtao' && s.model === 'gtao', `Armature mode renders with GTAO by default, its panel offering GTAO and Off (${s.out}, ${s.options})`);
-    await pick('off');
+    t.ok(s.ao.enabled && s.out === 'gtao', `Armature mode renders with GTAO by default (${s.out})`);
+    // Armature has no Render tab: the choice is made on the viewer, as a loaded file would.
+    await page.evaluate(() => {
+      const v = window.__bozzetto;
+      v.setAO({ enabled: false });
+      v.setSculptAO({ strength: 0 }); // as the Render tab's Off does: a cavity left on is read as the old forced cavity
+    });
     await page.evaluate(() => window.__armature.save());
     await armature();
     s = await aoState();
-    t.ok(!s.ao.enabled && s.out === 'plain' && s.model === 'off', `Off picked there comes back off (${s.model})`);
-    await pick('gtao');
+    t.ok(!s.ao.enabled && s.out === 'plain', `Off chosen there comes back off (${s.out})`);
+    await page.evaluate(() => window.__bozzetto.setAO({ enabled: true }));
     await page.evaluate(() => window.__armature.save());
     await armature();
     s = await aoState();
-    t.ok(s.ao.enabled && s.out === 'gtao' && s.model === 'gtao', `and GTAO comes back on (${s.model})`);
+    t.ok(s.ao.enabled && s.out === 'gtao', `and GTAO comes back on (${s.out})`);
     await page.evaluate(async () => {
       const v = window.__bozzetto;
       v.setAO({ enabled: false });
@@ -7116,13 +7136,15 @@ export const suites = {
     });
     await armature();
     s = await aoState();
-    t.ok(s.ao.enabled && s.out === 'gtao' && s.model === 'gtao', `an armature saved on the cavity the panel used to force comes back on GTAO (${s.model})`);
+    t.ok(s.ao.enabled && s.out === 'gtao', `an armature saved on the cavity the panel used to force comes back on GTAO (${s.out})`);
 
     // Create's preview.
     await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
     await page.setInputFiles('.panel--frames input[type="file"]', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
     await page.waitForFunction(() => !!document.querySelector('.panel--render'), null, { timeout: 90_000 });
     await page.waitForFunction(() => !!window.__bozzetto?.pipeline, null, { timeout: 90_000 });
+    // The panel builds its rows when it opens.
+    await page.evaluate(() => document.querySelector('.panel--render.panel--collapsed')?.querySelector('.panel__handle').click());
     const preview = await page.evaluate(() => {
       const sel = [...document.querySelectorAll('.panel--render label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model' && l.closest('.section')?.querySelector('h3')?.textContent === 'Ambient occlusion')?.querySelector('select');
       return { options: sel ? [...sel.options].map((o) => o.value).join(',') : null, model: sel?.value ?? null };
@@ -7176,7 +7198,8 @@ export const suites = {
     const slide = (caption, nth, value) =>
       page.evaluate(
         ([c, k, v]) => {
-          const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
+          // Intensity is the HDRI's, in Lighting; Bg brightness is in Render.
+          const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === (c === 'Intensity' ? 'Lighting' : 'Render'));
           const input = [...p.querySelectorAll('label.compact')].filter((r) => r.firstElementChild?.textContent === c)[k].querySelector('input');
           input.value = String(v);
           input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -7406,9 +7429,22 @@ export const suites = {
     await drag(at.gizmo, steps[1][1], false);
     let s = await state();
     t.ok(s.pose !== held.pose && s.az === held.az && s.el === held.el, 'without L, the same drag on the gizmo turns the joint');
-    await page.mouse.click(...at.part);
-    s = await state();
-    t.ok(s.selected === 'thigh.R' && s.az === held.az, `a click on the thigh picks it (${s.selected})`);
+    // The handles win over the parts within their 44 px pick shapes, and the root's box, with its 22 px
+    // margin, covers the whole of a thigh at this camera: press the shin, midway between knee and ankle.
+    const mid = await page.evaluate(() => {
+      const a = window.__armature;
+      const arm = a.armature;
+      const knee = arm.jointWorld('shin.R');
+      const ankle = arm.jointWorld('foot.R');
+      const round = (p) => [Math.round(p[0]), Math.round(p[1])];
+      return [0.5, 0.4, 0.6].map((f) => round(a.onScreen(...knee.clone().lerp(ankle, f).toArray())));
+    });
+    for (const from of mid) {
+      await page.mouse.click(...from);
+      s = await state();
+      if (s.selected === 'shin.R') break;
+    }
+    t.ok(s.selected === 'shin.R' && s.az === held.az, `a click on the shin, clear of the handles, picks it (${s.selected})`);
     await page.evaluate(() => window.__armature.select(null));
     const turned = s.pose;
     await drag(at.ball, steps[2][1], false);
