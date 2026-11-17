@@ -2474,8 +2474,8 @@ export const suites = {
     const litLook = await ballLook();
     const stateAfterTap = await page.evaluate(() => JSON.stringify(window.__armature.state()));
     t.ok(
-      tappedBall.ball === 'hand.L' && tappedBall.part === null && tappedBall.gizmo === 'translate',
-      `a tap on an IK ball selects it, with the move gizmo (${JSON.stringify(tappedBall)})`,
+      tappedBall.ball === 'hand.L' && tappedBall.part === null && tappedBall.gizmo === '',
+      `a tap on an IK ball selects it, with no gizmo (${JSON.stringify(tappedBall)})`,
     );
     t.ok(litLook.colour !== plainLook.colour && litLook.size > plainLook.size, `and shows it selected: #${plainLook.colour} at ${plainLook.size} becomes #${litLook.colour} at ${litLook.size.toFixed(2)}`);
     t.eq(stateAfterTap, ikTap.state, 'the tap leaves the pose as it was');
