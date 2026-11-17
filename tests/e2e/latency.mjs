@@ -951,9 +951,9 @@ export const suites = {
     await settle(page);
     await stillAgain(page);
     const tier = await quality(page);
-    // The key's blur samples: at rest the high tier's 12, or more for a softer blur
-    // (Lighting.blurSamplesFor grows them with the radius, up to 32); the map its 2048.
-    t.ok(tier.level === 0 && tier.blur >= 12 && tier.blur <= 32 && tier.map === 2048 && tier.text === 'full quality', `on, at the low tier's own quality (${show(tier)})`);
+    // The key's blur samples: the low tier's 4, or more for a softer blur
+    // (Lighting.blurSamplesFor grows them with the radius, up to 12).
+    t.ok(tier.level === 0 && tier.blur >= 4 && tier.blur <= 12 && tier.map === 1024 && tier.text === 'full quality', `on, at the low tier's own quality (${show(tier)})`);
 
     // Mid-stroke a step waits; with the stroke over it lands.
     await page.evaluate(() => {
@@ -981,11 +981,7 @@ export const suites = {
       q.level === 3 && q.blur < tier.blur && q.blur === half && q.text === 'softer shadows',
       `the stroke over, the step lands: half the shadow blur samples (${tier.blur} to ${q.blur}: half of the ${want} that ${q.radius.toFixed(2)} texels of blur take; ${show(q)})`,
     );
-    // The shadow maps themselves grow to the high tier's size once the view
-    // is at rest (Lighting.setAtRest): textures, but no build of any kind.
-    const g0 = grew(c0, await counters(page));
-    delete g0.textures;
-    t.eq(show(g0), '{}', 'with nothing built (the shadow maps may grow to the rest size)');
+    t.eq(show(grew(c0, await counters(page))), '{}', 'with nothing built or allocated');
     t.eq(q.aa, 'still/0', 'and the anti-aliasing as it was');
 
     r = await page.evaluate(() => window.__judge('cpuShort', 4));
@@ -994,7 +990,7 @@ export const suites = {
     await page.evaluate(() => window.__judge('bad', 2));
     await frames(page, 3);
     q = await quality(page);
-    t.ok(q.level === 4 && q.map === 1024 && q.text === 'softer shadows · shadow maps ½', `two more and the shadow maps halve (${show(q)})`);
+    t.ok(q.level === 4 && q.map === 512 && q.text === 'softer shadows · shadow maps ½', `two more and the shadow maps halve (${show(q)})`);
     const g1 = grew(c1, await counters(page));
     t.ok(!g1.nodeBuilds && !g1.programs && !g1.pipelines, `resized, not rebuilt (${show(g1)})`);
     r = await page.evaluate(() => window.__judge('bad', 4));
@@ -1006,7 +1002,7 @@ export const suites = {
     t.eq(r.target, 3, 'the eighth steps back up');
     await frames(page, 3);
     q = await quality(page);
-    t.ok(q.level === 3 && q.map === 2048, `the maps back at full size (${show(q)})`);
+    t.ok(q.level === 3 && q.map === 1024, `the maps back at full size (${show(q)})`);
     // Straight back down from there: that level waits before another try.
     r = await page.evaluate(() => window.__judge('bad', 2));
     t.eq(r.target, 4, 'failing again at once, it steps back down');
@@ -1027,7 +1023,7 @@ export const suites = {
     await page.keyboard.press('Escape');
     await frames(page, 3);
     q = await quality(page);
-    t.ok(q.level === 0 && q.blur === tier.blur && q.map === 2048 && q.text === 'off', `off in Preferences, the tier's own quality comes back (blur ${q.blur}, as at the start; ${show(q)})`);
+    t.ok(q.level === 0 && q.blur === tier.blur && q.map === 1024 && q.text === 'off', `off in Preferences, the tier's own quality comes back (blur ${q.blur}, as at the start; ${show(q)})`);
     t.eq((await stored(page)).adaptive, 'off', 'and the choice is kept');
     await openPrefs(page);
     await prefToggle(page, 'Adaptive quality');

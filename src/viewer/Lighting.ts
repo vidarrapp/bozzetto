@@ -292,18 +292,7 @@ export class Lighting {
   private readonly hemi = new HemisphereLight();
   private readonly lights: Record<LightId, DirectionalLight>;
 
-  private readonly baseTier: ShadowTier;
-  /** At rest (setAtRest): the tier's blur counts, and the maps, lifted to the high tier's. */
-  private atRest = false;
-  private get tier(): ShadowTier {
-    if (!this.atRest) return this.baseTier;
-    const high = SHADOW_TIERS.high;
-    return {
-      ...this.baseTier,
-      blurSamples: Math.max(this.baseTier.blurSamples, high.blurSamples),
-      maxBlurSamples: Math.max(this.baseTier.maxBlurSamples, high.maxBlurSamples),
-    };
-  }
+  private readonly tier: ShadowTier;
   private readonly sizes: Record<LightId, number>;
 
   private readonly config: Record<LightId, DirLightConfig>;
@@ -323,8 +312,8 @@ export class Lighting {
     scene: Scene,
     private readonly renderer: WebGPURenderer,
   ) {
-    this.baseTier = SHADOW_TIERS[detectQuality()];
-    this.sizes = { key: this.baseTier.key, fill: this.baseTier.fill, rim: this.baseTier.rim };
+    this.tier = SHADOW_TIERS[detectQuality()];
+    this.sizes = { key: this.tier.key, fill: this.tier.fill, rim: this.tier.rim };
     // Soft, variance-based (VSM) shadows — the renderer's only shadow filter.
     this.renderer.shadowMap.type = VSMShadowMap;
 
@@ -551,12 +540,11 @@ export class Lighting {
     this.refresh();
   }
 
-  /** Set a light's map to its size now: the tier's, or at rest the high tier's, times adaptive quality's share. */
+  /** Set a light's map to its size now: the tier's, times adaptive quality's share. */
   private sizeMap(id: LightId): void {
     const base = this.sizes[id];
     if (base === 0) return;
-    const want = this.atRest ? Math.max(base, SHADOW_TIERS.high[id]) : base;
-    const size = Math.max(1, Math.round(Math.min(want, this.maxMap()) * this.mapScale));
+    const size = Math.max(1, Math.round(Math.min(base, this.maxMap()) * this.mapScale));
     this.lights[id].shadow.mapSize.set(size, size);
   }
 
@@ -574,20 +562,6 @@ export class Lighting {
     }
     this.maxMapCache = Math.max(max, Math.max(...ALL.map((id) => this.sizes[id])));
     return this.maxMapCache;
-  }
-
-  /**
-   * The view is at rest (Viewer.updateFrameMode): the still frame's shadows
-   * are drawn once, so the maps and the blur's sample cap are the high
-   * tier's whatever the device's tier; while the view or a stroke moves they
-   * are the tier's own, as before. Uniforms and map sizes only: no shader is
-   * rebuilt and no light starts or stops casting.
-   */
-  setAtRest(on: boolean): void {
-    if (on === this.atRest) return;
-    this.atRest = on;
-    for (const id of ALL) this.sizeMap(id);
-    this.refresh();
   }
 
   /** Which light each shadow camera belongs to, for counting shadow passes. */

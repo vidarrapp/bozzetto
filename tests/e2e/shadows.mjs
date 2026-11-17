@@ -245,17 +245,17 @@ export const suites = {
     const head = await texelShare(page);
     t.ok(head.share < BOUND, `a head, floor on: texel ${r3(head.share)} of its height (${r3(head.texel)} cm; nose and chin shadows)`);
 
-    // The device tiers, at rest (the still frame draws the high tier's maps
-    // and sample cap on every tier): the same texel, and a softness of 10
-    // is as smooth across its edge as the high tier's.
+    // The medium tier (where strong tablets start) against the high one:
+    // the same key map and texel, and a softness of 10 is smooth across its
+    // edge on both. The maps never change size between a still view and a
+    // stroke or a turn: that would allocate at pen-down (the latency suites).
     const spares = [];
     try {
       const hi = await penumbra(await fresh(page, t, spares), base, 'high');
-      const lo = await penumbra(await fresh(page, t, spares), base, 'low');
-      t.ok(lo.fit.map === hi.fit.map && lo.fit.share < BOUND, `low tier at rest: a ${lo.fit.map} key map, texel ${r3(lo.fit.share)} of the height (high: ${hi.fit.map}, ${r3(hi.fit.share)})`);
-      t.ok(lo.fit.samples >= hi.fit.samples, `and softness 10 takes ${lo.fit.samples} blur samples there, high takes ${hi.fit.samples}`);
-      t.ok(lo.steps >= hi.steps, `and the penumbra shows ${lo.steps} distinct brightness steps, high's ${hi.steps} (contrast ${r3(lo.depth)} and ${r3(hi.depth)})`);
-      t.ok(lo.steps >= 12, `a smooth edge: at least 12 steps across it (${lo.steps})`);
+      const lo = await penumbra(await fresh(page, t, spares), base, 'medium');
+      t.ok(lo.fit.map === hi.fit.map && lo.fit.share < BOUND, `medium tier: a ${lo.fit.map} key map, texel ${r3(lo.fit.share)} of the height (high: ${hi.fit.map}, ${r3(hi.fit.share)})`);
+      t.ok(lo.fit.samples >= 12, `and softness 10 takes ${lo.fit.samples} blur samples there, high takes ${hi.fit.samples}`);
+      t.ok(lo.steps >= 12 && hi.steps >= 12, `a smooth edge: at least 12 brightness steps across it (medium ${lo.steps}, high ${hi.steps}; contrast ${r3(lo.depth)} and ${r3(hi.depth)})`);
     } finally {
       for (const ctx of spares) await ctx.close();
     }
@@ -612,7 +612,7 @@ async function shadowParts(page, base, t, spare) {
     const rimState = L.state().find((l) => l.id === 'rim');
     return { casts: L.casts('rim'), box: rimState.castShadow, can: rimState.canShadow, map: L.lights.rim.shadow.mapSize.x };
   });
-  t.ok(low.casts && low.box && low.can && (low.map === 512 || low.map === 1024), `on the low tier the rim casts by default, from a ${low.map} map (512 while moving, 1024 at rest)`);
+  t.ok(low.casts && low.box && low.can && low.map === 512, `on the low tier the rim casts by default, from a ${low.map} map`);
 
   // The viewer and Sculpt fit one subject under one look alike: the
   // published model's bounds and look, and in Sculpt a cube scaled to

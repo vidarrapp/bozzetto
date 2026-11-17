@@ -190,7 +190,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 - **Questions in the app's own window.** Delete, New sculpt and the like ask in a Bozzetto window that names the thing. Anything that loses work is a red button.
 - **Your choice about saving.** On first visit Bozzetto asks whether to keep your work on this device. Signed out, File shows **Save file** and **Sign in to save to library**.
 - **Sliders and touch.** Press anywhere on a slider's row and drag to change it. A two finger pan follows your fingers at any model size, and the view then turns around where you panned. Tab slides the interface away.
-- **Sharper shadows.** Shadows are drawn at full size with more blur samples once the view is still, and strong iPads start on a higher quality tier.
+- **Smoother shadows.** A softer shadow edge uses more blur samples, so it stays smooth, and strong iPads (eight cores) start on a higher quality tier.
 - **Pages and viewer.** My projects, Community, Account and the viewer share the new look. The viewer has File and Moderation menus, and Close goes back to where you came from.
 - **Smaller changes.** Create recommends New Sculpt, the hotkey guide fits and closes on Esc, the edge sliders name themselves while in use, card pictures fill their tiles, the top bar stays sharp on iPad, and the wireframe draws cleanly with ambient occlusion on.
 
