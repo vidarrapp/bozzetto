@@ -1921,8 +1921,9 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
 }
 
 /* Red for a delete, in the row menu as in the window. */
-.row-menu .file-menu__item--danger {
-  color: var(--bz-red);
+.row-menu .file-menu__item--danger,
+.row-menu .file-menu__item--danger:hover:not(:disabled) {
+  color: var(--bz-red-text);
 }
 
 /* The picture over the view: its own layer inside the view, fitted to the view's height and centred, and never an input target. */
