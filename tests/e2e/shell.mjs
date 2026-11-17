@@ -67,7 +67,7 @@ export const suites = {
     const file = await openMenu(page, 'File');
     t.eq(
       file.items.join('|'),
-      'New sculpt|Open…|Open recent|Save file|Save to library|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close',
+      'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close',
       'File: New and Open, the three saves, OBJ in and out, Publish and Close, regrouped',
     );
     t.near(file.left, file.nameLeft, 1, 'an open menu hangs with its left edge under its name');
@@ -85,7 +85,7 @@ export const suites = {
     const view = await openMenu(page, 'View');
     t.eq(
       view.items.join('|'),
-      'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Present',
+      'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Paint|Present',
       'View: framing, the switches, the five panels, Hide interface and the three workspaces',
     );
     const keys = await page.evaluate(() =>
@@ -104,7 +104,7 @@ export const suites = {
       object: document.querySelector('.bz-details [data-fact="name"]')?.textContent,
       tris: document.querySelector('.bz-details [data-fact="tris"] .bz-details__val')?.textContent,
       level: document.querySelector('.bz-details [data-fact="level"] .bz-details__val')?.textContent,
-      name: !document.querySelector('.bz-readout__name')?.hidden,
+      name: document.querySelector('.bz-readout__name')?.hidden ? '' : (document.querySelector('.bz-readout__name')?.textContent ?? ''),
       corner: !!document.querySelector('.sculpt-stats'),
       keyColour: getComputedStyle(document.querySelector('.bz-readout__key')).color,
       valueWeight: getComputedStyle(document.querySelector('.bz-readout__val')).fontWeight,
@@ -117,7 +117,7 @@ export const suites = {
     t.eq(readout.keys.join(','), '', 'the strip\'s readout carries no Object, Tris or Level: the details overlay has them');
     t.ok(readout.object === 'Sphere' && readout.tris === readout.real.toLocaleString('en-US') && /^\d+ of \d+$/.test(readout.level), `the overlay has the object, its triangles and its level (${readout.object}, ${readout.tris}, ${readout.level})`);
     t.ok(!readout.corner, 'and the corner at the top left of the view is gone');
-    t.ok(!readout.name, 'a scene with no name shows none');
+    t.ok(/^Study \d+ \w+/.test(readout.name), `a new scene shows its study name (${readout.name})`);
     t.ok(/179, 179, 179/.test(readout.keyColour) && Number(readout.valueWeight) >= 600, `keys are secondary and regular, values bold (${readout.keyColour}, ${readout.valueWeight})`);
     t.near(readout.centre, 640, 2, 'and it is centred');
     await page.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
