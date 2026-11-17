@@ -31,7 +31,7 @@ Timelapses played back as real geometry (orbit, relight, scrub) exist in the pro
 
 ## Operating Context
 
-- Used mainly as an installed home-screen app on iPad, fullscreen, with Apple Pencil; also on iPhone and on desktop with mouse and keyboard.
+- Used mainly as an installed home-screen app on iPad, fullscreen, with Apple Pencil; also on desktop with mouse and keyboard. A phone is not a target: the app runs there for a quick demo, with no layout of its own.
 - Four workspaces in a fixed order, shown as a path: Armature (pose a mannequin), Sculpt, Paint (vertex colour in layers with blend modes, on the same scene as Sculpt), Present (lighting, render settings, output, publishing).
 - Around the workspaces sit pages: the gallery, Community, My projects, Account, Review, and the owner's tools.
 - The public viewer shows a published model or timelapse.
@@ -52,7 +52,7 @@ Timelapses played back as real geometry (orbit, relight, scrub) exist in the pro
 
 - Name: Bozzetto, with its handwritten logotype.
 - The Gestalt v2 app layer is the existing visual system and is binding: dark only; a grey scale; square corners; orange for the active tool, a field's amount, the one main action on a screen, and focus; red for errors and deletes; one solid icon style; Familjen Grotesk for labels and Martian Mono for values.
-- Pencil and touch first: everything must work with Apple Pencil and fingers on iPad and iPhone. Mouse works equally; the keyboard adds shortcuts and is never required.
+- Pencil and touch first: everything must work with Apple Pencil and fingers on iPad. Mouse works equally; the keyboard adds shortcuts and is never required.
 - Tab has one job in the workspaces: it hides and shows the interface. It does not move focus there.
 - Plain wording: interface text is short, plain sentences that say what happened and what to do. No marketing voice inside the app.
 

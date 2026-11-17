@@ -200,7 +200,7 @@ export class SculptPanel extends SidePanel {
       dyn.appendChild(hint);
     } else if (tool === Enums.Tools.PROJECT) {
       const hint = div('sculpt-panel__hint muted');
-      hint.textContent = 'Paints the reference picture in the view onto the model under the brush.';
+      hint.textContent = 'Paints the reference picture in the view onto the model under the brush. Lock the pictures first so the brush reaches the model.';
       dyn.appendChild(hint);
     }
     // Fill and Pick are a tap, not a brush: no size, strength or dab rows.

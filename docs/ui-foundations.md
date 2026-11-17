@@ -78,6 +78,12 @@ container scrolls; the document does not, so the strip stays sharp on iPad.
 
 The view axes keep their own red, green and blue.
 
+Marks drawn over the 3D view (slider values, the details text, measure
+lines and labels, Armature's handles) are light, with a faint soft shade
+under them (`--bz-view-shade`, `--bz-view-shade-line`), never a hard dark
+outline and never a box (owner call, 2026-11-17). Orange marks keep their
+orange.
+
 Play and pause in the transport is a regular button like the others; its
 icon is light grey at rest and white while pressed or while playing, in the
 viewer, in review mode and in Present alike, never orange (owner call,

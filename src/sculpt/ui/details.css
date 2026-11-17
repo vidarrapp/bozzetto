@@ -1,0 +1,96 @@
+/* The details overlay (ui/DetailsOverlay): plain text at the top left of the
+   view, under the strip and the tab row. No box and no background, like the
+   brush size values on the left edge; only the view's faint soft shade (--bz-view-shade) sits
+   under the letters: no stroke, no halo. It never takes
+   input: the Pencil and fingers reach the model through it. */
+body.bz-shell .bz-details {
+  --bz-details-left: calc(16px + env(safe-area-inset-left, 0px));
+  --bz-details-right: 16px;
+  position: fixed;
+  top: calc(var(--bz-panel-top, 56px) + 8px);
+  left: var(--bz-details-left);
+  /* Under the edge controls (12) and the panels (14): it never stands on either. */
+  z-index: 11;
+  max-width: max(0px, calc(100vw - var(--bz-details-left) - var(--bz-details-right)));
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: none;
+  border: 0;
+  color: var(--bz-text);
+  text-shadow: var(--bz-view-shade);
+  font: 400 12px/16px var(--bz-font);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    transform 0.2s ease-in,
+    opacity 0.2s ease-in;
+}
+
+body.bz-shell .bz-details[hidden] {
+  display: none;
+}
+
+body.bz-shell .bz-details * {
+  pointer-events: none;
+}
+
+body.bz-shell .bz-details__line {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.bz-shell .bz-details__key,
+body.bz-shell .bz-details__name {
+  font-family: var(--bz-font);
+}
+
+body.bz-shell .bz-details__key {
+  color: var(--bz-text-2);
+}
+
+body.bz-shell .bz-details__name {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+body.bz-shell .bz-details__val {
+  font-family: var(--bz-font-mono);
+  font-size: 11px;
+}
+
+/* Beside an open left panel, never under it; short of an open right one. */
+body.bz-shell:has(.panel--left:not(.panel--collapsed)) .bz-details {
+  --bz-details-left: calc(304px + 16px);
+}
+
+body.bz-shell:has(.panel:not(.panel--left):not(.panel--collapsed)) .bz-details {
+  --bz-details-right: calc(304px + 16px);
+}
+
+/* Tab: it goes with the left side (the edge controls' slide), and is inert once away. */
+body.bz-shell.chrome-hidden .bz-details {
+  transform: translateX(calc(-100% - 24px));
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    transform 0.2s ease-out,
+    opacity 0.2s ease-out,
+    visibility 0s linear 0.2s;
+}
+
+/* Present has no edit tools to speak of. */
+body.presenting .bz-details {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.bz-shell .bz-details {
+    transition: none !important;
+  }
+}

@@ -56,7 +56,7 @@ import { FileMenu } from './ui/FileMenu';
 import { TopMenu, type MenuItem } from './ui/TopMenu';
 import { SHELL_LAYOUT_EVENT } from './ui/shellLayout';
 import * as blendModule from '../paint/blend';
-import { projectSource, type PictureLookup } from './bridge/projectSource';
+import { projectSource } from './bridge/projectSource';
 import type { ProjectSource } from './bridge/paintTools';
 import { helpMenuItems } from '../help/menu';
 import { TitleStrip, type PathStep, type Workspace } from './ui/TitleStrip';
@@ -66,6 +66,7 @@ import { keyFor, viewMenuItems } from './ui/viewMenu';
 import { editMenuItems } from './ui/menuShape';
 import { rememberPanels } from './ui/panelMemory';
 import './ui/shell.css';
+import { DetailsOverlay, makeSculptDetails } from './ui/DetailsOverlay';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
 import { LayersPanel } from './ui/LayersPanel';
@@ -76,6 +77,7 @@ import { ReferenceBoard, fromFileReferences, toFileReferences } from '../referen
 import { ReferencePanel } from '../reference/ReferencePanel';
 import { ReferenceView } from '../reference/ReferenceView';
 import { installIntake, pasteFromClipboard } from '../reference/intake';
+import { ArrangeButton } from '../reference/ArrangeButton';
 import { imageName, stillRatio } from '../viewer/capture/still';
 import { PresentMode, type TurntableRequest } from './ui/Present';
 import { recordTurntable } from '../viewer/capture/turntable';
@@ -805,16 +807,25 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Whether the scene is as last saved to its project: the autosave's count (set once it exists).
   let syncedNow: () => boolean = () => false;
   let goArmature: () => Promise<void> = async () => undefined;
-  const readout = makeReadout(strip, session, {
+  // The details overlay at the top left of the view: the object's numbers, as plain text.
+  const details = new DetailsOverlay();
+  const readSculptDetails = makeSculptDetails(session);
+  const paintDetails = (): void => {
+    if (details.isOn() && !presenting) details.set(readSculptDetails());
+  };
+  const readout = makeReadout(strip, {
     projectName: () => fileActionsRef?.sceneName || openedName,
     edited: () => !!fileActionsRef && fileActionsRef.hasWork(),
     state: () => (fileActionsRef ? sceneStateWord({ linked: !!fileActionsRef.link, synced: syncedNow() }) : null),
     onRefresh: () => {
       modelPanel?.refreshHeading();
+      paintDetails();
     },
     frame: () => (presenting ? viewer.viewportSize() : null),
   });
   refreshReadout = readout.refresh;
+  // Switched on after being off: the lines are read afresh at once.
+  const offDetailsSetting = settings.onChange(paintDetails);
 
   // The opt-in hardware input log, for bugs that only exist on a real
   // tablet: Preferences > Diagnostics, or ?inputdebug=1 for the page. It is
@@ -1192,6 +1203,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // Like toggleShadows above: sculpt mode does not hold the Render panel
     // (mountViewer owns it), and the panels re-read their controls when they
     // open. The Material panel's Wireframe switch, open, is told at once.
+    toggleArrangeReferences: () => referenceBoard.setArranging(!referenceBoard.isArranging()),
     toggleWireframe: () => {
       viewer.toggleWireframe();
       window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
@@ -1595,7 +1607,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     adoptReferences: (refs) => {
       if (refs) {
         const got = fromFileReferences(refs);
-        referenceBoard.replace(got.items, got.view);
+        referenceBoard.replace(got.items);
       } else {
         void referenceBoard.clear();
       }
@@ -1825,11 +1837,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
           },
         },
         groupColors: { get: () => session.groups.isShowing(), toggle: () => setGroupColors(!session.groups.isShowing()) },
-        referenceOver: {
-          get: () => referenceView?.isOverEnabled() ?? true,
-          toggle: () => referenceView?.setOverEnabled(!referenceView.isOverEnabled()),
-        },
+        referenceShow: { get: () => referenceView?.isShown() ?? true, toggle: () => referenceView?.setShown(!referenceView.isShown()) },
+        referenceArrange: { get: () => referenceBoard.isArranging(), toggle: () => referenceBoard.setArranging(!referenceBoard.isArranging()), key: true },
         toolKeys: true,
+        details: true,
         panels: paintOn
           ? [
               ['scene', 'Scene'],
@@ -1946,16 +1957,22 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   referencePanel = new ReferencePanel(referenceBoard);
   referencePanel.setLinked(() => !!fileActions.link);
   referenceView = new ReferenceView(referenceBoard, viewer);
+  const referenceArrange = new ArrangeButton(referenceBoard);
+  const edgeColumn = document.querySelector<HTMLElement>('.bz-edge');
+  if (edgeColumn) referenceArrange.mount(edgeColumn);
+  referencePanel.setPlacer((id, x, y) => referenceView?.placeAt(id, x, y) ?? false);
   // Project paints the pictures in the view onto the model (bridge/projectSource.ts).
   {
-    const lookup = referenceView as unknown as Partial<PictureLookup>;
-    if (typeof lookup.imageAt === 'function' && typeof lookup.picturesInView === 'function') {
-      const source = projectSource(lookup as PictureLookup);
-      (session.getSculptManager().getTool(Enums.Tools.PROJECT) as unknown as { source: ProjectSource | null }).source = source;
-      projectPrefetch = () => source.prefetch();
-    }
+    const source = projectSource(referenceView);
+    (session.getSculptManager().getTool(Enums.Tools.PROJECT) as unknown as { source: ProjectSource | null }).source = source;
+    projectPrefetch = () => source.prefetch();
   }
-  const offIntake = installIntake(referenceBoard, () => !!referencePanel?.isOpen());
+  const offIntake = installIntake(referenceBoard, () => !!referencePanel?.isOpen(), (items, x, y) => {
+    // Dropped on the view: each picture stands where it fell, side by side if there were several.
+    let n = 0;
+    for (const item of items) if (referenceView?.placeAt(item.id, x + n * 24, y + n * 24)) n++;
+    return n > 0;
+  });
   modelPanel = new ModelPanel(session, viewer);
   layersPanel = new LayersPanel(session);
   // A layer edit (a stroke recorded, a weight, an undo) redraws the list and goes to the autosave.
@@ -2460,6 +2477,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     levelToast.dispose();
     offPanelMemory();
     readout.dispose();
+    offDetailsSetting();
+    details.dispose();
     strip.dispose();
     gizmo.dispose();
     // Solo belongs to this visit, not to the scene: every object gets its
@@ -2478,6 +2497,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     materialPanel?.dispose();
     scenePanel?.dispose();
     offIntake();
+    referenceArrange.dispose();
     referenceView?.dispose();
     referencePanel?.dispose();
     referenceBoard.dispose();
@@ -2553,15 +2573,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 }
 
 /**
- * The title strip's readout: the project's name (and "Edited" while it has
- * changes not saved anywhere), then the active object's name, its live
- * triangle count and its level. Polled, cheap, written only where it
- * changed; `refresh` also runs on the events that move it. `onRefresh`
- * keeps the panels' headings in step.
+ * The title strip's readout: the scene's name and where its work is kept
+ * (the object's numbers are the details overlay's). Polled, cheap, written
+ * only where it changed; `refresh` also runs on the events that move it.
+ * `onRefresh` keeps the panels' headings and the details overlay in step.
  */
 function makeReadout(
   strip: TitleStrip,
-  session: SculptSession,
   from: {
     projectName: () => string | null | undefined;
     edited: () => boolean;
@@ -2573,18 +2591,13 @@ function makeReadout(
   },
 ): { refresh(): void; dispose(): void } {
   const update = (): void => {
-    const mesh = session.getMesh();
-    const levels = session.getLevels();
     const name = from.projectName() ?? null;
     const frame = from.frame();
     strip.setReadout({
       name,
       edited: !!name && from.edited(),
       state: name ? from.state() : null,
-      // In Present the readout is the project and the frame, not the object's numbers.
-      object: frame ? null : mesh ? session.activeName() : 'Empty scene',
-      tris: frame || !mesh ? null : mesh.getNbTriangles(),
-      level: !frame && levels && levels.levels > 0 ? { at: levels.sel + 1, of: levels.levels } : null,
+      // In Present the readout is the project and the frame.
       frame,
     });
     from.onRefresh();

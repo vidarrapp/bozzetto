@@ -135,6 +135,8 @@ export const ACTIONS: ActionDef[] = [
   // --- lighting / display (both) ---
   { id: 'view.shadows', label: 'Shadows on / off', group: 'Lighting', mode: 'both', chord: 'shift+s' },
   { id: 'view.wireframe', label: 'Wireframe overlay', group: 'Lighting', mode: 'both', chord: 'shift+w' },
+  { id: 'view.details', label: 'Details overlay on / off', group: 'Lighting', mode: 'both', chord: 'shift+i' },
+  { id: 'view.arrange', label: 'Arrange the reference pictures (unlock / lock)', group: 'Lighting', mode: 'sculpt', chord: 'alt+r' },
   { id: 'light.move', label: 'Move the key light (hold + drag: across / up)', group: 'Lighting', mode: 'sculpt', chord: 'l', hold: true },
   // The same key in the viewer and the editors' preview: one Preferences
   // change moves it in all three, as Armature's undo follows Sculpt's.
@@ -162,7 +164,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'view.ground', label: 'Cycle ground (shadow / floor / pedestal / off)', group: 'Material', mode: 'view', chord: 'g' },
   // --- armature mode ------------------------------------------------------
   { id: 'arm.symmetry', label: 'Mirror pose edits to the other side', group: 'Armature', mode: 'armature', chord: 'x' },
-  { id: 'arm.move', label: 'Move the figure (the pelvis, screen-plane centre)', group: 'Armature', mode: 'armature', chord: 'w' },
+  { id: 'arm.move', label: 'Move the figure, or the selected handle (move gizmo)', group: 'Armature', mode: 'armature', chord: 'w' },
   { id: 'arm.rotate', label: 'Rotate what is selected', group: 'Armature', mode: 'armature', chord: 'e' },
   { id: 'arm.gizmo', label: 'Move and rotate together', group: 'Armature', mode: 'armature', chord: 't' },
   { id: 'arm.scale', label: 'Scale the selected part (its size and length)', group: 'Armature', mode: 'armature', chord: 'r' },

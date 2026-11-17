@@ -206,7 +206,7 @@ export const TOOLS: Topic[] = [
     tools: ['Project'],
     blocks: [
       p('Paints a reference picture that is in the view onto the model under the brush. For each point under the brush, the pixel of the picture where that point stands on the screen goes through the brush\'s falloff and strength into the layer you have picked. Only points that face the camera, near where the pen touches the model, take colour. Default hotkey: **6**.'),
-      p('With no picture in the view it says "Drag a reference into the view first." Put a picture there from the Reference panel. The picture\'s own blend mode and opacity do not change what is projected; its mirror and greyscale do.'),
+      p('With no picture in the view it says "Drag a reference into the view first." Put a picture there from the Reference panel, and lock the pictures so the brush reaches the model (it also works while they are being arranged). The picture\'s own blend mode and opacity do not change what is projected; its mirror and greyscale do.'),
     ],
   },
   {

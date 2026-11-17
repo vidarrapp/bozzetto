@@ -9,8 +9,10 @@ i[class^=fi-ss-]:before,i[class*=" fi-ss-"]:before,span[class^=fi-ss-]:before,sp
 .fi-ss-broom:before{content:"\f2f4"}
 .fi-ss-circle-half-stroke:before{content:"\f407"}
 .fi-ss-compress:before{content:"\f4c9"}
+.fi-ss-cross-small:before{content:"\f4f7"}
 .fi-ss-cursor:before{content:"\f50f"}
 .fi-ss-eraser:before{content:"\f5e4"}
+.fi-ss-expand:before{content:"\f5f2"}
 .fi-ss-expand-arrows-alt:before{content:"\f5f0"}
 .fi-ss-eye:before{content:"\f5f9"}
 .fi-ss-eye-crossed:before{content:"\f5f7"}
@@ -26,9 +28,11 @@ i[class^=fi-ss-]:before,i[class*=" fi-ss-"]:before,span[class^=fi-ss-]:before,sp
 .fi-ss-projector:before{content:"\fad4"}
 .fi-ss-raindrops:before{content:"\fafc"}
 .fi-ss-redo:before{content:"\fb1b"}
+.fi-ss-reflect-horizontal:before{content:"\fb23"}
 .fi-ss-ruler-combined:before{content:"\fb67"}
 .fi-ss-scalpel:before{content:"\fb8b"}
 .fi-ss-screwdriver:before{content:"\fb9a"}
+.fi-ss-settings-sliders:before{content:"\fbc2"}
 .fi-ss-shredder:before{content:"\fbf2"}
 .fi-ss-star:before{content:"\fcd7"}
 .fi-ss-transformation-block:before{content:"\fdd5"}

@@ -401,13 +401,16 @@ async function armatureLook(page, base, t) {
   t.ok(undone === grab.poseBefore && redone === afterDrag && afterDrag !== grab.poseBefore, 'a drag is one undo step: undone, the pose is as it was; redone, as the drag left it');
   await page.evaluate(() => window.__armature.undo());
 
-  // A tap selects it, with the move gizmo, and the gizmo's move turns the head the same way.
+  // A tap selects it, with no gizmo (it is moved by dragging it); Move (W) puts the move gizmo on it.
   const tap = await page.evaluate(() => window.__armature.ballOnScreen('look:head'));
   await page.mouse.move(tap[0], tap[1]);
   await page.mouse.down();
   await page.mouse.up();
   const tapped = await page.evaluate(() => ({ sel: window.__armature.selectedHandle(), gizmo: window.__armature.gizmo().attached.join(','), look: window.__armature.handleLook('look:head').state }));
-  t.ok(tapped.sel === 'head' && tapped.gizmo === 'translate' && tapped.look === 'hot', `a tap on the target selects it, orange, with the move gizmo (${JSON.stringify(tapped)})`);
+  t.ok(tapped.sel === 'head' && tapped.gizmo === '' && tapped.look === 'hot', `a tap on the target selects it, orange, with no gizmo (${JSON.stringify(tapped)})`);
+  await page.keyboard.press('w');
+  const moved = await page.evaluate(() => ({ sel: window.__armature.selectedHandle(), gizmo: window.__armature.gizmo().attached.join(',') }));
+  t.ok(moved.sel === 'head' && moved.gizmo === 'translate', `W on the selected target brings its move gizmo (${JSON.stringify(moved)})`);
   await page.evaluate(() => window.__armature.selectHandle(null));
 
   // Pins and symmetry: a pinned hand holds still through a look; mirrored limbs stay mirrored.

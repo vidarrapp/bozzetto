@@ -28,6 +28,10 @@
   --bz-red-text: #ff6b6b; /* red as text, an icon or a stroke: the light red that reaches 4.5:1 on the panel and the raised grey */
   --bz-on-red: #ffffff; /* text and icons on a red fill (7.7:1) */
   --bz-white: #ffffff; /* the icon of play and pause while pressed or playing */
+  /* Marks drawn over the 3D view (text, handles, measure lines) are light with a
+     faint soft shade under them, never a hard dark outline (owner, 2026-11-17). */
+  --bz-view-shade: 0 1px 2px rgba(0, 0, 0, 0.55); /* a text-shadow or drop-shadow */
+  --bz-view-shade-line: rgba(0, 0, 0, 0.35); /* under a line or ring, a little wider than it */
   --bz-on-accent: #000000; /* text and icons on orange or lime */
   /* raised things */
   --bz-raised-shadow: 0 0 0 1px var(--bz-raised-border), 0 12px 32px rgba(0, 0, 0, 0.55);

@@ -85,7 +85,7 @@ export const suites = {
     const view = await openMenu(page, 'View');
     t.eq(
       view.items.join('|'),
-      'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|Reference over the view|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present',
+      'Frame selected|Frame all|Wireframe|Shadows|Details|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present',
       'View: framing, the switches, the five panels, Hide interface and the three workspaces',
     );
     const keys = await page.evaluate(() =>
@@ -101,9 +101,9 @@ export const suites = {
     // The readout stands in the middle of the strip and replaced the corner's.
     const readout = await page.evaluate(() => ({
       keys: [...document.querySelectorAll('.bz-readout__item:not([hidden]) .bz-readout__key')].map((k) => k.textContent),
-      object: document.querySelector('.bz-readout__object')?.textContent,
-      tris: document.querySelector('.bz-readout__tris')?.textContent,
-      level: document.querySelector('.bz-readout__level')?.textContent,
+      object: document.querySelector('.bz-details [data-fact="name"]')?.textContent,
+      tris: document.querySelector('.bz-details [data-fact="tris"] .bz-details__val')?.textContent,
+      level: document.querySelector('.bz-details [data-fact="level"] .bz-details__val')?.textContent,
       name: !document.querySelector('.bz-readout__name')?.hidden,
       corner: !!document.querySelector('.sculpt-stats'),
       keyColour: getComputedStyle(document.querySelector('.bz-readout__key')).color,
@@ -114,15 +114,15 @@ export const suites = {
         return (r.left + r.right) / 2;
       })(),
     }));
-    t.eq(readout.keys.join(','), 'Object,Tris,Level', 'the readout says Object, Tris and Level');
-    t.ok(readout.object === 'Sphere' && readout.tris === readout.real.toLocaleString('en-US') && /^\d+\/\d+$/.test(readout.level), `with the object, its triangles and its level (${readout.object}, ${readout.tris}, ${readout.level})`);
+    t.eq(readout.keys.join(','), '', 'the strip\'s readout carries no Object, Tris or Level: the details overlay has them');
+    t.ok(readout.object === 'Sphere' && readout.tris === readout.real.toLocaleString('en-US') && /^\d+ of \d+$/.test(readout.level), `the overlay has the object, its triangles and its level (${readout.object}, ${readout.tris}, ${readout.level})`);
     t.ok(!readout.corner, 'and the corner at the top left of the view is gone');
     t.ok(!readout.name, 'a scene with no name shows none');
     t.ok(/179, 179, 179/.test(readout.keyColour) && Number(readout.valueWeight) >= 600, `keys are secondary and regular, values bold (${readout.keyColour}, ${readout.valueWeight})`);
     t.near(readout.centre, 640, 2, 'and it is centred');
     await page.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
-    await page.waitForFunction(() => document.querySelector('.bz-readout__object')?.textContent === 'Cube', null, { timeout: 4000 });
-    t.ok(true, 'the readout follows the active object');
+    await page.waitForFunction(() => document.querySelector('.bz-details [data-fact="name"]')?.textContent === 'Cube', null, { timeout: 4000 });
+    t.ok(true, 'the details overlay follows the active object');
 
     // The old top row is gone, and what moved is in the strip.
     const gone = await page.evaluate(() => ({
@@ -856,7 +856,7 @@ export const suites = {
     const names = await page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].map((b) => b.textContent));
     t.eq(names.join(','), 'File,Edit,View,Help', 'Armature has the four menus');
     const view = await openMenu(page, 'View');
-    t.eq(view.items.join('|'), 'Frame all|Wireframe|Shadows|Reference over the view|Armature panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present', 'its View menu has what applies');
+    t.eq(view.items.join('|'), 'Frame all|Wireframe|Shadows|Details|References|Arrange references|Armature panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present', 'its View menu has what applies');
     await closeMenu(page);
     t.ok(await shown(page, '.bz-strip__hide'), 'the eye button is in the strip');
     const tabs = await page.evaluate(() => ['armature', 'render'].map((c) => document.querySelector(`.panel--${c} .panel__handle`).getBoundingClientRect()).map((r) => [r.left, r.right, r.top, r.height]));
