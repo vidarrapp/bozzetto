@@ -1,6 +1,6 @@
 import { Box3, Matrix4, Quaternion, Vector3, type Bone, type BufferGeometry, type Object3D, type SkinnedMesh } from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { FOOT_EFFECTOR_AT, type BoneDef, type IKChainDef, type JointLimits, type RigDefinition, type Vec3 } from './rig';
+import { FOOT_EFFECTOR_AT, lookFor,type BoneDef, type IKChainDef, type JointLimits, type RigDefinition, type Vec3 } from './rig';
 
 /**
  * Read a rig out of a rigged .glb - the bones, what each joint is and how
@@ -269,8 +269,12 @@ export function rigFromGLTF(gltf: GLTF, id = 'imported', label = 'Imported figur
         mirror: c.mirror ? canonicalName(c.mirror) : null,
         ...pointAlong(effectorAt),
       }))
-      .filter((c) => byName.has(c.effector) && c.links.every((l) => byName.has(l)));
-    if (ik.length !== declared.ik.length) {
+      // The head is a look-at controller now, not a reach chain: a file's
+      // old head chain is dropped, and the look is worked out from the names.
+      .filter((c) => !(c.effector === 'head' && !c.poleRef));
+    const wanted = ik.length;
+    ik = ik.filter((c) => byName.has(c.effector) && c.links.every((l) => byName.has(l)));
+    if (ik.length !== wanted) {
       inferred.push('some chains in bz_rig named bones the skin does not have; those were dropped');
     }
   }
@@ -279,24 +283,23 @@ export function rigFromGLTF(gltf: GLTF, id = 'imported', label = 'Imported figur
     if (ik.length) inferred.push(`${ik.length} reach chains were worked out from the bone names`);
   }
 
-  /** Hands, feet and the head reach; the two or three bones above them bend. */
+  /** Hands and feet reach; the two or three bones above them bend. The head looks (lookFor). */
   function inferChains(): IKChainDef[] {
     const out: IKChainDef[] = [];
     for (const [name, bone] of byName) {
       const isHand = /^hand(\.[LR])?$/.test(name);
       const isFoot = /^foot(\.[LR])?$/.test(name);
-      const isHead = /^head$/.test(name);
-      if (!isHand && !isFoot && !isHead) continue;
+      if (!isHand && !isFoot) continue;
       const links: string[] = [];
       let up = boneParent(bone);
-      const depth = isHead ? 2 : isFoot ? 2 : 3;
+      const depth = isFoot ? 2 : 3;
       while (up && links.length < depth) {
         links.push(canon.get(up)!);
         up = boneParent(up);
       }
       if (links.length < 2) continue;
       const side = name.endsWith('.L') ? 'Left' : name.endsWith('.R') ? 'Right' : '';
-      const base = isHand ? 'hand' : isFoot ? 'foot' : 'Head';
+      const base = isHand ? 'hand' : 'foot';
       out.push({
         id: name,
         label: `${side} ${base}`.trim(),
@@ -339,6 +342,7 @@ export function rigFromGLTF(gltf: GLTF, id = 'imported', label = 'Imported figur
       height,
       bones: defs,
       ik,
+      look: lookFor(defs),
     },
     mesh,
     sourceNames,

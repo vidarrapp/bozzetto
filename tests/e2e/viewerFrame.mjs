@@ -209,8 +209,8 @@ export const suites = {
     await page.evaluate(() => window.__bozzetto.scrubTo(10));
     t.ok(!!at0 && s.readoutText.endsWith(`Stage ${at0}`) && at0 !== at, `the readout follows the frame to the stage there (${s.readoutText})`);
 
-    // --- Render: its folder tab at the right, Material's at the left --------------
-    t.eq([...f.tabs].sort().join(), 'Material,Render', 'two folder tabs: Material at the left, Render at the right');
+    // --- Render: its folder tab at the right, with Material's beside it --------------
+    t.eq([...f.tabs].sort().join(), 'Material,Render', 'two folder tabs: Material and Render, both at the right');
     t.ok(f.tab && f.tab.r === s.vw && f.tab.t === 28 && f.tab.h === 28 && f.tabWriting === 'horizontal-tb', `at the right edge under the strip, horizontal, not a sideways tab (${JSON.stringify(f.tab)} ${f.tabWriting})`);
     t.ok(!f.open && !f.panelShown, 'the panel is shut, as the viewer has it');
     await page.click('.panel--render > .panel__handle');
@@ -219,7 +219,7 @@ export const suites = {
     t.ok(f.open && f.panel && f.panel.w === 304 && f.panel.r === s.vw && f.panel.t === 56, `a click opens it: 304px, flush right, under the tab (${JSON.stringify(f.panel)})`);
     t.eq(f.heading, 'Render', 'headed Render');
     t.ok(!f.byline, 'with no byline: whose it is, is the strip\'s to say');
-    t.ok(f.sections.join() === 'Lighting,Camera,Environment,Ambient occlusion', `with the same sections as everywhere else, Material being the left tab's (${f.sections})`);
+    t.ok(f.sections.join() === 'Lighting,Camera,Environment,Ambient occlusion', `with the same sections as everywhere else, Material being the tab's (${f.sections})`);
     t.ok(!(await page.$('.panel--render .panel__hotkeys')), 'and no Hotkeys button: the Help menu and H open the guide');
     await page.keyboard.press('h');
     t.ok(await page.evaluate(() => !document.querySelector('.help-guide').hidden), 'H opens the guide');
@@ -299,7 +299,7 @@ export const suites = {
     s = await stripState(page);
     f = await frameState(page);
     t.ok(s.strip.w === 390 && s.strip.h === 24 && s.scroll <= 0, `at 390px the strip is the width of the screen and nothing scrolls sideways (${s.scroll})`);
-    t.ok(!s.readout, 'the readout gives way');
+    t.ok(!!s.readout && s.title === 'Demo bust (synthetic)' && noOverlap(s.left, s.readout) && noOverlap(s.readout, s.right) && s.readout.r <= 390, `the readout gives way to the project's title alone, cut with an ellipsis (${JSON.stringify(s.readout)})`);
     t.ok(noOverlap(s.left, s.right) && s.right.r <= 390 && s.left.l >= 0, `the menus and the hide button do not overlap (${JSON.stringify([s.left, s.right])})`);
     t.ok(f.tab && f.tab.r === 390 && f.tab.l >= 0, 'the Render tab is on the screen');
     t.ok(f.bar && f.bar.l === 0 && f.bar.r === 390 && f.bar.b === 844 && f.play.bg === CONTROL, `the transport spans it, flush at the bottom, play still a regular button (${JSON.stringify(f.bar)})`);

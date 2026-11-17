@@ -17,7 +17,7 @@ import {
   type Intersection,
   type Material,
 } from 'three';
-import { rigById, type BoneDef, type IKChainDef, type JointLimits, type RigDefinition } from './rig';
+import { lookFor, rigById, type BoneDef, type IKChainDef, type JointLimits, type LookDef, type RigDefinition } from './rig';
 import { canonicalName, retargetGeometry, type ReadRig } from './glbRig';
 
 /** A figure whose geometry and weights come from a file, not from boxes. */
@@ -87,6 +87,28 @@ const REACHED = 0.0002;
 const TINY = 2e-5;
 /** What a pass must gain to count as getting closer, and the solver's other hair's breadths. */
 const HAIR = 2e-8;
+
+/**
+ * The head's look-at (owner request). How far the head may turn from the
+ * chest's own facing, to either side and up or down, in degrees; past it
+ * the head holds at the limit.
+ */
+export const LOOK_TURN_MAX = 80;
+export const LOOK_TILT_MAX = 60;
+/**
+ * How the turn is shared down the chain, as the part of the head's turn
+ * each bone has made in the world by the end: the head all of it, the neck
+ * half, the chest this much and each torso bone below it less in step.
+ * The head's own joint takes what the bones under it left.
+ */
+export const LOOK_NECK_SHARE = 0.5;
+export const LOOK_TORSO_SHARE = 0.12;
+/** How far in front of the head its look-at target sits, in head heights. */
+const LOOK_DISTANCE = 1.5;
+/** How far along its bone the head's look-at starts from: about eye height. */
+const LOOK_FROM = 0.55;
+/** How far from its joint a pole target sits, as a share of the limb segment above the joint. */
+const POLE_DISTANCE = 0.5;
 
 /**
  * A posable figure: the rig's bones as a three.js Bone tree, every block
@@ -163,6 +185,17 @@ export class Armature {
   /** Metres to scene units for this figure (100: a scene unit is a centimetre). */
   readonly scale: number;
 
+  /** The head's look-at chain, when the rig has a head to turn. */
+  private readonly look: LookDef | undefined;
+  /** The chain's poses as a look began, which each solve of it starts from. */
+  private lookBase: Map<string, Quaternion> | null = null;
+  /** The look's bones, bottom to top, each with its share of the turn. */
+  private readonly lookChain: Array<{ name: string; share: number }> = [];
+  /** Scratch: each look bone's turn from rest as a solve began. */
+  private readonly lookD: Quaternion[] = [];
+  /** The hinge, base and end bones of each pole chain, found once. */
+  private readonly poleBones = new Map<string, { hinge: Bone; base: Bone; end: Bone }>();
+
   /** A length given in metres, in this figure's scene units. */
   private len(metres: number): number {
     return metres * this.scale;
@@ -171,6 +204,15 @@ export class Armature {
   constructor(rig: RigDefinition, material: Material, scale = SCENE_SCALE, imported?: ImportedFigure) {
     this.scale = scale;
     this.rig = rig;
+    const look = rig.look ?? lookFor(rig.bones);
+    const names = look ? [look.head, ...(look.neck ? [look.neck] : []), ...look.torso] : [];
+    this.look = look && names.every((n) => rig.bones.some((b) => b.name === n)) ? look : undefined;
+    if (this.look) {
+      const n = this.look.torso.length;
+      this.look.torso.forEach((name, i) => this.lookChain.push({ name, share: (LOOK_TORSO_SHARE * (i + 1)) / n }));
+      if (this.look.neck) this.lookChain.push({ name: this.look.neck, share: LOOK_NECK_SHARE });
+      this.lookChain.push({ name: this.look.head, share: 1 });
+    }
     const worldQ = new Map<string, Quaternion>();
     const worldP = new Map<string, Vector3>();
 
@@ -843,6 +885,219 @@ export class Armature {
     const rest = anchor ? this.restWorld.get(anchor.name) : undefined;
     if (!anchor || !rest || this.bones.get(anchor.name) !== anchor) return out.identity();
     return anchor.getWorldQuaternion(out).multiply(_q2.copy(rest.q).invert());
+  }
+
+  // --- pole targets ---------------------------------------------------------
+
+  private poleOf(c: IKChainDef): { hinge: Bone; base: Bone; end: Bone } | null {
+    const held = this.poleBones.get(c.id);
+    if (held) return held;
+    const hingeIndex = c.links.findIndex((n) => this.defs.get(n)?.kind === 'hinge');
+    const hinge = hingeIndex >= 0 ? this.bones.get(c.links[hingeIndex]) : undefined;
+    const base = hingeIndex >= 0 ? this.bones.get(c.links[hingeIndex + 1] ?? '') : undefined;
+    const end = this.bones.get(c.effector);
+    if (!c.poleRef || !hinge || !base || !end) return null;
+    const found = { hinge, base, end };
+    this.poleBones.set(c.id, found);
+    return found;
+  }
+
+  /**
+   * Where a chain's pole target sits in the world: out from the knee or
+   * elbow, along the way it points (off the line from the hip to the ankle,
+   * or the shoulder to the wrist), half the limb segment above the joint
+   * away. A limb straight to the millimetre has no bend to read, and the
+   * direction is then the aim's own. Dragging the target is aiming the limb:
+   * aimFromPoint reads the angle round the limb that a point asks for.
+   */
+  poleTarget(chainId: string, out: Vector3): Vector3 | null {
+    const c = this.chain(chainId);
+    const p = c ? this.poleOf(c) : null;
+    if (!c || !p) return null;
+    this.mesh.updateMatrixWorld(true);
+    const from = _pa.setFromMatrixPosition(p.base.matrixWorld);
+    const joint = _pb.setFromMatrixPosition(p.hinge.matrixWorld);
+    const axis = _pc.setFromMatrixPosition(p.end.matrixWorld).sub(from);
+    if (axis.lengthSq() < this.len(TINY) ** 2) return null;
+    axis.normalize();
+    const off = _pd.subVectors(joint, from);
+    off.addScaledVector(axis, -off.dot(axis));
+    if (off.lengthSq() < this.len(0.002) ** 2) {
+      // Straight: the way the aim says, from the rig's reference direction.
+      const ref = _pe.fromArray(c.poleRef!).applyQuaternion(this.limbFrame(c, _lq));
+      ref.addScaledVector(axis, -ref.dot(axis));
+      if (ref.lengthSq() < 1e-6) ref.set(0, 1, 0).addScaledVector(axis, -axis.y);
+      ref.normalize();
+      const a = (this.getAim(c.id) * Math.PI) / 180;
+      off.copy(ref).multiplyScalar(Math.cos(a)).addScaledVector(_pf.crossVectors(axis, ref), Math.sin(a));
+    } else {
+      off.normalize();
+    }
+    return out.copy(joint).addScaledVector(off, joint.distanceTo(from) * POLE_DISTANCE);
+  }
+
+  // --- the head's look-at ---------------------------------------------------
+
+  /** Whether the figure has a head to look with. */
+  hasLook(): boolean {
+    return !!this.look;
+  }
+
+  /** The bone the look-at turns fully: the head. */
+  lookBone(): string | null {
+    return this.look?.head ?? null;
+  }
+
+  /** The bones a look-at turns, bottom to top, with the share of the turn each has made by the end. */
+  lookShares(): Array<{ bone: string; share: number }> {
+    return this.lookChain.map((l) => ({ bone: l.name, share: l.share }));
+  }
+
+  /** Where a look starts from: about the head's eye height, in the world. */
+  lookFromWorld(out: Vector3): Vector3 | null {
+    return this.look ? this.effectorWorld(this.look.head, out, LOOK_FROM) : null;
+  }
+
+  /**
+   * Where the head faces, as a unit vector in the world: the figure's
+   * forward, turned by as much as the head is turned from its rest.
+   */
+  lookForward(out: Vector3): Vector3 | null {
+    const bone = this.look ? this.bones.get(this.look.head) : undefined;
+    const rest = this.look ? this.restWorld.get(this.look.head) : undefined;
+    if (!bone || !rest) return null;
+    this.mesh.updateMatrixWorld(true);
+    bone.getWorldQuaternion(_lq).multiply(_lq2.copy(rest.q).invert());
+    return out.set(0, 0, 1).applyQuaternion(_lq);
+  }
+
+  /** How far the look-at target sits from the head: a head and a half in front of it. */
+  lookDistance(): number {
+    const rest = this.look ? this.rest.get(this.look.head) : undefined;
+    const p = this.look ? this.props.get(this.look.head) : undefined;
+    return rest ? LOOK_DISTANCE * rest.length * (p?.length ?? 1) : 0;
+  }
+
+  /** The look-at target's place: out from the head along where it faces. */
+  lookTarget(out: Vector3): Vector3 | null {
+    if (!this.lookFromWorld(out)) return null;
+    const f = this.lookForward(_pa);
+    return f ? out.addScaledVector(f, this.lookDistance()) : null;
+  }
+
+  /**
+   * Begin a look: the chain's poses now are the ones every lookAt until
+   * endLook starts from, so a drag's turn is a function of where the target
+   * is and not of the path it took (a path of small turns would leave the
+   * neck twisted by the sum of them). A lookAt with none begun takes its own.
+   */
+  beginLook(): void {
+    if (!this.look) return;
+    this.lookBase = new Map();
+    for (const { name } of this.lookChain) this.lookBase.set(name, this.pose.get(name)!.clone());
+  }
+
+  endLook(): void {
+    this.lookBase = null;
+  }
+
+  /**
+   * Turn the figure's head to face a world point. The turn needed is shared
+   * down the chain by what each bone has made of it by the end: the head
+   * all of it, the neck half (LOOK_NECK_SHARE), the chest and the torso
+   * under it a little (LOOK_TORSO_SHARE, in all). The head takes the rest
+   * at its own joint and ends facing the point exactly; the neck leans with
+   * it from the chest and twists only by its own share; nothing below the
+   * torso moves, so the hips stay where they are. The turn is measured
+   * from the chest's facing as the look began, as a turn to one side and a
+   * tilt up or down with no roll, and the head holds at LOOK_TURN_MAX and
+   * LOOK_TILT_MAX.
+   *
+   * The head's joint moves as the neck turns, which moves the line to the
+   * point, so the solve is repeated from the same start until the head
+   * faces the point from where it ends up.
+   */
+  lookAt(point: Vector3): void {
+    if (!this.look) return;
+    const own = this.lookBase === null;
+    if (own) this.beginLook();
+    const base = this.lookBase!;
+    const chain = this.lookChain;
+    const put = (): void => {
+      for (const l of chain) {
+        const q = this.pose.get(l.name)!.copy(base.get(l.name)!);
+        this.bones.get(l.name)!.quaternion.copy(this.rest.get(l.name)!.local).multiply(q);
+      }
+      this.root.updateMatrixWorld(true);
+    };
+    put();
+    // The chest's facing as the look began, and every bone's turn from rest.
+    const frame = this.bones.get(this.look.neck ?? this.look.head)?.parent;
+    const frameRest = frame ? this.restWorld.get(frame.name) : undefined;
+    if (!frame || !frameRest) {
+      if (own) this.endLook();
+      return;
+    }
+    const chest = frame.getWorldQuaternion(_lC).multiply(_lq2.copy(frameRest.q).invert());
+    _lCi.copy(chest).invert();
+    for (let i = 0; i < chain.length; i++) {
+      const d = (this.lookD[i] ??= new Quaternion());
+      this.bones.get(chain[i].name)!.getWorldQuaternion(d).multiply(_lq2.copy(this.restWorld.get(chain[i].name)!.q).invert());
+    }
+    const f = _lf;
+    const tiny = this.len(TINY) ** 2;
+    if (!this.lookFromWorld(_lp) || f.subVectors(point, _lp).lengthSq() < tiny) {
+      if (own) this.endLook();
+      return;
+    }
+    for (let pass = 0; pass < 6; pass++) {
+      f.normalize();
+      this.turnLook(f, chest);
+      this.lookFromWorld(_lp);
+      const g = _lg.subVectors(point, _lp);
+      if (g.lengthSq() < tiny) break;
+      g.normalize();
+      if (g.dot(f) > LOOK_SETTLED) break;
+      f.copy(g);
+      put();
+    }
+    if (own) this.endLook();
+  }
+
+  /** One pass of lookAt: every bone of the chain to its share of the turn that faces `f`. */
+  private turnLook(f: Vector3, chest: Quaternion): void {
+    const chain = this.lookChain;
+    // The wanted facing in the chest's frame, as a turn and a tilt.
+    const c = _lf2.copy(f).applyQuaternion(_lCi);
+    const yaw = Math.max(-LOOK_TURN_MAX, Math.min(LOOK_TURN_MAX, Math.atan2(c.x, c.z) / RAD)) * RAD;
+    const tilt = Math.max(-LOOK_TILT_MAX, Math.min(LOOK_TILT_MAX, (Math.atan2(c.y, Math.hypot(c.x, c.z))) / RAD)) * RAD;
+    // From rest: turned to the side, then tilted about the head's own side axis.
+    const turn = _lT.setFromEuler(_le.set(-tilt, yaw, 0, 'YXZ'));
+    // The head ends facing exactly, with its turn from rest the chest's plus
+    // this one; the world turn that takes it there from where it stood as
+    // the look began is what the bones below it share.
+    const headTurn = _lh.copy(chest).multiply(turn);
+    const need = _lR.copy(headTurn).multiply(_lq2.copy(this.lookD[chain.length - 1]).invert());
+    if (need.w < 0) need.set(-need.x, -need.y, -need.z, -need.w);
+    for (let i = 0; i < chain.length; i++) {
+      const name = chain[i].name;
+      const share = chain[i].share;
+      const bone = this.bones.get(name)!;
+      // The turn this bone has made from rest, in the world: the head's is
+      // the whole of it; a lower bone's is where it stood as the look began,
+      // turned by its share of the turn the head needed.
+      const want = _lw;
+      if (share >= 1) want.copy(headTurn);
+      else want.copy(_ls.identity().slerp(need, share)).multiply(this.lookD[i]);
+      want.multiply(this.restWorld.get(name)!.q);
+      // Into the bone's own pose, under the parent as it stands now.
+      const parent = bone.parent;
+      if (parent) want.premultiply(parent.getWorldQuaternion(_lq2).invert());
+      want.premultiply(_lq2.copy(this.rest.get(name)!.local).invert());
+      _le.setFromQuaternion(want, 'XYZ');
+      this.setPoseEuler(name, _le.x / RAD, _le.y / RAD, _le.z / RAD, false);
+      this.root.updateMatrixWorld(true);
+    }
   }
 
   /**
@@ -1674,6 +1929,30 @@ const _ts = new Quaternion();
 const _te = new Euler();
 /** How far past a limit a pose still counts as on it, in radians. */
 const EDGE = 1e-6;
+
+// Scratch for the look-at and the pole targets, which run on every move of a drag.
+const _pa = new Vector3();
+const _pb = new Vector3();
+const _pc = new Vector3();
+const _pd = new Vector3();
+const _pe = new Vector3();
+const _pf = new Vector3();
+const _lf = new Vector3();
+const _lf2 = new Vector3();
+const _lg = new Vector3();
+const _lp = new Vector3();
+const _lq = new Quaternion();
+const _lq2 = new Quaternion();
+const _lC = new Quaternion();
+const _lCi = new Quaternion();
+const _lT = new Quaternion();
+const _ls = new Quaternion();
+const _lw = new Quaternion();
+const _lh = new Quaternion();
+const _lR = new Quaternion();
+const _le = new Euler();
+/** A look is settled when the head faces the point to within a fiftieth of a degree. */
+const LOOK_SETTLED = Math.cos((0.02 * Math.PI) / 180);
 
 function poseTurn(e: [number, number, number], out: Quaternion): Quaternion {
   return out.setFromEuler(_te.set(e[0], e[1], e[2], 'XYZ'));

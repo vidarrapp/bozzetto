@@ -136,6 +136,14 @@ async function upload(client: ProjectsClient, u: SceneUpload, onProgress: (text:
     if (created) await client.remove(project).catch(() => undefined);
     throw err;
   }
+  // A project renamed here since it was opened takes the new name.
+  if (!created && title !== u.title.slice(0, MAX_TITLE)) {
+    try {
+      title = (await client.update(project, { title: u.title.slice(0, MAX_TITLE) })).title || title;
+    } catch {
+      // Best effort: the file is saved, and the title stays the project's own.
+    }
+  }
   if (u.presentation) {
     try {
       await client.update(project, u.presentation);

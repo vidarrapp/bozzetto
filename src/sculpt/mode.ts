@@ -64,6 +64,7 @@ import { rememberPanels } from './ui/panelMemory';
 import './ui/shell.css';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
+import { LayersPanel } from './ui/LayersPanel';
 import { MaterialPanel } from '../ui/MaterialPanel';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { SculptPanel } from './ui/SculptPanel';
@@ -78,6 +79,8 @@ import { downloadBlob } from '../ui/download';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import { originOf } from '../ui/origin';
 import { deviceStore } from '../ui/deviceStorage';
+import { sceneStateWord } from '../ui/sceneState';
+import { defaultSceneName, newSceneName } from './bridge/SceneLibrary';
 
 /**
  * Turntable coast: only fast ticks glide, and only a little.
@@ -539,6 +542,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // during mount, and a later `let` is a temporal dead zone at that point
   // (found the hard way - the whole sculpt boot died on it).
   let modelPanel: ModelPanel | null = null;
+  let layersPanel: LayersPanel | null = null;
   let materialPanel: MaterialPanel | null = null;
   const applyLookSafely = async (look: Parameters<Viewer['applyLook']>[0]): Promise<void> => {
     syncingPanel = true;
@@ -764,6 +768,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sculptPanel?.refreshState();
     modelPanel?.refreshState();
     modelPanel?.refreshGroups();
+    layersPanel?.refresh();
     modelPanel?.refreshMeasures();
     syncPanelMaterial();
     if (gizmo.isActive()) gizmo.attach(gizmoTarget());
@@ -788,10 +793,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   mountAccountHandle(strip);
   // The file actions come later in the mount; the readout asks through this.
   let fileActionsRef: FileActions | null = null;
+  // Whether the scene is as last saved to its project: the autosave's count (set once it exists).
+  let syncedNow: () => boolean = () => false;
   let goArmature: () => Promise<void> = async () => undefined;
   const readout = makeReadout(strip, session, {
-    projectName: () => fileActionsRef?.link?.title ?? openedName,
+    projectName: () => fileActionsRef?.sceneName || openedName,
     edited: () => !!fileActionsRef && fileActionsRef.hasWork(),
+    state: () => (fileActionsRef ? sceneStateWord({ linked: !!fileActionsRef.link, synced: syncedNow() }) : null),
     onRefresh: () => {
       modelPanel?.refreshHeading();
     },
@@ -1326,7 +1334,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    */
   const enterPresent = (): (() => void) => {
     // The Material panel stays: it is a Present panel too (its Surface section goes, its Display stays).
-    const sidePanels = [sculptPanel, scenePanel, modelPanel];
+    const sidePanels = [sculptPanel, scenePanel, modelPanel, layersPanel];
     const was = {
       chrome: chrome.isHidden(),
       render: !(document.querySelector('.panel--render')?.classList.contains('panel--collapsed') ?? true),
@@ -1583,10 +1591,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       }
     },
     onUnsentChange: () => persist.markDirty(false),
+    onNameChange: () => persist.markDirty(false),
     syncPoint: () => persist.editCount(),
     onSynced: (at) => persist.markSynced(at),
   });
   fileActionsRef = fileActions;
+  strip.onRename = (name) => fileActions.rename(name);
+  // A scene always has a name: the project's, the one it was kept under,
+  // the autosave's, or today's study.
+  fileActions.adoptName(openedName ?? bootLink?.title ?? saved?.name ?? (saved?.savedAt ? defaultSceneName(new Date(saved.savedAt)) : await newSceneName()));
   fileActions.adoptLink(bootLink);
   // What this device kept for the scene that opened: the autosave's pictures on a reload, a
   // library project's by its id (none when they were added on another device), nothing for a
@@ -1725,8 +1738,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         panels: [
           ['scene', 'Scene'],
           ['model', 'Model'],
-          ['material', 'Material'],
+          ['layers', 'Layers'],
           ['sculpt', 'Tool'],
+          ['material', 'Material'],
           ['reference', 'Reference'],
           ['settings', 'Render'],
         ],
@@ -1828,6 +1842,20 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   referenceView = new ReferenceView(referenceBoard, viewer);
   const offIntake = installIntake(referenceBoard, () => !!referencePanel?.isOpen());
   modelPanel = new ModelPanel(session, viewer);
+  layersPanel = new LayersPanel(session);
+  // A layer edit (a stroke recorded, a weight, an undo) redraws the list and goes to the autosave.
+  session.layers.onChange = () => {
+    layersPanel?.refresh();
+    persist.markDirty();
+  };
+  layersPanel.onEdit = () => {
+    session.render();
+    refreshReadout();
+  };
+  // A stroke the active layer cannot take (hidden, or at 0%) says why.
+  session.layers.onRefuse = (_mesh, why) => {
+    failNotice(`The layer "${why.name}" is hidden or at 0%. Show the layer to sculpt on it.`);
+  };
   materialPanel = new MaterialPanel(viewer, { sculpting: true, surface: {
       hasObject: () => !!session.getMesh(),
       // The assigned material's name; "Several" over a selection that mixes them. Assigning is the Scene panel's.
@@ -2054,7 +2082,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // So does the unsent copy a failed save left (SavedScene.unsent).
     if (fileActions.link) scene.project = { ...fileActions.link };
     if (fileActions.unsentCopy) scene.unsent = fileActions.unsentCopy;
+    scene.name = fileActions.sceneName;
   };
+  syncedNow = () => persist.isSynced();
   persist.install();
   if (bootLink && bootSynced) persist.adoptSynced();
   // A scene opened from a library card or from Projects replaces the one in
@@ -2307,6 +2337,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     persist.dispose();
     sculptPanel?.dispose();
     modelPanel?.dispose();
+    layersPanel?.dispose();
+    session.layers.onChange = null;
+    session.layers.onRefuse = null;
     materialPanel?.dispose();
     scenePanel?.dispose();
     offIntake();
@@ -2397,6 +2430,8 @@ function makeReadout(
   from: {
     projectName: () => string | null | undefined;
     edited: () => boolean;
+    /** Where the work is kept, as a word after the name (ui/sceneState). */
+    state: () => string | null;
     onRefresh: () => void;
     /** Present: the viewport's size, instead of the object's numbers. */
     frame: () => { w: number; h: number } | null;
@@ -2410,6 +2445,7 @@ function makeReadout(
     strip.setReadout({
       name,
       edited: !!name && from.edited(),
+      state: name ? from.state() : null,
       // In Present the readout is the project and the frame, not the object's numbers.
       object: frame ? null : mesh ? session.activeName() : 'Empty scene',
       tris: frame || !mesh ? null : mesh.getNbTriangles(),

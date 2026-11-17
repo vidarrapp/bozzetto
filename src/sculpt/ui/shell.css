@@ -187,17 +187,62 @@ body:is(.bz-shell, .bz-page) .bz-readout {
   justify-content: center;
   gap: 16px;
   min-width: 0;
+  /* Room on both sides, so the name never reads as one more step of the path. */
+  padding: 0 24px;
   overflow: hidden;
   white-space: nowrap;
 }
 
 body:is(.bz-shell, .bz-page) .bz-readout__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 700;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout > :not(.bz-readout__name) {
+  flex: none;
 }
 
 body:is(.bz-shell, .bz-page) .bz-readout__edited {
   margin-left: -8px;
+  color: var(--bz-text-2);
   font-weight: 400;
+}
+
+/* The name, where a mode lets it be renamed: a tap puts a field in its place. */
+body:is(.bz-shell, .bz-page) .bz-readout__name--edit {
+  cursor: text;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__name--edit:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--bz-line);
+  text-underline-offset: 3px;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__name--edit:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__rename {
+  box-sizing: border-box;
+  width: 200px;
+  max-width: 40vw;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bz-viewport);
+  color: var(--bz-text);
+  font: 700 13px/20px var(--bz-font);
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__rename:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
 }
 
 body:is(.bz-shell, .bz-page) .bz-readout__item {
@@ -217,14 +262,73 @@ body:is(.bz-shell, .bz-page) .bz-readout__val {
 /* Narrow: the readout goes before the path does (under 1000px it would meet the path). */
 @media (max-width: 999px) {
   body:is(.bz-shell, .bz-page) .bz-strip {
-    grid-template-columns: minmax(min-content, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   body:is(.bz-shell, .bz-page) .bz-strip__right {
-    grid-column: 2;
+    grid-column: 3;
   }
 
+  /* Only the name and its state word stay: the name gives way (an ellipsis) before the word does. */
   body:is(.bz-shell, .bz-page) .bz-readout {
+    grid-column: 2;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__edited {
+    margin-left: 0;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout > :not(.bz-readout__name, .bz-readout__edited, .bz-readout__rename) {
+    display: none;
+  }
+}
+
+/* A phone: the menus and the path leave about 100px, so the name sits over its
+   state word, each cut with an ellipsis, and a finger gets a taller target. */
+@media (max-width: 520px) {
+  body:is(.bz-shell, .bz-page) .bz-readout {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0;
+    padding: 0 6px;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__name,
+  body:is(.bz-shell, .bz-page) .bz-readout__edited {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__name {
+    flex: none;
+    box-sizing: content-box;
+    padding: 6px 6px 0;
+    margin: -6px -6px 0;
+    font-size: 12px;
+    line-height: 15px;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__edited {
+    flex: none;
+    font-size: 10px;
+    line-height: 13px;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__rename {
+    width: 100%;
+    max-width: none;
+    height: 24px;
+    font-size: 16px; /* under 16px, iOS zooms the page when a field takes focus */
+  }
+
+  /* While the field is there it has the whole readout. */
+  body:is(.bz-shell, .bz-page) .bz-readout__rename ~ .bz-readout__edited {
     display: none;
   }
 }
@@ -308,10 +412,78 @@ body.bz-shell .bz-ws__sep {
   }
 }
 
-/* A phone: the step you are in, and nothing else; the others are in the View menu. */
+/* A phone: the step you are in, and nothing else; pressing it opens a small list of the three
+   (TitleStrip.ts), and the View menu has them too. A small arrow says it opens. */
 @media (max-width: 599px) {
   body.bz-shell .bz-ws__step:not([aria-current]),
   body.bz-shell .bz-ws__sep {
+    display: none;
+  }
+
+  body.bz-shell .bz-ws__step[aria-current]::before {
+    content: '';
+    order: 1;
+    margin-left: 6px;
+    border: 4px solid transparent;
+    border-top-color: var(--bz-text-2);
+    border-bottom-width: 0;
+  }
+}
+
+/* The small list of the three steps, hanging from the strip. */
+body.bz-shell .bz-ws-menu {
+  min-width: 160px;
+}
+
+/* A phone: the strip stays 32px to look at, but every word and button in it is a 44px
+   touch target. The extra is the hit area only, a pseudo-element reaching 6px above (off
+   the screen) and 6px below the item, over the gap above the tab row; the layout does not
+   move. */
+@media (max-width: 599px) and (pointer: coarse) {
+  body:is(.bz-shell, .bz-page) .bz-menuname,
+  body:is(.bz-shell, .bz-page) .bz-strip__btn,
+  body:is(.bz-shell, .bz-page) .bz-strip__hide,
+  body.bz-shell .bz-ws__step {
+    position: relative;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-menuname::after,
+  body:is(.bz-shell, .bz-page) .bz-strip__btn::after,
+  body:is(.bz-shell, .bz-page) .bz-strip__hide::after,
+  body.bz-shell .bz-ws__step::after {
+    content: '';
+    position: absolute;
+    top: -6px;
+    bottom: -6px;
+    left: 0;
+    right: 0;
+  }
+}
+
+/* The public viewer on a phone keeps the project's title, cut with an ellipsis where it is long. */
+@media (max-width: 599px) {
+  body.bz-viewer .bz-strip {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  body.bz-viewer .bz-strip__right {
+    grid-column: 3;
+  }
+
+  body.bz-viewer .bz-readout {
+    display: flex;
+    grid-column: 2;
+    justify-content: flex-start;
+    padding: 0 4px;
+  }
+
+  body.bz-viewer .bz-readout__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body.bz-viewer .bz-readout > :not(.bz-readout__name) {
     display: none;
   }
 }
@@ -353,6 +525,7 @@ body.bz-shell .panel:not(.panel--left) {
 }
 
 body.bz-shell .panel--model,
+body.bz-shell .panel--layers,
 body.bz-shell .panel--material,
 body.bz-shell .panel--reference,
 body.bz-shell .panel--sculpt {
@@ -494,18 +667,23 @@ body.bz-shell .panel .handle__label {
   color: inherit;
 }
 
-/* A narrow screen: six tabs (three each side, with Reference) must not run into one another, so each
-   takes less room around its name. */
-@media (max-width: 480px) {
-  body.bz-shell .panel > .panel__handle {
-    padding: 0 10px;
-  }
-}
-
-/* A phone: an open panel may cover the width. */
+/* A phone: up to three tabs on the left and four on the right (Scene, Model, Layers;
+   Tool, Material, Reference, Render) share one 390px row. Chosen over a scrolling row:
+   the tabs are fixed to the screen and each stays one tap away, none hidden off an edge,
+   so the labels are set a little smaller with 8px either side and a 44px least width
+   (a hand's width), which seven of them fit. Where even that would overlap (a narrower
+   screen), shellLayout.ts sets data-tabs-tight on the page and the padding drops to 3px. */
 @media (max-width: 599px) {
-  body.bz-shell .panel {
-    width: 100vw;
+  body.bz-shell .panel > .panel__handle {
+    padding: 0 8px;
+    min-width: 44px;
+    font-size: 12px;
+  }
+
+  html[data-tabs-tight] body.bz-shell .panel > .panel__handle {
+    padding: 0 3px;
+    min-width: 0;
+    font-size: 11px;
   }
 }
 
@@ -542,6 +720,29 @@ body.bz-shell .sculpt-toolbar__brushes {
   body.bz-shell .sculpt-toolbar__brushes {
     overflow-x: auto;
     scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 12px;
+    overscroll-behavior-x: contain;
+  }
+
+  body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn {
+    scroll-snap-align: start;
+  }
+
+  /* More tools out of sight: the bar fades at the edge that is cut (shellLayout.ts sets data-scroll-cue). */
+  body.bz-shell .sculpt-toolbar__brushes[data-scroll-cue='end'] {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+  }
+
+  body.bz-shell .sculpt-toolbar__brushes[data-scroll-cue='start'] {
+    -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent);
+    mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent);
+  }
+
+  body.bz-shell .sculpt-toolbar__brushes[data-scroll-cue='both'] {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
   }
 }
 
@@ -917,8 +1118,8 @@ body.bz-shell .update-notice--beside-panel {
    What edits is put away and locked: the tool bar, the edge controls, the
    brush ring, and the Scene, Model and Tool panels with
    their tabs (display, so their tabs leave no gap in the row). Material
-   stays as the left-hand tab (its Surface section goes, its Display stays);
-   Render and Output remain as the right-hand tabs. The Output tab and panel exist in
+   stays as a right-hand tab (its Surface section goes, its Display stays);
+   Render and Output remain beside it as right-hand tabs. The Output tab and panel exist in
    Present only. */
 body.presenting .sculpt-toolbar__brushes,
 body.presenting .sculpt-sliders,
@@ -1816,8 +2017,9 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
 }
 
 /* Red for a delete, in the row menu as in the window. */
-.row-menu .file-menu__item--danger {
-  color: var(--bz-red);
+.row-menu .file-menu__item--danger,
+.row-menu .file-menu__item--danger:hover:not(:disabled) {
+  color: var(--bz-red-text);
 }
 
 /* The picture over the view: its own layer inside the view, fitted to the view's height and centred, and never an input target. */
@@ -1882,4 +2084,144 @@ body.presenting .ref-beside {
   transform-origin: 0 0;
   -webkit-user-drag: none;
   pointer-events: none;
+}
+
+/* --- The Layers panel (sculpt/ui/LayersPanel.ts, ui/layerList.ts) ---
+   A row a layer, newest on top, Base fixed at the foot. The active row
+   takes the selected-row fill; the weight slider is the shared field. */
+body.bz-shell .panel--layers {
+  width: min(268px, calc(100vw - 64px));
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  min-height: 72px;
+}
+
+.layer-row {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 6px 2px 2px;
+  background: transparent;
+  color: var(--bz-text);
+  font: 13px/16px var(--bz-font);
+  cursor: pointer;
+}
+
+.layer-row:hover {
+  background: var(--bz-control);
+}
+
+.layer-row--active,
+.layer-row--active:hover {
+  background: var(--bz-hover);
+}
+
+.layer-row__top {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+}
+
+.layer-row--base {
+  flex-direction: row;
+  align-items: center;
+  min-height: 44px;
+  padding-left: 12px;
+  border-top: 1px solid var(--bz-line);
+  margin-top: 4px;
+}
+
+.layer-row__eye,
+.layer-row .layer-row__more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bz-text);
+  cursor: pointer;
+}
+
+.layer-row .layer-row__more {
+  width: 32px;
+  margin: 0;
+}
+
+.layer-row .layer-row__more::after {
+  margin: 0 0 3px;
+}
+
+.layer-row__eye:hover,
+.layer-row .layer-row__more:hover {
+  background: var(--bz-hover);
+}
+
+.layer-row--hidden .layer-row__name {
+  color: var(--bz-text-3);
+}
+
+.layer-row--hidden .layer-row__eye {
+  color: var(--bz-text-3);
+}
+
+.layer-row__name {
+  flex: 1;
+  min-width: 0;
+  padding: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-row__badge {
+  flex: none;
+  color: var(--bz-text-2, var(--bz-text-3));
+  font: 11px/16px var(--bz-font-mono);
+  padding: 0 4px;
+}
+
+.layer-row__rename {
+  flex: 1;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--bz-orange);
+  border-radius: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 13px/16px var(--bz-font);
+  outline: none;
+}
+
+.layer-row__weight {
+  margin: 0 0 4px 44px;
+}
+
+.layer-row .row-menu {
+  position: fixed;
+  z-index: 40;
+}
+
+.file-menu .file-menu__item.file-menu__item--danger,
+.file-menu .file-menu__item.file-menu__item--danger:hover:not(:disabled) {
+  color: var(--bz-red-text);
+}
+
+.layers-note {
+  padding: 4px 16px;
+  color: var(--bz-text-3);
+  font: 13px/16px var(--bz-font);
+}
+
+.layers-foot {
+  border-top: 1px solid var(--bz-line);
 }

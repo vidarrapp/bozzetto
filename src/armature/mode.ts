@@ -1,4 +1,4 @@
-import { Box3, Group, Mesh, Plane, Raycaster, RingGeometry, SphereGeometry, Vector2, Vector3, Object3D } from 'three';
+import { Box3, Group, Mesh, Plane, Raycaster, Sphere, Vector2, Vector3, Object3D } from 'three';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { float, normalLocal, positionLocal } from 'three/tsl';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
@@ -19,12 +19,14 @@ import { TitleStrip } from '../sculpt/ui/TitleStrip';
 import { mountAccountHandle } from '../ui/account/menu';
 import { keyFor, viewMenuItems } from '../sculpt/ui/viewMenu';
 import { editMenuItems, fileMenuItems } from '../sculpt/ui/menuShape';
+import type { MenuItem } from '../sculpt/ui/TopMenu';
 import { recentMenuItem } from '../sculpt/ui/recentMenu';
 import { recordRecent } from '../ui/recent';
 import type { PathStep, Workspace } from '../sculpt/ui/TitleStrip';
 import { rememberPanels } from '../sculpt/ui/panelMemory';
 import '../sculpt/ui/shell.css';
 import { Armature, buildArmature, importArmature, SCENE_SCALE, type ArmatureState } from './Armature';
+import { HandleKit, RECT_MIN_HALF, RING_RADIUS, setHandleViewport, type HandleShape, type HandleState, type HandleView } from './handleViews';
 import { onCentimetres } from './units';
 import { UNITS } from '../viewer/units';
 import { fetchFigure, figureById, tuneRig } from './figures';
@@ -47,7 +49,9 @@ import { suspensionText } from '../net/account';
 import { isProjectId } from '../net/ids';
 import { originOf } from '../ui/origin';
 import { takeOpen } from '../ui/openToken';
-import { signInButton } from '../ui/signIn';
+import { signInAgain, signInButton } from '../ui/signIn';
+import { sceneStateWord } from '../ui/sceneState';
+import { defaultSceneName, newSceneName } from '../sculpt/bridge/SceneLibrary';
 import {
   ArmatureFileError,
   armatureText,
@@ -60,7 +64,7 @@ import {
   uploadArmature,
   type ArmatureLink,
 } from './project';
-import { askWindow, tellWindow } from '../ui/askWindow';
+import { askText, askWindow, tellWindow } from '../ui/askWindow';
 
 /** Undo steps kept (owner call), the oldest let go past it. */
 const HISTORY_LIMIT = 100;
@@ -82,8 +86,17 @@ const DEFAULT_FIGURE = 'mannequin-male-realistic';
  * cannot be read: the blocks are code, so they are always there.
  */
 const FALLBACK_FIGURE = 'placeholder-male';
-/** What a press on the root's ball records, and the ball's name in the scene. */
+/** What a press on the root's handle records, and its name in the scene. */
 const ROOT_BALL = 'root';
+/**
+ * The head's look-at handle: its id as a selection (the old head chain's
+ * id, kept), and the names of its arrowhead and its dashed line in the scene.
+ */
+const LOOK_ID = 'head';
+const LOOK_NAME = 'look:head';
+const LOOK_DASH = 'dash:head';
+/** A floor ring's quad is this much wider than the ring it holds (handleViews.ts). */
+const FLOOR_RING_MARGIN = 1.1;
 
 /** The rig of a model already parsed once this session, by its bytes. */
 const parsed = new WeakMap<ArrayBuffer, ReturnType<typeof rigFromGLTF>>();
@@ -199,6 +212,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   /** The project Save to library writes to: the autosave's, or the one just opened. */
   let bootLink: ArmatureLink | null = saved?.project ?? null;
   let bootSymmetry: boolean | null = null;
+  /** Whether the boot armature is its project's as saved: a project just opened, or an autosave that said so. */
+  let bootSynced = !!bootLink && saved?.synced === true;
   /** A project or template was opened by its address: its pictures are the board's, not the autosave's. */
   let openedProject = false;
   /** Said once the page is up: what an opened file needed mending, or why it did not open. */
@@ -225,6 +240,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         saved = got.file;
         openedProject = true;
         bootLink = got.link ?? null;
+        bootSynced = !!got.link;
         bootSymmetry = got.symmetry;
         if (got.notice) bootNotes.push(got.notice);
       }
@@ -244,7 +260,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       saved.state.preset = FALLBACK_FIGURE;
     }
   }
-  let name = saved?.name ?? 'Armature';
+  // Always named: the project's title, the name it was kept under, or today's study.
+  let name =
+    bootLink?.title ?? (saved?.name && saved.name !== 'Armature'
+      ? saved.name
+      : saved?.savedAt
+        ? defaultSceneName(new Date(saved.savedAt))
+        : await newSceneName());
   /**
    * A figure read from a rigged file: its bytes, so it can be built again
    * on the next visit, and the rig derived from them. The built-in presets
@@ -414,6 +436,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       }
       // One control at a time on the root, where both are attached.
       for (const other of controls) if (other !== tc) other.enabled = !on && attached.has(other);
+      // A drag of the look-at handle's gizmo turns from where it began, as a drag of the handle does.
+      if (selectedHandle === LOOK_ID) {
+        if (on) armature.beginLook();
+        else armature.endLook();
+      }
       if (!on) {
         commit();
         flushPanel();
@@ -520,28 +547,49 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     panel.refresh(selected);
   };
 
-  /** A tap on an IK ball: that ball selected, and the move gizmo on it. */
-  const selectHandle = (id: string | null): void => {
+  /**
+   * A tap on a handle: that handle selected (its outline turns orange). No
+   * gizmo comes with it (owner call, 2026-11-17): a handle is moved by
+   * dragging it. `gizmo` puts the move gizmo on it, which Move (W) asks for
+   * on a selected handle, for a move along one axis.
+   */
+  let handleGizmo = false;
+  const selectHandle = (id: string | null, gizmo = false): void => {
     select(null);
-    const ball = id ? handles.get(id) : undefined;
+    handleGizmo = false;
+    const ball = id ? handleMesh(id) : undefined;
     if (!id || !ball || !handlesOn) return;
     selectedHandle = id;
-    trimFreeRotate(false);
-    moveTc.attach(ball);
-    moveTc.enabled = true;
-    moveTc.getHelper().visible = true;
-    attached.add(moveTc);
+    handleGizmo = gizmo;
+    if (gizmo) {
+      trimFreeRotate(false);
+      moveTc.attach(ball);
+      moveTc.enabled = true;
+      moveTc.getHelper().visible = true;
+      attached.add(moveTc);
+    }
     syncHandles();
     placeControls();
   };
-  /** The selected ball moved by its gizmo: the limb reaches for it, as a drag of the ball reaches. */
+  /** The mesh of a selectable handle: a reach ring by its chain, or the look-at by LOOK_ID. */
+  const handleMesh = (id: string): Mesh | undefined => (id === LOOK_ID ? views.get(LOOK_NAME)?.mesh : handles.get(id));
+  /**
+   * The selected handle moved by its gizmo: the limb reaches for it, as a
+   * drag of the ring reaches; the head turns to face it, as a drag of the
+   * look-at turns it.
+   */
   const handleMoved = (id: string): void => {
-    const ball = handles.get(id);
+    const ball = handleMesh(id);
     if (!ball) return;
-    armature.reach(id, ball.getWorldPosition(dragPoint));
-    armature.repin(id);
-    armature.applyPins(id);
-    // Back where the hand or foot got to, which the gizmo then follows.
+    if (id === LOOK_ID) {
+      armature.lookAt(ball.getWorldPosition(dragPoint));
+      armature.applyPins();
+    } else {
+      armature.reach(id, ball.getWorldPosition(dragPoint));
+      armature.repin(id);
+      armature.applyPins(id);
+    }
+    // Back where the hand, foot or head got to, which the gizmo then follows.
     syncHandles();
     placeControls();
     refreshPanel();
@@ -549,123 +597,146 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   };
 
   // --- IK handles ------------------------------------------------------------
-  // A ball at each chain's far end. Drag one and the limb reaches for it;
-  // pin one and it holds its ground while the rest of the figure moves.
-  // One more sits in the hips for the root: drag it and the whole figure
-  // moves, as the pelvis gizmo's centre moves it, without the gizmo.
+  // Controls drawn the way animation programs draw them (handleViews.ts):
+  // outlines, neutral, orange only while selected or dragged.
+  //   a ring at each chain's far end: drag it and the limb reaches for it;
+  //   pin it (a dot in its middle) and it holds its ground while the figure moves.
+  //   an arrowhead out from each knee and elbow, joined to the joint by a
+  //   dashed line: drag it and the joint turns toward it.
+  //   an arrowhead in front of the face, the same way: drag it and the head
+  //   (and the neck, and a little of the back) turn to face it.
+  //   a rectangle round the hips for the root: drag it and the whole figure moves.
   // Drawn over everything (depth test off): a handle you cannot click
   // because the figure's own arm is in front of it is no handle at all.
   const handleGroup = new Group();
   handleGroup.name = 'ik-handles';
   viewer.scene.add(handleGroup);
-  const handleGeometry = new SphereGeometry(1, 16, 12);
-  const freeMat = new MeshBasicNodeMaterial();
-  freeMat.color.set('#c87049');
-  freeMat.depthTest = false;
-  freeMat.depthWrite = false;
-  freeMat.transparent = true;
-  freeMat.opacity = 0.85;
-  const pinnedMat = new MeshBasicNodeMaterial();
-  pinnedMat.color.set('#f0d9a8');
-  pinnedMat.depthTest = false;
-  pinnedMat.depthWrite = false;
-  // The aim balls at the knees and elbows: smaller, and a cool grey so
-  // they read as a different job from the warm reach balls.
-  const aimMat = new MeshBasicNodeMaterial();
-  aimMat.color.set('#9ab6c8');
-  aimMat.depthTest = false;
-  aimMat.depthWrite = false;
-  aimMat.transparent = true;
-  aimMat.opacity = 0.85;
-  // The root's ball: a deep violet, apart from the warm reach balls and the
-  // pale aim balls for everyone. A green, the obvious colour for the
-  // ground, is the rust's twin to red-green colour blindness.
-  const rootMat = new MeshBasicNodeMaterial();
-  rootMat.color.set('#7a5cc0');
-  rootMat.depthTest = false;
-  rootMat.depthWrite = false;
-  rootMat.transparent = true;
-  rootMat.opacity = 0.85;
-  // A ball selected by a tap: lit up, and a size larger.
-  const selectedMat = new MeshBasicNodeMaterial();
-  selectedMat.color.set('#ffb070');
-  selectedMat.depthTest = false;
-  selectedMat.depthWrite = false;
+  const kit = new HandleKit();
+  // The shaders measure their pixels against the canvas as the page shows it.
+  const placeViewport = (): void => {
+    const r = canvas.getBoundingClientRect();
+    setHandleViewport(r.width, r.height);
+  };
+  placeViewport();
+  const viewportObserver = new ResizeObserver(placeViewport);
+  viewportObserver.observe(canvas);
+  // The handle being dragged or hovered, and what it is doing. Declared
+  // here, ahead of the first sync, which paints from them.
+  /** The reach ring being dragged, by chain. */
+  let reaching: string | null = null;
+  /** The knee or elbow being aimed, if any. */
+  let aiming: string | null = null;
+  /** The head's look-at being dragged. */
+  let looking = false;
+  /**
+   * The root being moved by its handle: where the press met its plane
+   * and where the root stood then, in the world. The root goes by what the
+   * pointer has moved since, as the gizmo's centre moves it, so a press
+   * that landed off the handle's centre does not make the figure jump.
+   */
+  let moving: { from: Vector3; root: Vector3 } | null = null;
+  /** The handle under the pointer, by name, if any. */
+  let hovered: string | null = null;
   // A ring on the floor under each foot planting holds flat (owner report:
   // the box seemed to do nothing, since pins - not planting - hold a foot
   // in place, and a foot standing flat looks much as one at rest).
   const plantGroup = new Group();
   plantGroup.name = 'plant-marks';
   viewer.scene.add(plantGroup);
-  const plantMat = new MeshBasicNodeMaterial();
-  plantMat.color.set('#c87049');
-  plantMat.transparent = true;
-  plantMat.opacity = 0.7;
-  plantMat.depthWrite = false;
-  const plantGeometry = new RingGeometry(0.72, 1, 40);
-  plantGeometry.rotateX(-Math.PI / 2);
-  const plantMarks = new Map<string, Mesh>();
+  const plantMarks = new Map<string, HandleView>();
   const markAt = new Vector3();
   const syncPlantMarks = (): void => {
     const planted = new Set(armature.plantedFeet());
     const floor = viewer.lockedFloor() ?? 0;
     for (const [foot, ring] of plantMarks) {
-      if (!planted.has(foot)) ring.visible = false;
+      if (!planted.has(foot)) ring.mesh.visible = false;
     }
     for (const foot of planted) {
       let ring = plantMarks.get(foot);
       if (!ring) {
-        ring = new Mesh(plantGeometry, plantMat);
-        ring.name = `plant:${foot}`;
-        ring.renderOrder = 20;
-        plantGroup.add(ring);
+        ring = kit.create('floor', `plant:${foot}`);
+        kit.paint(ring, 'rest');
+        plantGroup.add(ring.mesh);
         plantMarks.set(foot, ring);
       }
       armature.effectorWorld(foot, markAt, 0.5);
       // About a foot's length across, a hair above the floor.
-      ring.scale.setScalar(0.13 * armature.scale);
-      ring.position.set(markAt.x, floor + 0.002 * armature.scale, markAt.z);
-      ring.visible = true;
+      ring.mesh.scale.setScalar(0.13 * armature.scale * FLOOR_RING_MARGIN);
+      ring.mesh.position.set(markAt.x, floor + 0.002 * armature.scale, markAt.z);
+      ring.mesh.visible = true;
     }
   };
-  // The balls' radii in metres, times SCENE_SCALE: a reach ball 3.8 cm, an aim
-  // ball 2.6, on a figure about 1.7 m tall.
-  const HANDLE_RADIUS = 0.038 * SCENE_SCALE;
-  const SELECTED_SCALE = 1.35;
-  const AIM_RADIUS = 0.026 * SCENE_SCALE;
   let handlesOn = true;
+  /** Every handle's drawing, by name: 'ik:<chain>', 'aim:<chain>', 'dash:<chain>', 'look:head', 'dash:head', 'root'. */
+  const views = new Map<string, HandleView>();
   const handles = new Map<string, Mesh>();
   const aims = new Map<string, Mesh>();
-  // Every figure has one root, so one ball serves them all and is kept
+  /** What a press can take, aim and look first and the root's last. */
+  const pickList: Ball[] = [];
+  // Every figure has one root, so one handle serves them all and is kept
   // through a change of figure.
-  const rootBall = new Mesh(handleGeometry, rootMat);
-  rootBall.name = ROOT_BALL;
-  rootBall.scale.setScalar(HANDLE_RADIUS);
-  rootBall.renderOrder = 30;
-  rootBall.frustumCulled = false;
-  handleGroup.add(rootBall);
+  const rootView = kit.create('rect', ROOT_BALL);
+  handleGroup.add(rootView.mesh);
+  views.set(ROOT_BALL, rootView);
+  const make = (shape: HandleShape, name: string): HandleView => {
+    const v = kit.create(shape, name);
+    handleGroup.add(v.mesh);
+    views.set(name, v);
+    return v;
+  };
   const buildHandles = (): void => {
-    for (const m of [...handles.values(), ...aims.values()]) m.removeFromParent();
+    for (const [name, v] of [...views]) {
+      if (v === rootView) continue;
+      kit.release(v);
+      views.delete(name);
+    }
     handles.clear();
     aims.clear();
+    pickList.length = 0;
+    const rings: Ball[] = [];
+    const poles: Ball[] = [];
     for (const c of armature.chains()) {
-      const m = new Mesh(handleGeometry, freeMat);
-      m.name = `ik:${c.id}`;
-      m.scale.setScalar(HANDLE_RADIUS);
-      m.renderOrder = 30;
-      m.frustumCulled = false;
-      handleGroup.add(m);
-      handles.set(c.id, m);
+      const ring = make('ring', `ik:${c.id}`);
+      handles.set(c.id, ring.mesh);
+      rings.push({ kind: 'ik', id: c.id, ball: ring.mesh, view: ring });
       if (!c.poleRef) continue;
-      const a = new Mesh(handleGeometry, aimMat);
-      a.name = `aim:${c.id}`;
-      a.scale.setScalar(AIM_RADIUS);
-      a.renderOrder = 30;
-      a.frustumCulled = false;
-      handleGroup.add(a);
-      aims.set(c.id, a);
+      make('dash', `dash:${c.id}`);
+      const arrow = make('arrow', `aim:${c.id}`);
+      aims.set(c.id, arrow.mesh);
+      poles.push({ kind: 'aim', id: c.id, ball: arrow.mesh, view: arrow });
     }
+    if (armature.hasLook()) {
+      make('dash', LOOK_DASH);
+      const arrow = make('arrow', LOOK_NAME);
+      poles.push({ kind: 'look', id: LOOK_ID, ball: arrow.mesh, view: arrow });
+    }
+    pickList.push(...poles, ...rings, { kind: 'root', id: armature.root.name, ball: rootView.mesh, view: rootView });
   };
+  /** How a handle is drawn: orange when selected or dragged, white under the pointer, else neutral. */
+  const stateOf = (name: string, hot: boolean): HandleState => (hot ? 'hot' : hovered === name ? 'hover' : 'rest');
+  const paintHandles = (): void => {
+    for (const id of handles.keys()) {
+      const name = `ik:${id}`;
+      kit.paint(views.get(name)!, stateOf(name, id === selectedHandle || id === reaching), armature.isPinned(id));
+    }
+    for (const id of aims.keys()) {
+      const name = `aim:${id}`;
+      const state = stateOf(name, id === aiming);
+      kit.paint(views.get(name)!, state);
+      kit.paint(views.get(`dash:${id}`)!, state);
+    }
+    const lookArrow = views.get(LOOK_NAME);
+    if (lookArrow) {
+      const state = stateOf(LOOK_NAME, looking || selectedHandle === LOOK_ID);
+      kit.paint(lookArrow, state);
+      kit.paint(views.get(LOOK_DASH)!, state);
+    }
+    kit.paint(rootView, stateOf(ROOT_BALL, moving !== null || selected === armature.root.name));
+  };
+  const at = new Vector3();
+  const joint = new Vector3();
+  const hipA = new Vector3();
+  const hipB = new Vector3();
   const syncHandles = (): void => {
     // Every pose change, selection and figure swap comes through here: the
     // picture changed, so a still frame's smoothing starts over.
@@ -673,48 +744,65 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     syncPlantMarks();
     handleGroup.visible = handlesOn;
     if (!handlesOn) return;
-    const at = new Vector3();
+    placeViewport();
     for (const [id, m] of handles) {
       const c = armature.chain(id);
       if (!c) continue;
       armature.effectorWorld(c.effector, at);
       m.position.copy(at);
-      m.material = id === selectedHandle ? selectedMat : armature.isPinned(id) ? pinnedMat : freeMat;
-      m.scale.setScalar(id === selectedHandle ? HANDLE_RADIUS * SELECTED_SCALE : HANDLE_RADIUS);
     }
     for (const [id, m] of aims) {
-      const where = armature.hingeWorld(id, at);
-      m.visible = !!where;
-      if (where) m.position.copy(where);
+      const where = armature.hingeWorld(id, joint);
+      const target = where ? armature.poleTarget(id, at) : null;
+      const arrow = views.get(`aim:${id}`)!;
+      const dash = views.get(`dash:${id}`)!;
+      m.visible = dash.mesh.visible = !!target;
+      if (!where || !target) continue;
+      m.position.copy(target);
+      arrow.toward.value.copy(joint);
+      dash.mesh.position.copy(joint);
+      dash.from.value.copy(joint);
+      dash.toward.value.copy(target);
     }
-    rootBall.position.copy(armature.rootHandleWorld(at));
+    const lookArrow = views.get(LOOK_NAME);
+    if (lookArrow) {
+      const dash = views.get(LOOK_DASH)!;
+      const target = armature.lookFromWorld(joint) ? armature.lookTarget(at) : null;
+      lookArrow.mesh.visible = dash.mesh.visible = !!target;
+      if (target) {
+        lookArrow.mesh.position.copy(target);
+        lookArrow.toward.value.copy(joint);
+        dash.mesh.position.copy(joint);
+        dash.from.value.copy(joint);
+        dash.toward.value.copy(target);
+      }
+    }
+    rootView.mesh.position.copy(armature.rootHandleWorld(at));
+    // The frame round the hips: as wide as the hip joints are apart, plus
+    // the block they sit in, in the proportion of a pelvis.
+    const left = armature.jointWorld('thigh.L', hipA);
+    const right = armature.jointWorld('thigh.R', hipB);
+    const span = left && right ? left.distanceTo(right) : 0.2 * armature.scale;
+    rootView.half.value.set(span * 0.85, span * 0.85 * 0.75);
+    paintHandles();
   };
   buildHandles();
-  // Placed now, not on the first interaction: until then every ball sat at
+  // Placed now, not on the first interaction: until then every handle sat at
   // the origin, between the feet, where a press could take the wrong one.
   syncHandles();
 
   const raycaster = new Raycaster();
   const pointer = new Vector2();
-  const aim = (e: PointerEvent): void => {
+  const aimAt = (x: number, y: number): void => {
     const r = canvas.getBoundingClientRect();
-    pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    pointer.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
     raycaster.setFromCamera(pointer, viewer.camera);
   };
-  // The handle being dragged, and the plane it slides on: through where it
-  // was grabbed, facing the camera, so the drag follows the pointer.
-  let reaching: string | null = null;
-  /** The knee or elbow being aimed, if any. */
-  let aiming: string | null = null;
-  /**
-   * The root being moved by its ball: where the press met the ball's plane
-   * and where the root stood then, in the world. The root goes by what the
-   * pointer has moved since, as the gizmo's centre moves it, so a press
-   * that landed off the ball's centre does not make the figure jump.
-   */
-  let moving: { from: Vector3; root: Vector3 } | null = null;
-  /** A ball or a gizmo is being dragged: the figure is moving under the pointer. */
-  const dragUnderway = (): boolean => dragging || reaching !== null || aiming !== null || moving !== null;
+  const aim = (e: PointerEvent): void => aimAt(e.clientX, e.clientY);
+  // A reach ring slides on a plane through where it was grabbed, facing the
+  // camera, so the drag follows the pointer.
+  /** A handle or a gizmo is being dragged: the figure is moving under the pointer. */
+  const dragUnderway = (): boolean => dragging || reaching !== null || aiming !== null || looking || moving !== null;
   /**
    * The panel was not refreshed during a drag, and owes a refresh at its
    * end. A refresh rebuilds the joint and part sections, and doing that on
@@ -742,13 +830,21 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   const offAntialias = settings.onChange(applyAntialias);
   const dragPlane = new Plane();
   const dragPoint = new Vector3();
-  // Scratch for the aim drag, which runs on every move.
+  // Scratch for the aim and look drags, which run on every move.
   const dragNormal = new Vector3();
-  const hingeAt = new Vector3();
-  /** What the last press took: 'ik:<chain>', 'aim:<chain>', 'root', a part's bone, or nothing. */
+  const lookSphere = new Sphere();
+  const lookPoint = new Vector3();
+  /** Where a press landed on the look-at handle, from its middle, so the drag does not jump by it. */
+  const lookGrab = { x: 0, y: 0 };
+  /** What the last press took: 'ik:<chain>', 'aim:<chain>', 'look:head', 'root', a part's bone, or nothing. */
   let picked: string | null = null;
-  /** How near a ball's centre a press has to land to take it, in CSS pixels. */
-  const PICK_RADIUS = 18;
+  /**
+   * How near a handle's centre a press has to land to take it, in CSS
+   * pixels: a 44 px circle, the least a finger needs. The root's frame also
+   * takes a press within PICK_EDGE of its outline.
+   */
+  const PICK_RADIUS = 22;
+  const PICK_EDGE = 14;
   /**
    * How far a press may travel and still be a tap, in CSS pixels: the
    * viewer's own TAP_SLOP and Sculpt's for a finger (InputShell). A press
@@ -779,40 +875,84 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     const r = canvas.getBoundingClientRect();
     return [r.left + ((projected.x + 1) / 2) * r.width, r.top + ((1 - projected.y) / 2) * r.height];
   };
-  const ballOnScreen = (ball: Mesh): [number, number] | null => toPage(ball.getWorldPosition(new Vector3()));
+  /** Where a world point falls on the page, in CSS pixels, into `out`; false behind the camera. */
+  const pagePoint = (world: Vector3, out: { x: number; y: number }): boolean => {
+    projected.copy(world).project(viewer.camera);
+    if (projected.z < -1 || projected.z > 1) return false;
+    const r = canvas.getBoundingClientRect();
+    out.x = r.left + ((projected.x + 1) / 2) * r.width;
+    out.y = r.top + ((1 - projected.y) / 2) * r.height;
+    return true;
+  };
+  const rimAt = new Vector3();
+  const ballOnScreen = (ball: Mesh): [number, number] | null => toPage(ball.getWorldPosition(rimAt));
   interface Ball {
-    kind: 'ik' | 'aim' | 'root';
+    kind: 'ik' | 'aim' | 'look' | 'root';
     /** The chain, or for the root its bone. */
     id: string;
     ball: Mesh;
+    view: HandleView;
   }
-  /** Every ball, the aim balls first and the root's last. */
-  const balls = (): Ball[] => [
-    ...[...aims].map(([id, ball]): Ball => ({ kind: 'aim', id, ball })),
-    ...[...handles].map(([id, ball]): Ball => ({ kind: 'ik', id, ball })),
-    { kind: 'root', id: armature.root.name, ball: rootBall },
-  ];
-  /** What a press on a ball records: 'aim:<chain>', 'ik:<chain>' or 'root'. */
-  const ballName = (b: Ball): string => (b.kind === 'root' ? ROOT_BALL : `${b.kind}:${b.id}`);
+  /** What a press on a handle records: 'aim:<chain>', 'ik:<chain>', 'look:head' or 'root'. */
+  const ballName = (b: Ball): string => b.view.name;
+  const handlePage = { x: 0, y: 0 };
+  const rimPage = { x: 0, y: 0 };
+  const camSide = new Vector3();
   /**
-   * The ball a press takes: the nearest visible one whose centre lands
-   * within PICK_RADIUS of the pointer on screen, however deep it sits
-   * (owner call: the handles win over the parts). A ball is a few pixels
-   * across, and a press that had to land on the ball itself, with a part
-   * right behind it taking every near miss, made the knees and elbows the
-   * hardest things on the figure to grab. On a tie the aim ball wins,
-   * being the smaller, and the root's loses, being the one that moves
-   * everything.
+   * The root's frame on the page: its half width and half height in CSS
+   * pixels, as drawn (never under RECT_MIN_HALF). False when it is off the page.
+   */
+  const rootFrame = (out: { hx: number; hy: number }): boolean => {
+    if (!pagePoint(rootView.mesh.position, handlePage)) return false;
+    const half = rootView.half.value;
+    out.hx = out.hy = 0;
+    camSide.setFromMatrixColumn(viewer.camera.matrixWorld, 0).normalize();
+    if (pagePoint(rimAt.copy(rootView.mesh.position).addScaledVector(camSide, half.x), rimPage)) {
+      out.hx = Math.abs(rimPage.x - handlePage.x);
+    }
+    camSide.setFromMatrixColumn(viewer.camera.matrixWorld, 1).normalize();
+    if (pagePoint(rimAt.copy(rootView.mesh.position).addScaledVector(camSide, half.y), rimPage)) {
+      out.hy = Math.abs(rimPage.y - handlePage.y);
+    }
+    // Drawn no smaller than the shader's own floor.
+    const grow = Math.max(1, RECT_MIN_HALF / Math.max(0.001, Math.min(out.hx, out.hy)));
+    out.hx *= grow;
+    out.hy *= grow;
+    return true;
+  };
+  const rootBox = { hx: 0, hy: 0 };
+  /**
+   * How far a press at (x, y) is from a handle's centre, in CSS pixels, if
+   * it lands on the handle's pick shape - a 44 px circle round the centre,
+   * and for the root also a band along the outline of its frame - else
+   * Infinity.
+   */
+  const pickDistance = (b: Ball, x: number, y: number): number => {
+    if (!b.ball.visible || !pagePoint(b.ball.getWorldPosition(rimAt), handlePage)) return Infinity;
+    const d = Math.hypot(handlePage.x - x, handlePage.y - y);
+    if (d <= PICK_RADIUS) return d;
+    if (b.kind !== 'root' || !rootFrame(rootBox)) return Infinity;
+    const dx = Math.abs(x - handlePage.x) - rootBox.hx;
+    const dy = Math.abs(y - handlePage.y) - rootBox.hy;
+    const off = dx > 0 || dy > 0 ? Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) : -Math.max(dx, dy);
+    return off <= PICK_EDGE ? d : Infinity;
+  };
+  /**
+   * The handle a press takes: the nearest visible one whose pick shape holds
+   * the pointer, however deep it sits (owner call: the handles win over the
+   * parts). A handle is a few pixels across, and a press that had to land on
+   * the drawing itself, with a part right behind it taking every near miss,
+   * made the knees and elbows the hardest things on the figure to grab. On a
+   * tie the pole and look-at targets win, being the smaller, and the root's
+   * loses, being the one that moves everything.
    */
   const ballUnder = (e: PointerEvent): Ball | null => {
     if (!handlesOn) return null;
     let best: Ball | null = null;
     let nearest = Infinity;
-    for (const b of balls()) {
-      const at = b.ball.visible ? ballOnScreen(b.ball) : null;
-      if (!at) continue;
-      const d = Math.hypot(at[0] - e.clientX, at[1] - e.clientY);
-      if (d <= PICK_RADIUS && d < nearest) {
+    for (const b of pickList) {
+      const d = pickDistance(b, e.clientX, e.clientY);
+      if (d < nearest) {
         nearest = d;
         best = b;
       }
@@ -883,6 +1023,20 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       picked = ballName(ball);
       if (ball.kind === 'aim') {
         aiming = ball.id;
+      } else if (ball.kind === 'look') {
+        // Where on the handle the press landed, kept so the drag starts
+        // from where the head already faces; the chain's poses now are
+        // what every move of the drag turns from.
+        looking = true;
+        if (ballOnScreen(ball.ball)) {
+          const [hx, hy] = ballOnScreen(ball.ball)!;
+          lookGrab.x = hx - e.clientX;
+          lookGrab.y = hy - e.clientY;
+        }
+        armature.beginLook();
+        if (down.size === 1) {
+          tap = { id: e.pointerId, x: e.clientX, y: e.clientY, target: null, ball: LOOK_ID, before: null };
+        }
       } else {
         dragPlane.setFromNormalAndCoplanarPoint(
           viewer.camera.getWorldDirection(dragPoint).clone(),
@@ -903,6 +1057,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         }
       }
       viewer.setOrbitEnabled(false);
+      hovered = null;
+      paintHandles();
+      viewer.invalidate();
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {
@@ -935,18 +1092,55 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       claimForLight(e);
       return;
     }
+    // The pointer over a handle, no press: it brightens, as a hover does.
+    if (!dragUnderway() && e.pointerType !== 'touch') {
+      const under = ballUnder(e);
+      const name = under ? ballName(under) : null;
+      if (name !== hovered) {
+        hovered = name;
+        paintHandles();
+        viewer.invalidate();
+      }
+    }
     if (aiming) {
-      // Where the pointer sits around the limb IS the aim. The plane it
-      // reads on cuts across the limb at the joint, so the angle is the
-      // one the solver wants and the hand or foot never moves.
+      // Where the pointer sits around the limb IS the aim: the plane it
+      // reads on faces the camera through the pole target, so the target
+      // follows the pointer round the limb, the angle is the one the solver
+      // wants and the hand or foot never moves.
       aim(e);
-      const at = armature.hingeWorld(aiming, hingeAt);
-      if (!at) return;
-      dragPlane.setFromNormalAndCoplanarPoint(viewer.camera.getWorldDirection(dragNormal), at);
+      const target = aims.get(aiming)?.position;
+      if (!target) return;
+      dragPlane.setFromNormalAndCoplanarPoint(viewer.camera.getWorldDirection(dragNormal), target);
       if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
       const angle = armature.aimFromPoint(aiming, dragPoint);
       if (angle !== null) {
         armature.aimChain(aiming, angle);
+        armature.applyPins();
+        syncHandles();
+        placeControls();
+        refreshPanel();
+        scheduleSave();
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      noteWork();
+      return;
+    }
+    if (looking) {
+      // The pointer's ray meets the sphere the target sits on, round the
+      // head: the head turns to face where it lands, with the handle under
+      // the pointer. Past the silhouette the nearest point of the sphere
+      // stands in, and past the limits the head holds at them.
+      if (tap?.ball && tap.before === null) tap.before = JSON.stringify(armature.serialize());
+      aimAt(e.clientX + lookGrab.x, e.clientY + lookGrab.y);
+      if (armature.lookFromWorld(joint)) {
+        lookSphere.center.copy(joint);
+        lookSphere.radius = armature.lookDistance();
+        if (!raycaster.ray.intersectSphere(lookSphere, lookPoint)) {
+          raycaster.ray.closestPointToPoint(joint, lookPoint);
+          lookPoint.sub(joint).setLength(lookSphere.radius).add(joint);
+        }
+        armature.lookAt(lookPoint);
         armature.applyPins();
         syncHandles();
         placeControls();
@@ -997,10 +1191,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     // A tap on a part or on empty space: that part selected, or nothing.
     if (tapped && !tapped.ball) select(tapped.target);
-    if (!reaching && !aiming && !moving) return;
+    if (!reaching && !aiming && !moving && !looking) return;
     reaching = null;
     aiming = null;
     moving = null;
+    if (looking) {
+      looking = false;
+      armature.endLook();
+    }
     viewer.setOrbitEnabled(true);
     try {
       canvas.releasePointerCapture(e.pointerId);
@@ -1016,6 +1214,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     } else {
       commit();
     }
+    // Back to neutral: the handle is no longer in hand.
+    paintHandles();
+    viewer.invalidate();
     flushPanel();
   };
   canvas.addEventListener('pointerdown', onPointerDown, true);
@@ -1084,7 +1285,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     last = snap();
     // Also syncs the handles and the panel.
-    if (selectedHandle) selectHandle(selectedHandle);
+    if (selectedHandle) selectHandle(selectedHandle, handleGizmo);
     else select(selected);
     panel.syncFigure();
     scheduleSave();
@@ -1141,11 +1342,19 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     ...(model ? { model: model.bytes, modelName: model.name } : {}),
     ...(thumb ? { thumb } : {}),
     ...(link ? { project: { ...link } } : {}),
+    ...(link && syncedAt === edits ? { synced: true } : {}),
     symmetry: armature.symmetry,
     units: UNITS,
   });
   /** The library project Save to library writes to (project.ts), kept in the autosave record. */
   let link: ArmatureLink | null = bootLink;
+  /**
+   * Edits made so far, and the count the armature was last saved to its
+   * project at (-1 for none): while they agree, it is the project's as
+   * saved (ArmatureFile.synced).
+   */
+  let edits = 0;
+  let syncedAt = bootSynced ? 0 : -1;
   let saveTimer = 0;
   const flushSave = async (): Promise<void> => {
     if (saveTimer) {
@@ -1156,13 +1365,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     if (!mayStore()) return;
     await saveArmature({ ...currentFile(), ...(forScene ? { forScene: true } : {}) });
   };
-  const scheduleSave = (): void => {
+  const scheduleSave = (edit = true): void => {
+    if (edit) edits++;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => void flushSave(), SAVE_GAP_MS);
   };
   // Turned on from Preferences: the figure as it stands is kept straight away.
   onDeviceChoice((c) => {
-    if (c === 'keep') scheduleSave();
+    if (c === 'keep') scheduleSave(false);
   });
   /**
    * Picture the figure for the gallery card, as sculpt mode does its work,
@@ -1323,7 +1533,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       void tellWindow({ title: 'That file did not open', text: err instanceof ArmatureFileError || err instanceof Error ? err.message : String(err) });
       return;
     }
-    name = parsed.name;
+    name = parsed.name !== 'Armature' ? parsed.name : await newSceneName();
     await replaceFigure(parsed.state.preset, parsed.state);
     if (symmetry !== null) armature.symmetry = symmetry;
     panel.refresh(selected);
@@ -1335,6 +1545,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     frame();
     link = null;
+    syncedAt = -1;
     void referenceBoard.clear();
     clearHistory();
     scheduleSave();
@@ -1361,6 +1572,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     // Another figure altogether: its own history, and no project yet (the
     // library keeps the built-in figures; a model stays on this device).
     link = null;
+    syncedAt = -1;
     void referenceBoard.clear();
     clearHistory();
     if (read.inferred.length) {
@@ -1511,7 +1723,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     statusToast('').fail(note);
   }
   // An opened project is the work on this device now: the autosave says so at once.
-  if (bootSymmetry !== null) scheduleSave();
+  if (bootSymmetry !== null) scheduleSave(false);
 
   // --- menus -------------------------------------------------------------------------
   const openInput = document.createElement('input');
@@ -1554,7 +1766,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     return role;
   };
-  let roleKnown = probeRole();
+  /** The File menu's rows depend on who is here (set once the menu exists). */
+  let refreshFileMenu: () => void = () => undefined;
+  let roleKnown = probeRole().then((who) => {
+    refreshFileMenu();
+    return who;
+  });
   /** The project this armature is, if it is one, goes to the top of the recent list: opened, or saved to. */
   const noteOpened = (): void => {
     if (link) recordRecent({ id: link.id, kind: 'armature', name: link.title, place: place(), ...(link.scope ? { scope: link.scope } : {}) });
@@ -1594,6 +1811,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     librarySaving = true;
     const status = statusToast(`Saving to ${where}...`);
     try {
+      const at = edits;
       const picture = await capture(true);
       const bytes = await encodeArmatureProject(currentFile(), armature.symmetry);
       const target = link;
@@ -1602,6 +1820,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         (text) => status.set(text),
       );
       link = saved;
+      name = saved.title;
+      syncedAt = at;
       referenceBoard.bindProject(saved.id);
       referencePanel.setLinked(() => true);
       noteOpened();
@@ -1615,7 +1835,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
           '',
           (ok) => {
             if (!ok) return;
-            roleKnown = probeRole();
+            roleKnown = probeRole().then((who) => {
+              refreshFileMenu();
+              return who;
+            });
             void roleKnown.then(() => saveToLibrary());
           },
           'Sign in again',
@@ -1640,8 +1863,36 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       present: { unavailable: 'A figure is sent to Sculpt first' },
     },
   });
-  const fileMenu = new TopMenu(
-    'File',
+  /** Give the armature a new name; a project's is renamed too, and saved with the next Save to library. */
+  const rename = (next: string): void => {
+    const n = next.trim().slice(0, 80);
+    if (!n || n === name) return;
+    name = n;
+    if (link) link = { ...link, title: n };
+    scheduleSave();
+  };
+  strip.onRename = rename;
+  /** Save to library for anyone who has an account or the owner's access; for a guest, the way in where the site has accounts, and nothing where it has none. */
+  const libraryItems = (): MenuItem[] => {
+    if (role === 'guest') {
+      if (!accountsHere) return [];
+      return [
+        {
+          label: 'Sign in to save to library',
+          action: async () => {
+            if (!(await signInAgain(undefined, 'Sign in to save to the library.'))) return;
+            roleKnown = probeRole().then((who) => {
+              refreshFileMenu();
+              return who;
+            });
+            await roleKnown;
+          },
+        },
+      ];
+    }
+    return [{ label: 'Save to library', hint: libraryHint, action: () => void saveToLibrary() }];
+  };
+  const fileItems = (): MenuItem[] =>
     fileMenuItems({
       start: [
         {
@@ -1662,9 +1913,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
             // A new armature is nobody's project, with a history of its own.
             link = null;
             void referenceBoard.clear();
-            void replaceFigure(armature.rig.id, undefined, true).then(() => {
-              frame();
-              clearHistory();
+            syncedAt = -1;
+            void newSceneName().then((fresh) => {
+              name = fresh;
+              return replaceFigure(armature.rig.id, undefined, true).then(() => {
+                frame();
+                clearHistory();
+                scheduleSave();
+              });
             });
           },
         },
@@ -1672,19 +1928,24 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         recentMenuItem(() => undoStack.length > 0),
       ],
       save: [
+        {
+          label: 'Rename…',
+          action: async () => {
+            const next = await askText({ title: 'Rename', label: 'Name', value: name, yes: 'Rename' });
+            if (next !== null) rename(next);
+          },
+        },
         { label: 'Save file', action: () => downloadBlob(packArmature(currentFile()), armatureStamp()) },
-        { label: 'Save to library', hint: libraryHint, action: () => void saveToLibrary() },
+        ...libraryItems(),
       ],
       transfer: [
         { label: 'Load model…', action: () => modelInput.click() },
         { label: 'Send to Sculpt', action: () => void send(panel.resolution) },
       ],
       close: leaveForGallery,
-    }),
-    'file-menu--file',
-    strip.menus,
-    true,
-  );
+    });
+  const fileMenu = new TopMenu('File', fileItems(), 'file-menu--file', strip.menus, true);
+  refreshFileMenu = () => fileMenu.setItems(fileItems());
   const editMenu = new TopMenu(
     'Edit',
     editMenuItems({
@@ -1742,7 +2003,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   const paintReadout = (): void => {
     const tris = armature.mesh.geometry.getIndex();
     strip.setReadout({
-      name: link?.title ?? null,
+      name: link?.title ?? name,
+      state: sceneStateWord({ linked: !!link, synced: !!link && syncedAt === edits }),
       object: selected ? prettyName(selected) : null,
       tris: tris ? Math.round(tris.count / 3) : null,
     });
@@ -1765,6 +2027,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         commit();
         break;
       case 'arm.move':
+        // On a selected handle: its move gizmo. Otherwise the figure's, on the pelvis.
+        if (selectedHandle) {
+          selectHandle(selectedHandle, true);
+          break;
+        }
         gizmoMode = 'translate';
         select(armature.root.name);
         break;
@@ -1896,21 +2163,71 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     /** Where a chain's ball, or with 'root' the root's, sits in the world. */
     handlePosition: (id: string) => {
       if (id === ROOT_BALL) return armature.rootHandleWorld(new Vector3()).toArray();
+      // The head has no chain: its place is the top of the head.
+      if (id === LOOK_ID && armature.hasLook()) return armature.effectorWorld(armature.lookBone()!, new Vector3(), 1).toArray();
       const c = armature.chain(id);
       return c ? armature.effectorWorld(c.effector, new Vector3()).toArray() : null;
     },
     /**
-     * Where a ball ('ik:<chain>', 'aim:<chain>' or 'root') sits on the page:
-     * its centre and its drawn radius, in CSS pixels; null when it is not
-     * shown.
+     * Where a handle ('ik:<chain>', 'aim:<chain>', 'look:head' or 'root')
+     * sits on the page: its centre and its drawn radius (the ring's, the
+     * arrowhead's, the root frame's shorter half), in CSS pixels; null when
+     * it is not shown.
      */
     ballOnScreen: (name: string): [number, number, number] | null => {
-      const ball = balls().find((b) => ballName(b) === name)?.ball;
-      const at = ball?.visible && handlesOn ? ballOnScreen(ball) : null;
-      if (!ball || !at) return null;
-      const up = new Vector3().setFromMatrixColumn(viewer.camera.matrixWorld, 1).normalize();
-      const rim = toPage(ball.getWorldPosition(new Vector3()).addScaledVector(up, ball.scale.x));
-      return [at[0], at[1], rim ? Math.hypot(rim[0] - at[0], rim[1] - at[1]) : 0];
+      const b = pickList.find((p) => ballName(p) === name);
+      const at = b?.ball.visible && handlesOn ? ballOnScreen(b.ball) : null;
+      if (!b || !at) return null;
+      const r = b.kind === 'root' ? (rootFrame(rootBox) ? Math.min(rootBox.hx, rootBox.hy) : 0) : RING_RADIUS;
+      return [at[0], at[1], r];
+    },
+    /**
+     * What a handle is drawn as, read back from what its shader reads: its
+     * shape, its state ('rest', 'hover' or 'hot'), stroke colour (hex, no
+     * hash) and width in CSS pixels, whether it has the pinned dot, where
+     * it is, the point it points at (an arrowhead) and its dashed line's
+     * ends; null for no such handle. Also its pick circle's size in pixels.
+     */
+    handleLook: (name: string) => {
+      const v = views.get(name);
+      if (!v) return null;
+      return {
+        ...kit.look(v),
+        visible: v.mesh.visible && handlesOn,
+        position: v.mesh.position.toArray(),
+        toward: v.shape === 'arrow' || v.shape === 'dash' ? v.toward.value.toArray() : null,
+        from: v.shape === 'dash' ? v.from.value.toArray() : null,
+        pick: v.shape === 'dash' || v.shape === 'floor' ? 0 : PICK_RADIUS * 2,
+      };
+    },
+    /** The handle colours, hex without the hash: rest, hover, hot (orange) and the casing. */
+    handlePalette: () => kit.palette(),
+    /** Names of every handle drawn, for the tests. */
+    handleNames: () => [...views.keys()],
+    /** The plant rings under planted feet, by foot, as drawn (shape and colour). */
+    plantLooks: () => [...plantMarks].map(([foot, v]) => ({ foot, visible: v.mesh.visible, ...kit.look(v) })),
+    /** Put the pointer over a handle (or none), as a mouse hover does, for the tests. */
+    hover: (name: string | null) => {
+      hovered = name;
+      paintHandles();
+    },
+    /** Drag the head's look-at target to a world point, as the pointer does (tests and the console). */
+    look: (x: number, y: number, z: number) => {
+      armature.beginLook();
+      armature.lookAt(new Vector3(x, y, z));
+      armature.endLook();
+      armature.applyPins();
+      syncHandles();
+      commit();
+    },
+    /** Turn a knee or elbow toward a world point, as a drag of its pole target does (tests and the console). */
+    pole: (id: string, x: number, y: number, z: number) => {
+      const angle = armature.aimFromPoint(id, new Vector3(x, y, z));
+      if (angle === null) return;
+      armature.aimChain(id, angle);
+      armature.applyPins();
+      syncHandles();
+      commit();
     },
     /** Where a world point falls on the page, in CSS pixels; null behind the camera. */
     onScreen: (x: number, y: number, z: number) => toPage(new Vector3(x, y, z)),
@@ -1981,12 +2298,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     armature.dispose();
     viewer.scene.remove(handleGroup);
     viewer.scene.remove(plantGroup);
-    plantGeometry.dispose();
-    plantMat.dispose();
+    kit.dispose();
+    viewportObserver.disconnect();
     // The floor goes back to what the project under the mode asks for.
     viewer.setFloorOffset(savedFloorOffset);
     viewer.lockFloor(viewer.manifestFloor());
-    handleGeometry.dispose();
     panel.dispose();
     materialPanel.dispose();
     offIntake();

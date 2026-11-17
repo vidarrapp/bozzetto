@@ -256,7 +256,10 @@ export class BrushSliders {
     return !!p && !p.classList.contains('panel--collapsed');
   }
 
-  /** Whether a panel is open on the left, which needs the height the fields would take. */
+  /**
+   * Whether a panel is open on the left, which needs the height the fields would take
+   * (Material is on the right now, so it leaves them).
+   */
   private leftPanelOpen(): boolean {
     return !!document.querySelector('.panel--left:not(.panel--collapsed)');
   }

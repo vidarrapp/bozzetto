@@ -27,7 +27,7 @@ layer does not try to.
 
 The gallery, Community, My projects, Account, Review and Owner tools are
 not a separate look: they carry the same title strip as the workspaces,
-with File, Go and Help at the left, the page's name in the middle and the
+with File, View and Help at the left, the page's name in the middle and the
 account at the right (docs/ui-spec.md, section 5). Under it the page's own
 container scrolls; the document does not, so the strip stays sharp on iPad.
 
@@ -77,6 +77,12 @@ container scrolls; the document does not, so the strip stays sharp on iPad.
 | Lime, as a button | #c6ff00 | The recommended action (`.btn--recommended`): the one step the person should take next, one to a screen, such as Keep on this device in the first-visit window. Text on it is black. A window has this or the orange main action, not both |
 
 The view axes keep their own red, green and blue.
+
+Marks drawn over the 3D view (slider values, the details text, measure
+lines and labels, Armature's handles) are light, with a faint soft shade
+under them (`--bz-view-shade`, `--bz-view-shade-line`), never a hard dark
+outline and never a box (owner call, 2026-11-17). Orange marks keep their
+orange.
 
 Play and pause in the transport is a regular button like the others; its
 icon is light grey at rest and white while pressed or while playing, in the

@@ -143,12 +143,12 @@ no separate touch density. An earlier draft of this spec had one, with
   a Reset look button, which goes back to the look the scene or project
   opened with (in the viewer, the published look; the view stays, and a
   visitor's changes are never saved). Material is never in it: it is the
-  Material tab at the left in every place, the viewer and review mode
+  Material tab at the right in every place, the viewer and review mode
   included (Display section only, as in Present). What a place cannot do
   stays out of the panel, not out of the order: Cavity (SSAO) only in plain
   Sculpt, Pedestal and Floor offset only where the floor allows them, and
-  the Developer section only with ?dev. The viewer's tab row is Material at
-  the left and Render at the right, and fits a 390px phone.
+  the Developer section only with ?dev. The viewer's tab row is Material and Render at
+  the right, nothing at the left, and fits a 390px phone.
 - **Keyboard.** A web page cannot tell whether an iPad has a keyboard
   attached, and the iPad runs the web app. So the hotkey digits on the
   tools and the key hints above the tool bar are two View toggles
@@ -188,9 +188,11 @@ is left out, not shown greyed out; the same item has the same label, hint
 style and key wherever it shows. The groups below are the order in every
 place, each only where the place has it.
 
-- **File:** New (New sculpt, New armature), Open…, Open recent (Sculpt, Armature and the Present workspace; not the viewer); Save file, Save to
-  library, Keep on this device (the Present workspace has one Save, or
-  Save to its place); Import OBJ…, Z-up OBJ import, Load model…, Export
+- **File:** New (New sculpt, New armature), Open…, Open recent (Sculpt, Armature and the Present workspace; not the viewer); Rename… (Sculpt and
+  Armature), Save file, Save to library (for whoever can save to one; a
+  guest sees **Sign in to save to library** instead where the site has
+  accounts, and nothing extra where it has none), Keep on this device
+  (the Present workspace has one Save, or Save to its place); Import OBJ…, Z-up OBJ import, Load model…, Export
   OBJ, Send to Sculpt, New sculpt from this, Edit in Present; Publish…;
   Close, always last, with the page it returns to as its hint.
 - **Open recent** is a row with a chevron that opens a second list beside
@@ -267,6 +269,7 @@ place, each only where the place has it.
 
 - Scene panel
 - Model panel
+- Layers panel
 - Material panel
 - Tool panel
 - Reference panel
@@ -301,7 +304,7 @@ big logotype and tagline in the page).
   The Create window lists New Sculpt (the one recommended, lime choice),
   New Armature and Import OBJ; Create timelapse is added for the owner only
   (timelapses are not offered to users, PRODUCT.md).
-- **Go:** Gallery, Community (with accounts), My projects (signed in, not
+- **View:** Gallery, Community (with accounts), My projects (signed in, not
   suspended), Review with what waits in its name (owner and moderators),
   Owner tools (the owner). Each only for whoever may see it today; the page
   you are on has the check.
@@ -327,7 +330,7 @@ document itself scrolls, and there is no CSS switch to turn that off.
 ┌──────────────────────────────────────────────────────────────┐
 │ File Edit View Help    Project · Object · Tris · Level  Publish │  title strip
 ├─────────────┐                                   ┌─────────────┤
-│ Scene Model Material │                  │ Tool Reference Render │  tabs
+│ Scene Model Layers   │      │ Tool Material Reference Render │  tabs
 │┌───────────┐│                                   │┌───────────┐│
 ││   open    ││            viewport               ││   open    ││  one open
 ││   panel   ││                                   ││   panel   ││  per side
@@ -344,20 +347,43 @@ document itself scrolls, and there is no CSS switch to turn that off.
 - Left: the menus (web, Windows, iPad). On the Mac desktop this space
   holds the window's close, minimise and zoom buttons instead.
 - Centre: the project's name in bold, then the readout of the selected
-  object (name, triangles, level), keys regular and values bold. An
-  unsaved project shows "Edited" after its name, in regular weight.
+  object (name, triangles, level), keys regular and values bold. In
+  Sculpt and Armature the name is always there: a new scene is named as a
+  dated study ("Study 14 Nov", with " 2" and so on when this device's
+  scenes have one by that name). Tapping it puts a field in its place
+  (Enter or leaving it renames, Esc keeps the old name); File > Rename…
+  does the same. After the name, in regular weight and the quiet grey, one
+  state word: **Saved** (matches its last save to the library),
+  **Edited** (has changes the library does not), **Kept on this device**
+  (only the autosave has it), or none while saving is off, when the
+  strip's own **Not saved** at the right says so, once. Other places show
+  "Edited" after an unsaved project's name.
   Under 900px wide the readout drops the triangle count, then the level.
 - Right: Publish, a quiet button, then the signed-in account's @handle menu, then the hide-interface icon.
 - It is the one band that runs edge to edge.
 
 ### Panels
 
-- Each side has one panel, docked under the title strip: Scene, Model and
-  Material share the left one, Tool, Reference and Render the right one
-  (owner call, 2026-11-11: one panel open per side, with folder tabs).
-  Reference is in Sculpt and Armature only, not in Present or the viewer.
-  Under 480px wide each tab takes 10px either side of its name instead of
-  16, so the six tabs of a phone stand apart.
+- Each side has one panel, docked under the title strip (owner call,
+  2026-11-11: one panel open per side, with folder tabs). Material is on the
+  right everywhere (owner call, 2026-11-17). Tab order, left to right.
+  Sculpt: left Scene, Model, Layers; right Tool, Material, Reference,
+  Render. Armature: left Armature; right Material, Reference, Render.
+  Present from Sculpt: right Material, Render, Output. The Present
+  workspace: left Frames, Project; right Material, Render, Output. The
+  viewer and review mode: right Material, Render, nothing at the left. The
+  View menu lists the panels in this order. Material and Render share a
+  side, so opening one closes the other.
+- **A phone** (599px and narrower, a finger). The open panel is a sheet
+  docked at the bottom: the full width, at most half the window tall, above
+  the tool bar or transport, scrolling inside; the 3D view is not resized and
+  its upper half stays clear for the Pencil and fingers. The tabs of both
+  sides share one row (up to three left, four right) set smaller with a
+  44px least width, and tighter again where a narrow screen needs it. The
+  tool bar fades at the edge where more tools are out of sight. Every word
+  and button in the strip has a 44px hit area while the strip stays 32px.
+  The viewer's strip keeps the project title, cut with an ellipsis. The
+  step you are in opens a small list of the three workspaces.
 - **Folder tabs.** Above the panel sit its two tabs, each a box of the
   panel's own surface, 2px apart. The tab that is showing is 28px tall,
   joined to the panel with no gap, its name bold. The other is 26px
@@ -428,6 +454,8 @@ Tool and before Render.
 - Where it does not fit (under about 620px wide) it scrolls sideways and
   keeps the active tool in view.
 - On devices with a home indicator it sits above the safe area.
+- On a phone, where it scrolls, it fades at each edge that has more tools
+  behind it and snaps to the tools as it scrolls.
 - **Calipers** (hotkey C) is the last button, after Transform. It is not
   a brush: it measures between two points on the model and edits
   nothing. Its icon is the Uicons ruler until a drawn calipers glyph is
@@ -467,7 +495,7 @@ Tool and before Render.
 | Window | Change |
 | --- | --- |
 | Under 1100px wide | One panel open in all, not one per side |
-| Under 600px wide (a phone) | An open panel is a sheet across the bottom, at most half the height, above the tool bar. Tabs become a row under the title strip |
+| Under 600px wide (a phone) | Not a target platform (owner, 2026-11-17): it works for a quick demo, and panels open as they do on an iPad. Tabs are one row under the title strip, set a little smaller so they fit; the step you are in opens a list of the workspaces |
 | Under 600px tall | Hints hide; panels use the full height between the strip and the tool bar |
 
 ## 7. Controls
@@ -511,6 +539,31 @@ states" board. This section adds behaviour.
   before; it needs a native app). Touch keeps what it has today: the
   Negative button, and Smooth and Mask reached as they are now. The
   desktop and any native iPad version can revisit it.
+
+### Armature handles
+
+The figure's controls are outlines, as an animation program draws control
+curves, not balls (owner decision, 2026-11-14 and 2026-11-17). Every
+handle is neutral (`--bz-text-2`, white under the pointer) and orange
+(`--bz-orange`) only while selected or dragged. Each is drawn over the
+figure, with a stroke of 2 px (3 px when orange) and a thin dark casing
+(`--bz-strip`) so it reads over pale clay and over the dark ground, and
+each has an invisible pick circle 44 px across.
+
+- **Reach** (hands, feet): a ring that faces the camera. Pinned, a small
+  dot in its middle. A tap selects it, with the move gizmo.
+- **Root**: a rectangle framing the hips; drag it and the whole figure
+  moves. It is orange while dragged or while the pelvis is selected.
+- **Pole** (knee, elbow): an arrowhead out from the joint along the way it
+  points, half the limb segment above it away (in front of a knee, behind
+  an elbow), pointing at the joint it aims, joined to it by a thin dashed
+  line. Dragging it turns the joint toward it.
+- **Look-at** (head): the same arrowhead and dashed line, a head and a
+  half in front of the face. Dragging it turns the head to face it, the
+  neck about half as far and the chest and spine a little (about 12 and 6
+  percent), measured from the chest: up to 80 degrees to a side and 60 up
+  or down, past which the head holds at the limit. The hips never move.
+- **Floor ring** under a planted foot: a flat ring, neutral.
 
 ## 9. Windows, notices and progress
 
@@ -571,6 +624,33 @@ moved the layout later; that produced an in-between look and is dropped.
 Each step is compared against the mockup by screenshot, in both themes
 and at the desktop and iPad sizes, before it ships.
 
+
+## Sculpt layers
+
+The **Layers** tab, left, after Model (`panel--layers`; View menu item
+"Layers panel" after Model panel). From the top: **Add layer** (the one plain
+button, never orange), the list, **Flatten all**. The list is
+`src/ui/layerList.ts`, with no sculpt knowledge, so the Paint workspace can
+reuse it with one more control a row (a blend mode select).
+
+- Newest layer on top, a fixed **Base** row at the bottom. A row is an eye,
+  the name (a tap on the active row's name renames it), a menu (Rename,
+  Duplicate, Flatten into base, Delete in red) and under them a Weight
+  slider, 0 to 100% of travel, with typed values to plus or minus 1000%
+  (double tap or double click) shown as typed. The active row has the
+  selected-row fill; Base is active when no layer is. Hit areas are at least
+  44px high.
+- A layer's data lives on the object's highest level. Any level may be on
+  screen while sculpting with a layer active; only a hidden layer or one at
+  0% refuses a stroke ("Show the layer to sculpt on it."). Weight changes
+  apply live while the highest level is on screen and on release otherwise.
+- Changing the active layer, a weight or visibility, Add, Duplicate,
+  Flatten, Delete are undo steps. Remesh, merge, split and dynamic topology
+  ask to flatten the layers first ("Flatten the layers of "Sphere"?", button
+  "Flatten and remesh"); Cancel leaves everything.
+- Saved per object in the scene (`SavedMesh.layers`, version 1: name,
+  weight, visible, and the sparse displacements of the highest level), in the
+  autosave, `.bozz` files and the library.
 ## Clarity rules (design critique, 2026-11)
 
 - The edge sliders' names (Size, Strength) show only while the slider is

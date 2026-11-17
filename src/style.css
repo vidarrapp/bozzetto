@@ -1398,10 +1398,10 @@ html.is-page :is(#app, #admin, .page-scroll).page-scroll {
   align-items: center;
   gap: 6px;
   padding: 1px 4px;
-  /* No box: a dark halo keeps the length readable over clay and ground alike. */
+  /* No box and no outline: light text with the view's faint shade under it. */
   background: none;
   color: var(--bz-text);
-  text-shadow: 0 0 2px #141414, 0 0 2px #141414, 0 0 4px #141414, 0 0 4px #141414;
+  text-shadow: var(--bz-view-shade);
   font-family: var(--bz-font-mono);
   font-size: 12px;
   line-height: 16px;
@@ -1503,16 +1503,13 @@ body.presenting .measure-overlay {
 }
 
 /* The strength's value beside the indicator, while the strength is
-   adjusted (BrushCursor.renderStrength): outlined in the panel colour so it
-   reads over pale clay and the dark background alike. */
+   adjusted (BrushCursor.renderStrength). */
 .sculpt-cursor__strength-label {
   fill: var(--accent);
   font-size: 12px;
   font-weight: 600;
-  paint-order: stroke;
-  stroke: var(--panel-bg);
-  stroke-width: 3px;
-  stroke-linejoin: round;
+  /* The view's faint shade, not an outline. */
+  filter: drop-shadow(var(--bz-view-shade));
 }
 
 /* --- sculpt mode: bottom toolbar (negative toggle + brush row) --- */
@@ -1698,7 +1695,8 @@ body.presenting .measure-overlay {
    because of DOM construction order, which a refactor would silently
    flip. The same reasoning puts Tool above the Render panel on the right
    edge. Model keeps the right edge's width: its slider rows need it. */
-.panel--model {
+.panel--model,
+.panel--layers {
   top: 280px; /* 132 + 116 tab + 32 gap, the same rhythm as the right edge */
   max-height: calc(100vh - 370px);
   width: min(268px, calc(100vw - 64px));

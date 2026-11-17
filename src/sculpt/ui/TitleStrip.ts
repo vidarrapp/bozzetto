@@ -25,6 +25,12 @@ export interface Readout {
   /** What the mark says instead of "Edited": "Not saved", for a project not made yet (Create). */
   editedText?: string;
   /**
+   * The quiet state word after the name (Saved, Edited, Kept on this device)
+   * for a workspace that knows where its work is kept. It stands in for
+   * `edited`; null leaves it out.
+   */
+  state?: string | null;
+  /**
    * Who made it, for the public viewer of a member's work: "by @handle", a
    * link to their page, after the name. Null leaves it out.
    */
@@ -124,6 +130,13 @@ export class TitleStrip {
   /** The pairs a workspace adds (Readout.extras), kept by key between refreshes. */
   private readonly extraEls = new Map<string, { item: HTMLElement; val: HTMLElement }>();
   private readonly extraHost = el('span', 'bz-readout__extras');
+  /**
+   * Set by the mode that lets the name be changed here: tapping the name
+   * puts a field in its place; Enter or leaving it hands the new name over,
+   * Esc keeps the old one.
+   */
+  onRename: ((name: string) => void) | null = null;
+  private renaming: HTMLInputElement | null = null;
   /** Set by the mode: the direct hide/show switch (not Tab's staged one). */
   onToggleChrome: (() => void) | null = null;
   private readonly offKeymap: () => void;
@@ -154,6 +167,13 @@ export class TitleStrip {
     this.frameItem = pair('bz-readout__item--frame', 'Frame', this.frameVal);
     this.editedEl.hidden = true;
     this.nameEl.hidden = true;
+    // The name is a button while a mode lets it be renamed (onRename).
+    onTap(this.nameEl, () => this.beginRename());
+    this.nameEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      this.beginRename();
+    });
     this.byEl.hidden = true;
     this.readoutEl = readout;
     readout.append(this.nameEl, this.editedEl, this.byEl, this.extraHost, this.objectItem, this.trisItem, this.levelItem, this.frameItem);
@@ -201,7 +221,11 @@ export class TitleStrip {
       b.type = 'button';
       b.dataset.workspace = id;
       onTap(b, () => {
-        if (b.getAttribute('aria-current') === 'step') return;
+        if (b.getAttribute('aria-current') === 'step') {
+          // On a phone the other steps are not in the strip: the step you are in opens a list of the three.
+          if (window.matchMedia('(max-width: 599px)').matches) this.toggleStepMenu(b);
+          return;
+        }
         this.stepActions.get(id)?.();
       });
       this.steps.set(id, b);
@@ -255,6 +279,67 @@ export class TitleStrip {
     }
   }
 
+  private stepMenu: HTMLDivElement | null = null;
+  private stepMenuOff: (() => void) | null = null;
+
+  private closeStepMenu(): void {
+    this.stepMenuOff?.();
+    this.stepMenuOff = null;
+    this.stepMenu?.remove();
+    this.stepMenu = null;
+    for (const b of this.steps.values()) b.removeAttribute('aria-expanded');
+  }
+
+  /** A phone: the three steps in a small list under the strip, the one you are in ticked. */
+  private toggleStepMenu(anchor: HTMLElement): void {
+    if (this.stepMenu) {
+      this.closeStepMenu();
+      return;
+    }
+    const pop = el('div', 'file-menu bz-ws-menu');
+    pop.setAttribute('role', 'menu');
+    for (const [id, label] of WORKSPACES) {
+      const b = el('button', 'file-menu__item file-menu__item--toggle', label);
+      b.type = 'button';
+      const here = this.steps.get(id)?.getAttribute('aria-current') === 'step';
+      const action = this.stepActions.get(id) ?? null;
+      b.setAttribute('role', 'menuitemradio');
+      b.setAttribute('aria-checked', here ? 'true' : 'false');
+      b.dataset.workspace = id;
+      const reason = this.steps.get(id)?.title;
+      if (!here && !action) {
+        b.disabled = true;
+        if (reason) b.title = reason;
+      }
+      onTap(b, () => {
+        if (b.disabled) return;
+        this.closeStepMenu();
+        if (!here) action?.();
+      });
+      pop.appendChild(b);
+    }
+    document.body.appendChild(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.top = `${Math.round(this.el.getBoundingClientRect().bottom)}px`;
+    pop.style.left = `${Math.round(Math.max(0, Math.min(r.left, window.innerWidth - pop.offsetWidth)))}px`;
+    anchor.setAttribute('aria-expanded', 'true');
+    this.stepMenu = pop;
+    const outside = (e: Event): void => {
+      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) this.closeStepMenu();
+    };
+    const key = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') this.closeStepMenu();
+    };
+    document.addEventListener('pointerdown', outside, true);
+    window.addEventListener('keydown', key, true);
+    window.addEventListener('resize', () => this.closeStepMenu(), { once: true });
+    this.stepMenuOff = () => {
+      document.removeEventListener('pointerdown', outside, true);
+      window.removeEventListener('keydown', key, true);
+    };
+    pop.querySelector<HTMLButtonElement>('.file-menu__item:not(:disabled)')?.focus();
+  }
+
   /** Put a control at the right of the strip, before `before` (default: the account's place, so before @handle and the hide-interface button). */
   addAction(control: HTMLElement, before: HTMLElement | null = this.accountSlot): void {
     this.publishHost.insertBefore(control, before);
@@ -278,11 +363,22 @@ export class TitleStrip {
    */
   setReadout(r: Readout): void {
     const name = r.name?.trim() ?? '';
-    this.nameEl.hidden = !name;
+    this.nameEl.hidden = !name || !!this.renaming;
     if (this.nameEl.textContent !== name) this.nameEl.textContent = name;
-    this.editedEl.hidden = !name || !r.edited;
-    const mark = r.editedText ?? 'Edited';
-    if (this.editedEl.textContent !== mark) this.editedEl.textContent = mark;
+    const renamable = !!this.onRename && !!name;
+    this.nameEl.classList.toggle('bz-readout__name--edit', renamable);
+    if (renamable) {
+      this.nameEl.setAttribute('role', 'button');
+      this.nameEl.tabIndex = 0;
+      this.nameEl.title = 'Rename';
+    } else {
+      this.nameEl.removeAttribute('role');
+      this.nameEl.removeAttribute('tabindex');
+      this.nameEl.removeAttribute('title');
+    }
+    const mark = r.state !== undefined ? (r.state ?? '') : r.edited ? (r.editedText ?? 'Edited') : '';
+    this.editedEl.hidden = !name || !mark;
+    if (mark && this.editedEl.textContent !== mark) this.editedEl.textContent = mark;
     const by = r.by ?? null;
     this.byEl.hidden = !by;
     if (by) {
@@ -317,12 +413,50 @@ export class TitleStrip {
     }
   }
 
+  /** The name as a field, in the name's place: Enter or leaving it renames, Esc keeps. */
+  private beginRename(): void {
+    if (!this.onRename || this.renaming || this.nameEl.hidden) return;
+    const was = this.nameEl.textContent ?? '';
+    const input = el('input', 'bz-readout__rename');
+    input.type = 'text';
+    input.value = was;
+    input.maxLength = 80;
+    input.setAttribute('aria-label', 'Name');
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    this.renaming = input;
+    this.nameEl.hidden = true;
+    this.nameEl.after(input);
+    let done = false;
+    const finish = (keep: boolean): void => {
+      if (done) return;
+      done = true;
+      const next = input.value.trim();
+      this.renaming = null;
+      input.remove();
+      this.nameEl.hidden = false;
+      if (keep && next && next !== was) {
+        this.nameEl.textContent = next;
+        this.onRename?.(next);
+      }
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // typing is not a hotkey
+      if (e.key === 'Enter') finish(true);
+      else if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', () => finish(true));
+    input.focus();
+    input.select();
+  }
+
   /** Take something into the strip's care: it is disposed with it. */
   adopt(part: { dispose(): void }): void {
     this.adopted.push(part);
   }
 
   dispose(): void {
+    this.closeStepMenu();
     for (const part of this.adopted.splice(0)) part.dispose();
     this.offChoice?.();
     this.offKeymap();
