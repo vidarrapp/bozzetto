@@ -9,6 +9,7 @@ import { parseStoredCurve, parseV1Points, serializeAnchors, type StoredCurve } f
 import type { BrushSymmetry } from './symmetry';
 import { sanitizeSource } from './objSource';
 import { sanitizeGroups } from './groupsRecord';
+import { sanitizeMeasures } from './measure';
 import { MAX_REFERENCES, type FileReference, type FileReferences } from '../../reference/board';
 
 /**
@@ -173,6 +174,7 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
     painted: bool(m.painted),
     source,
     groups,
+    measures: sanitizeMeasures(m.measures),
   });
 }
 

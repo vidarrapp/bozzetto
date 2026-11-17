@@ -1374,6 +1374,83 @@ html.is-page :is(#app, #admin, .page-scroll).page-scroll {
   color: var(--accent);
 }
 
+/* The calipers' measurements (MeasureOverlay): a canvas for the lines and
+   end dots, and a small label at the middle of each. Interface, so Tab and
+   Present hide it with the panels. Only the label's Pin takes presses. */
+.measure-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9;
+}
+
+.measure-overlay canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.measure-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 4px;
+  /* No box: a dark halo keeps the length readable over clay and ground alike. */
+  background: none;
+  color: var(--bz-text);
+  text-shadow: 0 0 2px #141414, 0 0 2px #141414, 0 0 4px #141414, 0 0 4px #141414;
+  font-family: var(--bz-font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.measure-label__pin {
+  pointer-events: auto;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  text-shadow: none;
+  font-family: var(--bz-font);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.measure-label__pin:hover {
+  background: var(--bz-hover);
+}
+
+body.chrome-hidden .measure-overlay,
+body.presenting .measure-overlay {
+  display: none;
+}
+
+/* The Measure section of the Model panel: a length beside each name. */
+.measure-row__len {
+  flex: none;
+  font-family: var(--bz-font-mono);
+  font-size: 11px;
+  color: var(--bz-text-2);
+}
+
+.measure-reading {
+  margin: 4px 0;
+  font-family: var(--bz-font-mono);
+  font-size: 13px;
+  color: var(--bz-text);
+}
+
+.measure-undo {
+  align-items: center;
+  justify-content: space-between;
+}
+
 /* The symmetry ghost: the mirrored brush ring, drawn on hover. Faint on
    purpose - it says "this is where the other half lands", and must never
    compete with the ring you are aiming. */

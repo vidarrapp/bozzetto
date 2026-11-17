@@ -428,6 +428,27 @@ Tool and before Render.
 - Where it does not fit (under about 620px wide) it scrolls sideways and
   keeps the active tool in view.
 - On devices with a home indicator it sits above the safe area.
+- **Calipers** (hotkey C) is the last button, after Transform. It is not
+  a brush: it measures between two points on the model and edits
+  nothing. Its icon is the Uicons ruler until a drawn calipers glyph is
+  dropped in as `icons/calipers.svg` in the tool bar's icon folder. In
+  a scene without real units its Tool panel says "Set the scene's scale
+  first" with a Set scale button.
+- **Calipers on the view.** A line with an end dot at each point, drawn
+  over the model with a dark halo so it reads on pale clay and on the
+  dark ground; the length in centimetres to one decimal in a small
+  label at the middle, in the mono face on a raised grey box, kept
+  inside the view. The one being made carries a Pin button in its
+  label. Orange appears only on the end held by the pen or a finger. A
+  pinned measurement is a lighter grey, a mirror is dashed. All of it is
+  interface: Tab and Present hide it. It never takes the Pencil away from
+  the model, and two fingers still navigate.
+- **Measure section** (Model panel, after Poly groups): the pinned
+  measurements of the selected object, a row each with its name (tap to
+  rename), its length in the mono face, a mirror toggle, the eye and the
+  trash. A mirrored one shows a line under it with the other length and
+  the difference. A delete is not a sculpt undo step; the section
+  offers Undo for the last one deleted.
 
 ### Edge controls
 

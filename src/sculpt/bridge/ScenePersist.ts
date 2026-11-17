@@ -10,6 +10,7 @@ import { sanitizeLook, sanitizeScene } from './sanitize';
 import { UNITS, type UnitsMarker } from '../../viewer/units';
 import type { ObjSource } from './objSource';
 import type { SavedGroups } from './groupsRecord';
+import type { SavedMeasure } from './measure';
 import type { FileReferences } from '../../reference/board';
 import { deviceStore, mayStore, onDeviceChoice, DeviceStorageOff } from '../../ui/deviceStorage';
 
@@ -196,6 +197,14 @@ export interface SavedMesh {
    * it leaves the field behind.
    */
   groups?: SavedGroups;
+  /**
+   * The object's pinned calipers measurements (measure.ts): two points in
+   * the object's local space, a name, and the mirror where one was asked
+   * for. Plain numbers, so they go with the scene everywhere it goes. Optional:
+   * a scene without it opens with none, and a build from before it leaves
+   * the field behind.
+   */
+  measures?: SavedMeasure[];
 }
 
 export interface SavedScene {

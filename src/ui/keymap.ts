@@ -90,6 +90,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'view.turnRight', label: 'Turntable right', group: 'Navigation', mode: 'sculpt', chord: 'arrowright', repeat: true },
   // --- sculpt: brushes ---
   { id: 'tool.select', label: 'Select tool (click; Shift adds, Ctrl+drag removes, Ctrl+Shift+drag adds; drag a marquee)', group: 'Brushes', mode: 'sculpt', chord: 'q' },
+  { id: 'tool.calipers', label: 'Calipers (tap the model twice to measure; drag an end to move it)', group: 'Brushes', mode: 'sculpt', chord: 'c' },
   { id: 'tool.crease', label: 'Crease', group: 'Brushes', mode: 'sculpt', chord: '1' },
   { id: 'tool.move', label: 'Move', group: 'Brushes', mode: 'sculpt', chord: '2' },
   { id: 'tool.clay', label: 'Standard (clay)', group: 'Brushes', mode: 'sculpt', chord: '3' },

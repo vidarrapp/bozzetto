@@ -6,6 +6,7 @@ currentColor, sized like the font glyphs):
 
     crease.svg  move.svg  standard.svg  inflate.svg  pinch.svg
     flatten.svg  smooth.svg  drag.svg  twist.svg  negative.svg
+    calipers.svg
 
 flatten.svg is Flaticon "scraper" (19010200), supplied in review; the
 Negative button uses the uicons circle-half-stroke glyph, so no
@@ -16,3 +17,7 @@ the README credits section.
 `eyedropper.svg` is not a toolbar slot: dropped here, it becomes the
 cursor of the colour swatches' drag-to-pick (src/ui/swatchPick.ts), where
 the Pinch glyph stands in until then.
+
+`calipers.svg` is the Calipers tool's glyph. Until one is dropped here the
+button uses the uicons ruler (`fi-ss-ruler-combined`, named in
+SculptToolbar.ts as CALIPERS_ICON); the file needs no code change.
