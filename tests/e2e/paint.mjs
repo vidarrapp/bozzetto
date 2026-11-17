@@ -476,7 +476,7 @@ export const suites = {
     await openPanel(page, 'Layers');
     const sel = await page.evaluate(() => {
       const s = document.querySelector('.layers-paint .layer-controls__select');
-      return s ? { labels: [...s.options].filter((o) => !o.disabled).map((o) => o.textContent), seps: [...s.options].filter((o) => o.disabled).length, value: s.value } : null;
+      return s ? { labels: [...s.options].filter((o) => !o.disabled).map((o) => o.textContent), seps: [...s.options].filter((o) => o.disabled && o.value !== 'pass').length, value: s.value } : null;
     });
     t.ok(sel && sel.labels.length === 27 && sel.seps === 5 && sel.labels[0] === 'Normal' && sel.labels[1] === 'Dissolve' && sel.labels[26] === 'Luminosity', `the blend select has the 27 modes in 6 groups (${sel?.labels.length} modes, ${sel?.seps} lines)`);
     await page.evaluate(() => {
@@ -655,7 +655,7 @@ export const suites = {
     t.ok(u.h.every((h) => h <= 34), `rows are about 32px (${u.h.join(',')})`);
     t.ok(!u.selOff && !u.sliderOff && u.mode === 'multiply' && u.readout === '60%' && u.sameRow, `the select and Opacity above the list show the active layer, on one row (${JSON.stringify({ mode: u.mode, readout: u.readout, sameRow: u.sameRow })})`);
     t.eq(u.vals.join('|'), 'Multiply 60%|', 'the list shows "Multiply 60%" quietly, and nothing for a Normal layer at 100%');
-    t.eq(u.baseControls, 0, 'Base has no eye and no menu');
+    t.eq(u.baseControls, 1, 'Base has no eye, only its menu (Flatten all)');
     await page.evaluate(() => document.querySelector('.layers-paint .layer-row--base').click());
     u = await ui();
     t.ok(u.selOff && u.sliderOff, 'with Base active the select and the slider are disabled');
@@ -675,6 +675,7 @@ export const suites = {
     await page.evaluate(() => {
       const { session } = window.__sculpt;
       session.paint.remove(window.__pt.mesh(), window.__pt.layer('Glaze'));
+      session.paint.setOpacity(window.__pt.mesh(), window.__pt.layer('Layer 2'), 1, 'commit');
     });
 
     // Duplicate.
@@ -1364,16 +1365,16 @@ Object.assign(suites, {
     await P(`S.session.paint.remove(m, pt.layer('Loose'))`);
     await openPanel(page, 'Layers');
     const rows = () => page.evaluate(() => [...document.querySelectorAll('.layers-paint .layer-row:not(.layer-row--base)')].map((r) => `${r.classList.contains('layer-row--nested') ? '  ' : ''}${r.querySelector('.layer-row__name')?.textContent}${r.querySelector('.layer-row__fold') ? (r.querySelector('.layer-row__fold').getAttribute('aria-expanded') === 'true' ? ' v' : ' >') : ''}`));
-    t.eq((await rows()).join('|'), 'Group 1 v|  Layer 2|Layer 1', 'the list shows the group with its layer indented under it');
+    t.eq((await rows()).join('|'), 'Group v|  Layer 2|Layer 1', 'the list shows the group with its layer indented under it');
     await page.evaluate(() => document.querySelector('.layers-paint .layer-row__fold').click());
-    t.eq((await rows()).join('|'), 'Group 1 >|Layer 1', 'folded, the group hides its layers');
+    t.eq((await rows()).join('|'), 'Group >|Layer 1', 'folded, the group hides its layers');
     await page.evaluate(() => document.querySelector('.layers-paint .layer-row__fold').click());
     // Drag a row into the group with the handle.
     await P(`S.session.paint.setActive(m, pt.layer('Layer 1'))`);
     const geo = await page.evaluate(() => {
       const rs = [...document.querySelectorAll('.layers-paint .layer-row:not(.layer-row--base)')];
       const from = rs.find((r) => r.querySelector('.layer-row__name')?.textContent === 'Layer 1');
-      const into = rs.find((r) => r.querySelector('.layer-row__name')?.textContent === 'Group 1');
+      const into = rs.find((r) => r.querySelector('.layer-row__name')?.textContent === 'Group');
       const g = from.querySelector('.layer-row__grip').getBoundingClientRect();
       const b = into.getBoundingClientRect();
       return { x: g.left + g.width / 2, y: g.top + g.height / 2, ty: b.top + b.height / 2 };
