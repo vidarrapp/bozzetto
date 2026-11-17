@@ -33,6 +33,10 @@ import { rigFromGLTF } from './glbRig';
 import { getGLTFLoader } from '../loaders/gltf';
 import { ArmaturePanel, prettyName } from './ArmaturePanel';
 import { MaterialPanel } from '../ui/MaterialPanel';
+import { ReferenceBoard } from '../reference/board';
+import { ReferencePanel } from '../reference/ReferencePanel';
+import { ReferenceView } from '../reference/ReferenceView';
+import { installIntake, pasteFromClipboard } from '../reference/intake';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { boxOfPositions, checkRemesh, RemeshTooLarge } from '../sculpt/bridge/remeshBudget';
 import { statusToast } from '../sculpt/ui/statusToast';
@@ -205,6 +209,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   /** The project Save to library writes to: the autosave's, or the one just opened. */
   let bootLink: ArmatureLink | null = saved?.project ?? null;
   let bootSymmetry: boolean | null = null;
+  /** A project or template was opened by its address: its pictures are the board's, not the autosave's. */
+  let openedProject = false;
   /** Said once the page is up: what an opened file needed mending, or why it did not open. */
   const bootNotes: string[] = [];
   if (projectId || templateId) {
@@ -227,6 +233,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         }))
       ) {
         saved = got.file;
+        openedProject = true;
         bootLink = got.link ?? null;
         bootSymmetry = got.symmetry;
         if (got.notice) bootNotes.push(got.notice);
@@ -1507,6 +1514,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     frame();
     link = null;
+    void referenceBoard.clear();
     clearHistory();
     scheduleSave();
   };
@@ -1532,6 +1540,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     // Another figure altogether: its own history, and no project yet (the
     // library keeps the built-in figures; a model stays on this device).
     link = null;
+    void referenceBoard.clear();
     clearHistory();
     if (read.inferred.length) {
       console.info(`armature: ${read.inferred.join('; ')}`);
@@ -1662,6 +1671,18 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   );
   // How the figure is drawn (mode, matcap, shading, wireframe): the Material tab beside Armature's.
   const materialPanel = new MaterialPanel(viewer, { sculpting: true });
+  // The reference pictures: on this device only (reference/board.ts), and not in the .armature file.
+  const referenceBoard = new ReferenceBoard('armature');
+  if (openedProject) {
+    if (bootLink) void referenceBoard.restore({ project: bootLink.id });
+    else void referenceBoard.clear();
+  } else {
+    void referenceBoard.restore({ current: true }).then(() => referenceBoard.bindProject(bootLink?.id ?? null));
+  }
+  const referencePanel = new ReferencePanel(referenceBoard);
+  referencePanel.setLinked(() => !!link);
+  const referenceView = new ReferenceView(referenceBoard, viewer);
+  const offIntake = installIntake(referenceBoard, () => referencePanel.isOpen());
   // What an opened project needed mending, or why it did not open: said
   // now that there is a page to say it on.
   for (const note of bootNotes) {
@@ -1760,6 +1781,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         (text) => status.set(text),
       );
       link = saved;
+      referenceBoard.bindProject(saved.id);
+      referencePanel.setLinked(() => true);
       noteOpened();
       await flushSave();
       status.done(`Saved to ${where}: ${saved.title}`);
@@ -1817,6 +1840,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
             name = 'Armature';
             // A new armature is nobody's project, with a history of its own.
             link = null;
+            void referenceBoard.clear();
             void replaceFigure(armature.rig.id, undefined, true).then(() => {
               frame();
               clearHistory();
@@ -1848,6 +1872,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         { label: 'Undo', key: keyFor('arm.undo'), action: undo },
         { label: 'Redo', key: keyFor('arm.redo'), action: redo },
       ],
+      own: [{ label: 'Paste picture', hint: 'Adds the clipboard\'s picture to the Reference panel', action: () => void pasteFromClipboard(referenceBoard) }],
     }),
     'file-menu--edit',
     strip.menus,
@@ -1871,9 +1896,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
           window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
         },
       },
+      referenceOver: {
+        get: () => referenceView.isOverEnabled(),
+        toggle: () => referenceView.setOverEnabled(!referenceView.isOverEnabled()),
+      },
       panels: [
         ['armature', 'Armature'],
         ['material', 'Material'],
+        ['reference', 'Reference'],
         ['settings', 'Render'],
       ],
       hideInterface: () => chrome.set(true),
@@ -1979,6 +2009,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
 
   // Console/test handle.
   const handle = {
+    reference: { board: referenceBoard, view: referenceView, panel: referencePanel },
     get armature() {
       return armature;
     },
@@ -2184,6 +2215,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     viewer.lockFloor(viewer.manifestFloor());
     panel.dispose();
     materialPanel.dispose();
+    offIntake();
+    referenceView.dispose();
+    referencePanel.dispose();
+    referenceBoard.dispose();
     clearInterval(readoutTimer);
     offPanelMemory();
     fileMenu.dispose();

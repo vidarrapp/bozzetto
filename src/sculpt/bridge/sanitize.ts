@@ -9,6 +9,8 @@ import { parseStoredCurve, parseV1Points, serializeAnchors, type StoredCurve } f
 import type { BrushSymmetry } from './symmetry';
 import { sanitizeSource } from './objSource';
 import { sanitizeGroups } from './groupsRecord';
+import { sanitizeMeasures } from './measure';
+import { MAX_REFERENCES, type FileReference, type FileReferences } from '../../reference/board';
 
 /**
  * The one way a scene record comes in: a .bozz file, a shelf entry, a
@@ -172,6 +174,7 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
     painted: bool(m.painted),
     source,
     groups,
+    measures: sanitizeMeasures(m.measures),
   });
 }
 
@@ -384,6 +387,52 @@ function sanitizeLink(v: unknown): SceneLink | undefined {
  * A structurally valid record (validSavedScene) as Sculpt may use it.
  * Throws when it cannot be mended; see the module comment.
  */
+/** The most one picture in a file may be: what the importer writes is far under it. */
+const MAX_REFERENCE_BYTES = 16 * 1024 * 1024;
+
+/**
+ * The pictures a .bozz file carries (Include references): each one's
+ * bytes must be a JPEG or a PNG by their first bytes, and the sizes sane.
+ * Anything else is left out; a file with no usable picture has none.
+ */
+function sanitizeReferences(v: unknown): FileReferences | undefined {
+  if (!isRec(v) || !Array.isArray(v.items)) return undefined;
+  const items: FileReference[] = [];
+  for (const raw of v.items.slice(0, MAX_REFERENCES)) {
+    if (!isRec(raw) || !(raw.data instanceof Uint8Array)) continue;
+    const d = raw.data;
+    if (d.length < 8 || d.length > MAX_REFERENCE_BYTES) continue;
+    const jpeg = d[0] === 0xff && d[1] === 0xd8;
+    const png = d[0] === 0x89 && d[1] === 0x50 && d[2] === 0x4e && d[3] === 0x47;
+    if (!jpeg && !png) continue;
+    const width = num(raw.width, 1, 16384);
+    const height = num(raw.height, 1, 16384);
+    if (width === undefined || height === undefined) continue;
+    items.push({
+      name: str(raw.name) ?? 'Picture',
+      type: png ? 'image/png' : 'image/jpeg',
+      width: Math.round(width),
+      height: Math.round(height),
+      mirror: raw.mirror === true,
+      grey: raw.grey === true,
+      added: num(raw.added, 0) ?? Date.now(),
+      data: d,
+    });
+  }
+  if (!items.length) return undefined;
+  const view = isRec(v.view) ? v.view : {};
+  const at = typeof view.id === 'string' && /^\d{1,3}$/.test(view.id) && Number(view.id) < items.length ? view.id : null;
+  return {
+    items,
+    view: {
+      id: at,
+      mode: view.mode === 'over' ? 'over' : 'beside',
+      front: view.front === true,
+      opacity: num(view.opacity, 0.05, 1) ?? 0.5,
+    },
+  };
+}
+
 export function sanitizeScene(scene: SavedScene): SavedScene {
   const meshes = scene.meshes.map(sanitizeMesh);
   if (!Number.isInteger(scene.active)) fail('no object is selected');
@@ -403,5 +452,6 @@ export function sanitizeScene(scene: SavedScene): SavedScene {
     project: sanitizeLink(scene.project),
     unsent: isProjectId(scene.unsent) ? scene.unsent : undefined,
     synced: scene.synced === true ? true : undefined,
+    references: sanitizeReferences(scene.references),
   });
 }

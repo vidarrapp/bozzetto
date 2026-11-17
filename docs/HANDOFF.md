@@ -4,6 +4,16 @@
 
 - [ ] 2026-11-17: The head's look-at shares the turn as the part each bone has made by the end: head all, neck half, chest 12 percent, spine 6 percent (the owner said neck about half, torso 10 to 15 in all). Keep these, or a stronger neck or a freer torso. (blocks: nothing, a constant in Armature.ts)
 - [ ] 2026-11-17: The head's old pin (hold the head in place while the pelvis moves) is gone with the head's reach handle; an old file's head pin is dropped. Is a way to hold the gaze on a fixed point while the figure moves wanted (the look target kept in the world, as Maya's aim constraint does). (blocks: nothing)
+- [x] 2026-11-17: Too many tabs in Sculpt. Decided 2026-11-17: Render leaves Sculpt and Armature and lives in Present as three tabs, Lighting, Camera and Render; Sculpt keeps only the key for moving the key light (with View > Move light for touch); the viewer shows Lighting only; the default light stays Key only, with Three-point in the rig list (changed the same day from three lights on); Present gets more light rigs and a small library to save, export and import rigs
+- [x] 2026-11-17: Where the Reference tab sits now that Material moves to the right. Taken for now: Tool | Material | Reference | Render. Decided 2026-11-17: as taken
+- [x] 2026-11-17: Material moves to the right in Sculpt as asked; taken for now: in Armature, Present and the viewer too, so the tab is in one place everywhere. Or Sculpt only. Decided 2026-11-17: as taken
+- [x] 2026-11-17: Sculpt layers follow Mudbox: a layer belongs to the subdivision level it was first sculpted on and shows on every level. Sculpting with that layer active on another level is refused with a notice and a "Go to level N" button. Or let the stroke go to the base instead. Decided 2026-11-17: never refuse for the level: a layer keeps what was sculpted on each level, so it takes strokes on any level, including levels added later
+- [x] 2026-11-17: Paint layers hold vertex colour at the object's highest level, so Paint works on the highest level. Fine, or paint on any level. Decided 2026-11-17: as taken
+- [x] 2026-11-17: The pages' Go menu: View or Navigate. Decided 2026-11-17: View, so the pages read File, View, Help as the workspaces read File, Edit, View, Help
+- [x] 2026-11-17: Sculpt tabs. Decided 2026-11-17: left Scene | Model | Layers, right Tool | Material | Render; Material moves to the right
+- [x] 2026-11-17: Sculpt layers. Decided 2026-11-17: a simple layer system on the Mudbox model (a layer can be added at any level and carries up and down the subdivisions), each with a 0 to 100% slider that also takes a typed negative value
+- [x] 2026-11-17: Armature's head handle. Decided 2026-11-17: a look-at controller drawn like the pole handles; the head turns fully, the neck about half as much, the torso a little; the root is a rectangle around the hips
+- [x] 2026-11-17: Painting. Decided 2026-11-17: a Paint workspace between Sculpt and Present; the paint tool leaves Sculpt; vertex paint for now, with paint layers and blend modes (the Photoshop CS6 set); a full brush set comes with the node brush engine, which is designed after the interface review; PBR layers, projection painting and UDIMs are for Bozzetto Studio
 - [x] 2026-11-14: The Create window offers Create timelapse to everyone and Help leads with timelapses, against PRODUCT.md (timelapses not offered to users now). Which holds. Decided 2026-11-14: hide them for now: Create timelapse for the owner only, Help leads with Armature, Sculpt and Present
 - [x] 2026-11-14: Armature's handles are orange, the colour of the tool in hand. Make them neutral (white or grey) with orange only on the selected handle, or keep them orange. Decided 2026-11-14: neutral, with orange only on the selected handle
 - [x] 2026-11-14: Renderer words in the panels (Albedo, Metalness, Lit (PBR), Tris, Level 4/4, Voxel remesh). Keep them, or plain words (Colour, Metal, Lit, Triangles, Level 4 of 4, Remesh). Decided 2026-11-14: keep them, they are intentional; Triangles and Quads where a longer form is needed, Tris for short; and an optional details overlay of object stats as plain text in the top left of the view
@@ -80,6 +90,8 @@
 
 ## Later
 
+- More than three lights, and light types other than directional (2026-11-17, Vidar). The rig format is kept open to a list of lights with a type.
+- Sharing light rigs through the Community (2026-11-17): rigs are saved on the device and passed on as files for now; a shared library of rigs (and later tools and materials) needs server work.
 Ideas Vidar has raised that are not being built yet.
 
 - 2026-11-12: The Material tab as a material library: the materials in the scene as a list with thumbnails (rendered spheres), and a library to pick from. Assigning stays in the Scene tab for now.

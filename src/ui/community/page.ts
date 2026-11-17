@@ -224,7 +224,7 @@ function empty(handle: string | null): HTMLElement {
     'muted community__empty',
     handle
       ? `@${handle} has nothing in the Community yet.`
-      : 'Nothing has been shared yet. Members share a model or a timelapse from My projects, and it shows here once a reviewer has looked at it.',
+      : 'Nothing has been shared yet. Members share a model from My projects, and it shows here once a reviewer has looked at it.',
   );
 }
 

@@ -90,7 +90,8 @@ export class ArmaturePanel extends SidePanel {
     floorRow.title = 'Raise or lower the floor the figure stands on';
     this.floorInput = floorRow.querySelector('input') as HTMLInputElement;
     fig.appendChild(floorRow);
-    const sym = checkbox(keyedLabel('Symmetry', 'arm.symmetry'), figure().symmetry, (on) => this.hooks.symmetry(on));
+    const sym = checkbox('Symmetry', figure().symmetry, (on) => this.hooks.symmetry(on));
+    sym.title = keyedLabel('Symmetry', 'arm.symmetry');
     this.symBox = sym.querySelector('input') as HTMLInputElement;
     fig.appendChild(sym);
     const poseRow = div('sculpt-panel__row');

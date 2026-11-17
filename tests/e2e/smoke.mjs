@@ -1921,16 +1921,14 @@ export const suites = {
       });
     };
     // A guest: Import OBJ is everyone's (nothing about it needs an
-    // account), and Create timelapse is the uploader that uploads nothing.
+    // account); Create timelapse is the owner's alone (timelapses are not
+    // offered to users), so the uploader is opened by its address here.
     const stack = await menu(page);
-    t.eq(stack.titles, 'New Sculpt, New Armature, Import OBJ, Create timelapse', "a guest's Create menu offers New Sculpt, New Armature, Import OBJ and Create timelapse, in that order");
-    t.ok(stack.kinds === 'sculpt,armature,obj,timelapse' && stack.sameWidth && stack.stacked, `four buttons stacked, each the menu's width (${JSON.stringify(stack)})`);
-    t.ok(/Nothing is uploaded\.$/.test(stack.timelapse) && stack.picker === '.obj', `Create timelapse says nothing is uploaded, and Import OBJ picks an .obj (${stack.timelapse})`);
-    await Promise.all([
-      page.waitForURL((u) => u.pathname === '/create/', { timeout: 30_000 }),
-      page.click('.create-overlay [data-kind="timelapse"]'),
-    ]);
-    t.eq(new URL(page.url()).pathname, '/create/', 'and it opens the uploader');
+    t.eq(stack.titles, 'New Sculpt, New Armature, Import OBJ', "a guest's Create menu offers New Sculpt, New Armature and Import OBJ, in that order, and no timelapse");
+    t.ok(stack.kinds === 'sculpt,armature,obj' && stack.sameWidth && stack.stacked, `three buttons stacked, each the menu's width (${JSON.stringify(stack)})`);
+    t.ok(stack.picker === '.obj', 'Import OBJ picks an .obj');
+    await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
+    t.eq(new URL(page.url()).pathname, '/create/', 'the uploader still opens by its address');
     await page.waitForSelector('.panel--frames input[type="file"]', { state: 'attached', timeout: 30_000 });
     const guestPage = await page.evaluate(() => ({
       note: document.querySelector('.panel--frames .bz-note')?.textContent ?? '',
@@ -2249,7 +2247,7 @@ export const suites = {
     t.ok(gallery.first && gallery.label === 'Create', `the gallery leads with the Create tile (${gallery.label || 'none'})`);
     await page.click('#landing-grid .card--new');
     const choices = await page.evaluate(() => [...document.querySelectorAll('.create-overlay .create-choice__title')].map((c) => c.textContent));
-    t.eq(choices.join(', '), 'New Sculpt, New Armature, Import OBJ, Create timelapse', 'which offers a new sculpt, a new armature, an OBJ or the uploader');
+    t.eq(choices.join(', '), 'New Sculpt, New Armature, Import OBJ', 'which offers a new sculpt, a new armature or an OBJ');
     t.ok(!gallery.chips.some((c) => /upload/i.test(c)), 'and the top row no longer carries the uploader');
     await Promise.all([
       page.waitForURL((u) => u.searchParams.get('armature') === '1', { timeout: 30_000 }),
