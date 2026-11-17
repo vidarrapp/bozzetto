@@ -312,6 +312,10 @@ async function armatureControls(page, base, t) {
     const p = await page.evaluate(() => window.__armature.picked());
     t.eq(p, 'root', `a press ${label} of the box takes the root`);
   }
+  // Where the box and the root are now, just before the drag.
+  const start = await page.evaluate(() => ({ at: window.__armature.onScreen(...window.__armature.rootBox().centre), root: window.__armature.state().root.position }));
+  edge.centre = start.at;
+  edge.root = start.root;
   await page.mouse.move(edge.best.mid[0], edge.best.mid[1]);
   await page.mouse.down();
   await page.mouse.move(edge.best.mid[0] + 30, edge.best.mid[1] - 40, { steps: 6 });
