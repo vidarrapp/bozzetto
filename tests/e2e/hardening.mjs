@@ -671,7 +671,7 @@ async function workerAndSignOut(browser, base, t) {
       dialogs.length = 0;
       await p.click('.card--owned[data-project="pub-reel"] .card__vis input');
       for (let i = 0; i < 40 && !dialogs.length; i++) await p.waitForTimeout(100);
-      t.eq(dialogs[0] ?? '', `Could not change who sees "Public reel": ${said}`, `a ${status} says what the server said`);
+      t.eq(dialogs[0] ?? '', `Could not change who sees "Public reel" ${said}`, `a ${status} says what the server said`);
     }
     refusal = null;
 

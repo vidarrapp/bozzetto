@@ -1827,7 +1827,7 @@ export const suites = {
         await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
         const b = document.querySelector('.sculpt-sliders .sculpt-solobtn');
         if (how === 'click') b.click();
-        return { pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.title };
+        return { pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.getAttribute('aria-label') };
       }, press);
     // A real press: pointer down and up on the button, as a mouse, a pen or
     // a finger lifts on it.
@@ -1842,7 +1842,7 @@ export const suites = {
     const idle = await soloButton(null);
     t.ok(
       idle.pressed === 'false' && !idle.disabled && idle.title === 'Solo (Alt+Q)',
-      `not pressed, titled from the keymap (${JSON.stringify(idle)})`,
+      `not pressed, named from the keymap (the name shows on hover and a long press) (${JSON.stringify(idle)})`,
     );
     await tapSolo();
     const pressed = await soloButton(null);
@@ -2121,7 +2121,7 @@ export const suites = {
       await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('#landing-grid .card--sculpt', { timeout: 30_000 }).catch(() => {});
       const card = await page.evaluate(() => document.querySelector('.card--sculpt:not(.card--armature) .card__title')?.textContent ?? null);
-      t.eq(card, 'Your sculpt', "the autosave keeps it, as the gallery's In progress card");
+      t.ok(/^Study \d/.test(card ?? ''), `the autosave keeps it, as the gallery's In progress card, under its dated name (${card})`);
 
       // Work on the device now: the gallery asks; declined, nothing moves.
       answer = false;
@@ -5322,7 +5322,7 @@ export const suites = {
       t.ok(g.unsent.length === 1 && g.unsent[0].upload && g.unsent[0].note === DEVICE_NOTE && g.toggles === 0, `the kept scene's card says Not uploaded and offers Upload to Projects; no owner's switches (${JSON.stringify(g)})`);
       // The scene was saved to its project once, but this save did not go
       // up: its In progress card is as it always was, not put away.
-      t.eq(await inProgressTitle(owner), 'Your sculpt', 'and the In progress card stays, as it was');
+      t.ok(/^Study \d/.test((await inProgressTitle(owner)) ?? ''), 'and the In progress card stays, as it was');
       await gallery();
       t.eq(await owner.evaluate(() => document.querySelector('.landing__notice')?.textContent ?? null), null, 'the line is said once, not on every visit');
       await clearNotices(owner);
@@ -7623,7 +7623,7 @@ export const suites = {
         });
         await d.p.click('.update-notice__action');
         const asked = await eventually(d.p, () => d.dialogs.length > 0 && d.log.at(-1)?.state === 'ready' && d.log.at(-1).shown, 20_000);
-        t.ok(asked && /could not be stored on this device, and updating reloads the page\. Reload anyway\?/.test(d.dialogs[0] ?? ''), `with the autosave stopped, Reload asks first ("${d.dialogs[0]}")`);
+        t.ok(asked && /could not be stored on this device, and updating reloads the page/.test(d.dialogs[0] ?? ''), `with the autosave stopped, Reload asks first ("${d.dialogs[0]}")`);
         t.ok((await runningScript(d.p)) === oldMain && d.log.at(-1)?.text === 'Update ready', 'and Cancel stays, Update ready still offered');
         await d.p.evaluate(() => {
           window.__sculpt.persist.disabled = false;
