@@ -399,6 +399,19 @@ body.bz-shell .bz-ws__step--none:hover {
   cursor: default;
 }
 
+/* Why a greyed step is greyed, shown while it is held (TitleStrip.sayWhyOnHold). */
+body.bz-shell .bz-ws__why {
+  position: fixed;
+  z-index: 60;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 4px 8px;
+  background: var(--bz-raised);
+  box-shadow: var(--bz-raised-shadow);
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+  pointer-events: none;
+}
+
 body.bz-shell .bz-ws__sep {
   color: var(--bz-text-3);
   font: 400 13px/16px var(--bz-font);
@@ -1226,17 +1239,6 @@ body.bz-shell .present-bar__speed {
   width: 168px;
 }
 
-body.bz-shell .present-bar__sep {
-  flex: 0 0 auto;
-  width: 1px;
-  height: 20px;
-  background: var(--bz-sep);
-}
-
-body.bz-shell .present-bar__save {
-  flex: 0 0 auto;
-}
-
 @media (max-width: 420px) {
   body.bz-shell .present-bar__speed {
     width: 112px;
@@ -1542,6 +1544,13 @@ body.bz-shell .transport--shell {
   box-shadow: none;
   color: var(--bz-text);
   z-index: 20;
+}
+
+/* With a panel open on either side the bar gives up width, evenly, so it
+   stands clear of the panel (304px) and its edge: it shortens, the panel
+   does not. */
+body.bz-shell:has(.panel:not(.panel--collapsed)) .transport--shell {
+  width: min(720px, max(240px, calc(100vw - 2 * (304px + 8px) - 32px)));
 }
 
 body.bz-shell .transport--shell .transport__info {
