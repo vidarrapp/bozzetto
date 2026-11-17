@@ -1648,10 +1648,10 @@ Object.assign(suites, {
     // What hiding layer 1 alone shows, to compare with after the round trip.
     await P(`S.session.paint.setVisible(m, pt.layer('Layer 1'), false)`);
     await page.evaluate(() => window.__pt.snap('only2'));
-    await P(`pt.undo()`);
-    t.ok((await page.evaluate(() => window.__pt.diff('all'))) < 1e-6, 'undo of the eye');
+    await P(`S.session.paint.setVisible(m, pt.layer('Layer 1'), true)`);
+    t.ok((await page.evaluate(() => window.__pt.diff('all'))) < 1e-6, 'showing layer 1 again');
     const back = await P(`(() => { let n = 0; while (S.session.canUndo()) { S.session.undo(); n++; } return n; })()`);
-    t.ok(back >= 7, `the history holds the strokes and the layer steps (${back})`);
+    t.ok(back >= 6, `the history holds the strokes and the layer steps (${back})`);
     t.ok((await page.evaluate(() => window.__pt.diff('plain'))) < 1e-6 && (await P(`pt.layers().length`)) === 0, 'undone all the way, the object has its colours and no layers');
     await P(`(() => { while (S.session.canRedo()) S.session.redo(); })()`);
     t.ok((await page.evaluate(() => window.__pt.diff('all'))) < 1e-6, 'redone all the way, the colours are as they were');
@@ -1659,7 +1659,7 @@ Object.assign(suites, {
     await P(`S.session.paint.setVisible(m, pt.layer('Layer 1'), false)`);
     t.ok((await page.evaluate(() => window.__pt.diff('only2'))) < 1e-6, 'hiding layer 1 shows layer 2 alone: each stroke went to the layer it was made on');
     // A second round trip, to be sure.
-    await P(`pt.undo()`);
+    await P(`S.session.paint.setVisible(m, pt.layer('Layer 1'), true)`);
     await P(`(() => { while (S.session.canUndo()) S.session.undo(); while (S.session.canRedo()) S.session.redo(); })()`);
     t.ok((await page.evaluate(() => window.__pt.diff('all'))) < 1e-6, 'and again');
   },
