@@ -1,7 +1,7 @@
 # Tool library and node brush engine: drafts
 
 Working drafts from 2026-11-14, kept for the design work that follows the
-interface review. Nothing here is decided.
+interface review. Nothing here is decided; see the plan for what is proposed.
 
 - `map-*.md`: how each current sculpt tool works, read from the code.
 - `design-stages.md`, `design-dataflow.md`, `design-pragmatic.md`: three
@@ -11,4 +11,4 @@ interface review. Nothing here is decided.
   pragmatic design (ship the dock and library on today's tools first, port
   tools to recipes one at a time), with grafts from the other two.
 
-The single design document was not written: the run stopped before it.
+The design to build from is `docs/plans/tool-library-and-nodes.md` (2026-11-17). These drafts stay as its detailed record.

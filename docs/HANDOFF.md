@@ -2,6 +2,16 @@
 
 ## Open questions for Vidar
 
+- [ ] 2026-11-17: Tool library, where it opens (plan: docs/plans/tool-library-and-nodes.md): a sheet rising from the tool bar, from a Library button at the bar's end and View > Tool library, also reachable from the Tool panel's heading (recommended); a section inside the Tool panel; or a menu in the top bar (blocks: the tool library)
+- [ ] 2026-11-17: Building tools from nodes: an editor that is a column of stage cards, each part picked from a list, with a wired canvas later or never (recommended); or the wired canvas from the start, as in Blueprints (blocks: the tool editor)
+- [ ] 2026-11-17: Moving a tool along the tool bar: the others make room and the tools between get new keys, as the Dock does (recommended); or the two tools swap and no other key changes (blocks: the tool bar drag)
+- [ ] 2026-11-17: A full tool bar: ten places, and a tool dropped on it replaces the one under it (recommended); or more than ten, the extra ones with no key (blocks: the tool library)
+- [ ] 2026-11-17: Smooth and Mask as tools that can go on the tool bar, Shift and Ctrl still working; an iPad without a keyboard cannot mask today. Yes (recommended), or keep them on the keys only (blocks: the library's contents)
+- [ ] 2026-11-17: Smooth's settings once it can sit on the bar: one Smooth, where Shift from any brush uses its Strength and Mode with the size of the brush in hand and Smooth on the bar uses its own size (recommended, keeps the 2026-10-27 decision); or each tool may choose which Smooth its Shift uses (blocks: Smooth on the tool bar)
+- [ ] 2026-11-17: Copies of a tool (Duplicate): a copy follows later fixes to the tool it came from (recommended); or it stays exactly as it was made (blocks: Duplicate in the tool library)
+- [ ] 2026-11-17: Twist and Local scale are in the engine and cannot be reached. Put them in the tool library: yes or no
+- [ ] 2026-11-17: Calipers once there is a tool library: keeps its fixed place beside Transform and its C key (recommended for now); or becomes a library tool that takes a digit when put on the bar
+- [ ] 2026-11-17: Move's "Pressure: strength" row does nothing (Move reads pressure for its size only). Drop the row when tool rows come from the recipe (recommended); or keep it
 - [x] 2026-11-17: The version for this round of work. Decided 2026-11-17: 0.7.0, set when it goes to main after a clean full test run
 - [x] 2026-11-17: The Layers panel. Decided 2026-11-17: one row per layer as in Photoshop, with the blend mode and opacity (paint) or the weight (sculpt) at the top for the active layer; groups in the stack; masks on layers and groups for sculpt and paint layers alike, made from the current mask and loadable back; no blend modes on sculpt layers, which stay additive
 - [ ] 2026-11-17: Paint layers: the first layer on an object takes its colours as Base and marks the object painted, so a later change of its material's albedo no longer recolours it (as after a first stroke today). Keep, or let Base follow the material until a stroke is painted. (blocks: nothing)
@@ -98,7 +108,7 @@
 
 ## Later
 
-- A contrast brush (2026-11-17, Vidar): strengthens or flattens the relief under it, its result kept on an ordinary sculpt layer; this is his answer to blend modes on sculpt layers. For the node brush engine's design.
+- A contrast brush (2026-11-17, Vidar): strengthens or flattens the relief under it, its result kept on an ordinary sculpt layer; this is his answer to blend modes on sculpt layers. Designed in docs/plans/tool-library-and-nodes.md, section 6; it comes with the tool editor.
 - Thumbnails on layer rows (2026-11-17).
 - More than three lights, and light types other than directional (2026-11-17, Vidar). The rig format is kept open to a list of lights with a type.
 - Sharing light rigs through the Community (2026-11-17): rigs are saved on the device and passed on as files for now; a shared library of rigs (and later tools and materials) needs server work.
