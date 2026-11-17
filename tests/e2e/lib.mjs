@@ -116,10 +116,75 @@ export async function launch() {
   const pw = playwright();
   const managed = '/opt/pw-browsers/chromium';
   const executablePath = process.env.E2E_BROWSER ?? (existsSync(managed) ? managed : undefined);
-  return pw.chromium.launch({
+  const browser = await pw.chromium.launch({
     headless: true,
     executablePath,
     args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+  });
+  // Every context gets the question bridge (below).
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (...args) => {
+    const ctx = await newContext(...args);
+    await bridgeAsks(ctx);
+    return ctx;
+  };
+  return browser;
+}
+
+/**
+ * The app asks its questions in its own window (ui/askWindow, class
+ * .bz-ask), not with the browser's own question box, so Playwright's
+ * 'dialog' event never sees them. This puts them back: each window that
+ * opens is passed to the page's 'dialog' listeners as a stand-in dialog
+ * (type 'confirm', or 'prompt' with a text line; message() is the heading
+ * and the line under it; accept() presses the verb button, dismiss()
+ * presses Cancel), so a test that answers questions keeps doing it the same
+ * way. A page with no 'dialog' listener, or with `page.askBridge = false`,
+ * has the window left alone, for a test that presses its buttons itself.
+ */
+async function bridgeAsks(ctx) {
+  await ctx.exposeBinding('__bzAsk', async ({ page }, info) => {
+    if (page.askBridge === false || page.listenerCount('dialog') === 0) return { leave: true };
+    return new Promise((resolve) => {
+      let done = false;
+      const settle = (v) => {
+        if (!done) {
+          done = true;
+          resolve(v);
+        }
+      };
+      const dialog = {
+        type: () => (info.field ? 'prompt' : 'confirm'),
+        message: () => info.message,
+        defaultValue: () => info.value ?? '',
+        page: () => page,
+        accept: async (text) => settle({ yes: true, text }),
+        dismiss: async () => settle({ yes: false }),
+      };
+      page.emit('dialog', dialog);
+      // Nobody answered in time: no.
+      setTimeout(() => settle({ yes: false }), 20_000).unref?.();
+    });
+  });
+  await ctx.addInitScript(() => {
+    const seen = new WeakSet();
+    const look = () => {
+      for (const win of document.querySelectorAll('.bz-ask')) {
+        if (seen.has(win)) continue;
+        seen.add(win);
+        const heading = win.querySelector('h2')?.textContent ?? '';
+        const line = win.querySelector('p')?.textContent ?? '';
+        const input = win.querySelector('.bz-ask-input');
+        void window
+          .__bzAsk({ message: `${heading} ${line}`.trim(), field: !!input, value: input?.value ?? '' })
+          .then((r) => {
+            if (r.leave) return;
+            if (r.yes && input && typeof r.text === 'string') input.value = r.text;
+            win.querySelector(r.yes ? '.bz-ask-yes' : '.bz-ask-cancel')?.click();
+          });
+      }
+    };
+    new MutationObserver(look).observe(document, { childList: true, subtree: true });
   });
 }
 

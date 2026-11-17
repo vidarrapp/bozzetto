@@ -11,6 +11,7 @@ import type { MaterialLibrary } from '../bridge/materials';
 import { RemeshTooLarge } from '../bridge/remeshBudget';
 import { statusToast } from './statusToast';
 import { deviceStore } from '../../ui/deviceStorage';
+import { askText, askWindow } from '../../ui/askWindow';
 
 /**
  * Scene outliner: the upper-left docked panel, and only the objects. Each
@@ -458,27 +459,39 @@ export class ScenePanel extends SidePanel {
   }
 
   /** Delete: every selected object (the active one when nothing else is), after asking. */
-  deleteSelected(): void {
+  async deleteSelected(): Promise<void> {
     // A copy: deleteMesh edits the selection list while this walks it.
     const selected = [...this.session.getSelectedMeshes()];
     const targets = selected.length > 0 ? selected : this.session.getMesh() ? [this.session.getMesh()!] : [];
     if (targets.length === 0) return;
     const what =
       targets.length === 1
-        ? `"${this.session.getMeshName(targets[0])}"`
+        ? this.session.getMeshName(targets[0])
         : `${targets.length} objects`;
-    // Ctrl+z brings them back, so the prompt does not threaten permanence.
-    if (!confirm(`Delete ${what}?`)) return;
+    // Ctrl+z brings them back, so the window does not threaten permanence.
+    const yes = await askWindow({
+      title: `Delete ${what}?`,
+      text: 'Undo brings it back.',
+      yes: 'Delete',
+      danger: true,
+    });
+    if (!yes) return;
     for (const m of targets) this.session.deleteMesh(m);
     this.refresh();
   }
 
   /** Trash can: drop the selected object, once, after asking. */
-  private deleteActive(): void {
+  private async deleteActive(): Promise<void> {
     const mesh = this.session.getMesh();
     if (!mesh) return;
-    // Ctrl+z brings it back, so the prompt does not threaten permanence.
-    if (!confirm(`Delete "${this.session.getMeshName(mesh)}"?`)) return;
+    // Ctrl+z brings it back, so the window does not threaten permanence.
+    const yes = await askWindow({
+      title: `Delete ${this.session.getMeshName(mesh)}?`,
+      text: 'Undo brings it back.',
+      yes: 'Delete',
+      danger: true,
+    });
+    if (!yes) return;
     this.session.deleteMesh(mesh);
     this.refresh();
   }
@@ -721,27 +734,35 @@ export class ScenePanel extends SidePanel {
     // colours, so a locked object's material is read-only with it.
     select.disabled = this.session.isLocked(active);
     select.addEventListener('change', () => {
-      // Any assignment re-fills the object, so painted work would go: ask.
-      if (
-        this.library!.isPainted(active) &&
-        !confirm('Change material? The colours painted on this object will be replaced.')
-      ) {
-        select.value = current.id;
-        return;
-      }
-      if (select.value === NEW_ID) {
-        const name = prompt('New material name', 'Clay');
-        if (name === null) {
-          select.value = current.id;
+      void (async () => {
+        const picked = select.value;
+        // Any assignment re-fills the object, so painted work would go: ask.
+        if (this.library!.isPainted(active)) {
+          const yes = await askWindow({
+            title: `Change the material of ${this.session.getMeshName(active)}?`,
+            text: 'The colours painted on this object will be replaced.',
+            yes: 'Change material',
+            danger: true,
+          });
+          if (!yes) {
+            select.value = current.id;
+            return;
+          }
+        }
+        if (picked === NEW_ID) {
+          const name = await askText({ title: 'New material', label: 'Material name', value: 'Clay', yes: 'Make material' });
+          if (name === null) {
+            select.value = current.id;
+            return;
+          }
+          this.library!.assign(active, this.library!.create(name.trim() || 'Clay').id);
+          this.session.render();
+          this.refreshMaterial(); // the new material takes the slot, "New*" stays last
           return;
         }
-        this.library!.assign(active, this.library!.create(name.trim() || 'Clay').id);
+        this.library!.assign(active, picked);
         this.session.render();
-        this.refreshMaterial(); // the new material takes the slot, "New*" stays last
-        return;
-      }
-      this.library!.assign(active, select.value);
-      this.session.render();
+      })();
     });
     this.matRow.replaceChildren(labelRow('Material', select));
   }

@@ -1,3 +1,4 @@
+import { askWindow, type AskOptions } from './askWindow';
 /**
  * "This tab asked to open that scene": what a gallery card or the Projects
  * page leaves behind when it sends the tab to `/?sculpt=1&lib=<id>`,
@@ -46,7 +47,33 @@ export function takeOpen(): string | null {
  * and which asks at boot instead.
  */
 export function markOpenOnClick(ev: MouseEvent, link: HTMLAnchorElement): void {
-  if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+  if (ev.defaultPrevented || !isPlainClick(ev)) return;
+  markOpenFromLink(link);
+}
+
+const isPlainClick = (ev: MouseEvent): boolean => ev.button === 0 && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey;
+
+/**
+ * A click on a link that opens a scene, asking first when `ask` is given
+ * (work in progress would be replaced). The question is a window, so the
+ * click is held back and the tab goes on when it is answered yes. A
+ * modified click opens another tab, which asks at boot and costs this
+ * tab nothing, so it is not held.
+ */
+export function openAfterAsking(ev: MouseEvent, link: HTMLAnchorElement, ask: AskOptions | null): void {
+  if (!ask || ev.defaultPrevented || !isPlainClick(ev)) {
+    markOpenOnClick(ev, link);
+    return;
+  }
+  ev.preventDefault();
+  void askWindow(ask).then((yes) => {
+    if (!yes) return;
+    markOpenFromLink(link);
+    window.location.assign(link.href);
+  });
+}
+
+function markOpenFromLink(link: HTMLAnchorElement): void {
   const q = new URL(link.href, window.location.href).searchParams;
   const project = q.get('project');
   const template = q.get('template');

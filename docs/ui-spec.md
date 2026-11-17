@@ -437,8 +437,15 @@ states" board. This section adds behaviour.
   `ground` box with a 1px outline, its name in the heading style, one
   primary button and the rest quiet. Escape closes it. On a phone it
   fills the screen. A confirmation of something that cannot be undone
-  names the thing in its heading ("Delete Head?") and its primary button
-  repeats the verb.
+  names the thing in its heading ("Delete Head?") and its button repeats
+  the verb. Every question is the app's own window (`src/ui/askWindow.ts`),
+  never the browser's `confirm()`, `alert()` or `prompt()`; the one native
+  prompt left is the leave prompt of `beforeunload`, which browsers allow
+  nothing else for. Two styles: danger (anything that cannot be undone or
+  loses work) has a red button with a white label, the focus on Cancel and
+  no Enter to confirm; normal (a safe main action) has the orange button
+  focused, so Enter confirms. Cancel is always there; Esc and a tap
+  outside the window cancel.
 - **Notice.** One at a time, above the hints at the bottom centre. A
   plain notice leaves after 4 seconds. One that reports a failure is the
   orange box and stays until dismissed, with the action to take as a

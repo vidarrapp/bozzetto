@@ -9,6 +9,7 @@ import { AuthExpiredError, type Role, type SignInVia } from '../../admin/api';
 import { DEVICE_ONLY_NOTE } from '../../ui/deviceOnly';
 import { signInButton } from '../../ui/signIn';
 import { mayStore } from '../../ui/deviceStorage';
+import { askWindow, tellWindow } from '../../ui/askWindow';
 
 /** What a disabled device action says while the person has turned saving off. */
 const SAVING_OFF = 'Saving is off. Turn it on in Edit > Preferences.';
@@ -21,7 +22,7 @@ const ROLE_WAIT_MS = 5000;
  * under it, and FileActions behind them. New and Open, then saving, then
  * OBJ in and out, Publish, and Close, which returns to the gallery.
  *
- * Questions are asked here, not in FileActions: a plain confirm(), and
+ * Questions are asked here, not in FileActions: a plain question box, and
  * the scene logic underneath is the same whoever asks.
  */
 export class FileMenu {
@@ -70,7 +71,17 @@ export class FileMenu {
           {
             label: 'New sculpt',
             action: async () => {
-              if (this.actions.hasWork() && !confirm('Start a new sculpt? The current objects will be lost.')) return;
+              if (
+                this.actions.hasWork() &&
+                !(await askWindow({
+                  title: 'Start a new sculpt?',
+                  text: 'The current objects will be lost.',
+                  yes: 'Start new',
+                  danger: true,
+                }))
+              ) {
+                return;
+              }
               await this.actions.newScene();
             },
           },
@@ -282,10 +293,17 @@ export class FileMenu {
     try {
       return await this.actions.replaceWith(
         await file.arrayBuffer(),
-        () => !this.actions.hasWork() || confirm('Open this file? The current objects will be replaced.'),
+        () =>
+          !this.actions.hasWork() ||
+          askWindow({
+            title: `Open ${file.name}?`,
+            text: 'The current objects will be replaced.',
+            yes: 'Replace',
+            danger: true,
+          }),
       );
     } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
+      void tellWindow({ title: 'That file did not open', text: err instanceof Error ? err.message : String(err) });
       return false;
     }
   }
@@ -297,7 +315,7 @@ export class FileMenu {
       const note = await this.actions.importObj(await file.text(), this.zUp, name);
       if (note) statusToast('').done(note);
     } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
+      void tellWindow({ title: 'That file did not import', text: err instanceof Error ? err.message : String(err) });
     }
   }
 

@@ -558,6 +558,7 @@ export const suites = {
       buttons: [...document.querySelectorAll('.bz-ask button')].map((b) => b.textContent),
     }));
     t.ok(ask.title === 'Make a new armature for this scene?' && ask.primary.join() === 'New armature' && ask.buttons.join() === 'New armature,Cancel', `Sculpt's Armature step asks "Make a new armature for this scene?", one orange choice and Cancel (${JSON.stringify(ask)})`);
+    t.ok(await page.evaluate(() => document.activeElement?.classList.contains('bz-ask-yes')), 'a safe ask is orange and has the focus on its verb, so Enter confirms');
     await page.click('.bz-ask-cancel');
     t.ok(!(await page.evaluate(() => !!document.querySelector('.bz-ask'))) && new URL(page.url()).searchParams.get('sculpt') === '1', 'Cancel closes it and stays in Sculpt');
     await step('armature');

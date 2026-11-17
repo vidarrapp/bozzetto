@@ -2,6 +2,7 @@ import { AuthExpiredError, type ProjectSummary } from '../../admin/api';
 import { AccountError, inWait, shareProject, type SharedState, type ShareStatus } from '../../net/account';
 import { LEGAL, button, el, legalLink } from '../account/parts';
 import { deviceStore } from '../deviceStorage';
+import { askWindow } from '../askWindow';
 
 /**
  * Share to Community on a My projects card (docs/accounts.md §13). A model
@@ -120,7 +121,11 @@ export function shareControls(p: ProjectSummary, ctx: ShareContext): HTMLElement
       markNoteSeen(ctx.userId);
     }
     const out = state() === 'public' ? 'It leaves the Community at once.' : state() === 'hidden' ? 'Sharing it again later sends it for review.' : null;
-    if (!on && out && !confirm(`Withdraw "${p.title}" from the Community? ${out}`)) {
+    if (
+      !on &&
+      out &&
+      !(await askWindow({ title: `Withdraw ${p.title} from the Community?`, text: out, yes: 'Withdraw', danger: true }))
+    ) {
       paint();
       return;
     }

@@ -377,6 +377,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
             ? 'Every frame is taken out of the list. The project on the site keeps them until you save.'
             : 'Every frame is taken out of the list, and the preview with them.',
           yes: 'Clear the frames',
+          danger: true,
         });
         if (!yes) return;
         items = [];
@@ -614,6 +615,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
         title: 'Close without saving?',
         text: project ? 'The changes since the last save will be lost.' : 'The frames and settings here will be lost.',
         yes: 'Close without saving',
+        danger: true,
       });
       if (!yes) return;
     }

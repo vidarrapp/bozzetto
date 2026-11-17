@@ -11,7 +11,8 @@ import { apiFetch } from '../../net/origin';
 import { failNotice } from '../../sculpt/ui/statusToast';
 import { downloadBlob } from '../download';
 import { setPicture } from '../Landing';
-import { markOpenOnClick } from '../openToken';
+import { openAfterAsking } from '../openToken';
+import { askWindow } from '../askWindow';
 import { signInAgain, signInButton } from '../signIn';
 import { pageShell, setTagline } from '../pageShell';
 import { rowMenu } from '../rowMenu';
@@ -419,11 +420,18 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
     thumb.href = href;
     const ask = (ev: MouseEvent, link: HTMLAnchorElement): void => {
       const busy = p.mode === 'scene' ? page.workHere : p.mode === 'armature' ? page.armatureHere : false;
-      if (busy && !confirm(`Open "${p.title}"? Your ${p.mode === 'armature' ? 'armature' : 'work'} in progress will be replaced.`)) {
-        ev.preventDefault();
-        return;
-      }
-      markOpenOnClick(ev, link);
+      openAfterAsking(
+        ev,
+        link,
+        busy
+          ? {
+              title: `Open "${p.title}"?`,
+              text: `Your ${p.mode === 'armature' ? 'armature' : 'work'} in progress will be replaced.`,
+              yes: 'Replace',
+              danger: true,
+            }
+          : null,
+      );
     };
     open.addEventListener('click', (ev) => ask(ev, open));
     thumb.addEventListener('click', (ev) => ask(ev, thumb));
@@ -517,8 +525,14 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
     });
   };
 
-  remove.addEventListener('click', () => {
-    if (!confirm(`Delete "${p.title}"? It goes from My projects and from this device, and cannot be undone.`)) return;
+  remove.addEventListener('click', async () => {
+    const yes = await askWindow({
+      title: `Delete ${p.title}?`,
+      text: 'It goes from My projects and from this device, and cannot be undone.',
+      yes: 'Delete',
+      danger: true,
+    });
+    if (!yes) return;
     remove.disabled = true;
     void memberProjects
       .remove(p.id)

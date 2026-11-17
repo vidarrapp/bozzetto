@@ -220,6 +220,7 @@ export const suites = {
       const { page: p, ctx: ownerCtx } = await open({ owner: true }, '/?tl=tl-demo&present=1');
       void ownerCtx;
       const dialogs = [];
+      p.askBridge = false; // the suite presses the question window's own buttons
       p.on('dialog', (d) => {
         dialogs.push(d.type());
         void d.accept();
@@ -535,6 +536,18 @@ export const suites = {
       await p.click('.file-menu--file .file-menu__item:has-text("Close")');
       const asked = await p.waitForSelector('.bz-ask', { timeout: 5000 }).then(() => true, () => false);
       t.ok(asked, 'Close asks when there are unsaved changes');
+      const closeAsk = await p.evaluate(() => {
+        const y = document.querySelector('.bz-ask-yes');
+        const css = getComputedStyle(y);
+        return { title: document.querySelector('.bz-ask h2').textContent, yes: y.textContent, danger: y.classList.contains('btn--danger'), bg: css.backgroundColor, color: css.color, focus: document.activeElement?.className ?? '' };
+      });
+      t.ok(closeAsk.title === 'Close without saving?' && closeAsk.yes === 'Close without saving' && closeAsk.danger && closeAsk.color === 'rgb(255, 255, 255)' && closeAsk.bg !== 'rgba(0, 0, 0, 0)' && /bz-ask-cancel/.test(closeAsk.focus), `the loss is a red button with a white label, and the focus is on Cancel (${JSON.stringify(closeAsk)})`);
+      await p.keyboard.press('Escape');
+      await settle(p, 300);
+      t.ok((await p.locator('.bz-ask').count()) === 0 && new URL(p.url()).search.includes('present=1'), 'Esc cancels, and stays where it was');
+      await p.click('.bz-menuname:has-text("File")');
+      await p.click('.file-menu--file .file-menu__item:has-text("Close")');
+      await p.waitForSelector('.bz-ask');
       await p.click('.bz-ask-cancel');
       await settle(p, 300);
       t.ok(new URL(p.url()).pathname === '/' && new URL(p.url()).search.includes('present=1'), 'Cancel stays where it was');
@@ -735,6 +748,7 @@ export const suites = {
       t.ok(await p.waitForSelector('.bz-ask', { timeout: 5000 }).then(() => true, () => false), 'the trash asks first');
       const ask = await p.evaluate(() => ({ title: document.querySelector('.bz-ask h2')?.textContent, yes: document.querySelector('.bz-ask-yes')?.textContent }));
       t.ok(ask.title === 'Clear the frames?' && ask.yes === 'Clear the frames', `with its own words (${JSON.stringify(ask)})`);
+      t.ok(await p.evaluate(() => document.querySelector('.bz-ask-yes').classList.contains('btn--danger')), 'and the frames going is a red button');
       await p.click('.bz-ask-cancel');
       await settle(p, 200);
       t.ok((await count()) === '6', 'Cancel leaves the frames');

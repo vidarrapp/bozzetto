@@ -237,7 +237,7 @@ function reloadNow(): void {
 async function reloadForUpdate(): Promise<void> {
   if (state.status === 'applying') return;
   set({ status: 'applying', progress: null });
-  if (!(await readyToLeave('updating reloads the page. Reload anyway?'))) {
+  if (!(await readyToLeave('Updating reloads the page.', 'Reload'))) {
     set({ status: 'ready', progress: null });
     return;
   }

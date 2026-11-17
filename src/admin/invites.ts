@@ -3,6 +3,7 @@ import { asOwner, failureSentence, ownerSignInPanel } from './ownerSession';
 import { dayOf } from '../net/account';
 import { Say, button, el } from '../ui/account/parts';
 import { fillMeta, metaPhrase, metaValue } from '../ui/metaLine';
+import { askWindow } from '../ui/askWindow';
 
 /**
  * The Invites tab (docs/accounts.md §8): make an invite link - a label for
@@ -223,8 +224,14 @@ function inviteRow(invite: Invite, list: HTMLElement): HTMLElement {
     const revoke = button('Revoke', 'btn admin-invite__revoke');
     revoke.addEventListener('click', () => {
       const name = invite.label ? `“${invite.label}”` : 'this invite';
-      if (!confirm(`Withdraw ${name}? Its link admits nobody from now on; accounts it already made stay.`)) return;
       void (async () => {
+        const yes = await askWindow({
+          title: `Withdraw ${name}?`,
+          text: 'Its link admits nobody from now on; accounts it already made stay.',
+          yes: 'Withdraw',
+          danger: true,
+        });
+        if (!yes) return;
         revoke.disabled = true;
         try {
           const now = await asOwner(() => invitesApi.revoke(invite.id));

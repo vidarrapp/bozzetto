@@ -52,7 +52,7 @@ export async function signInAgain(via?: SignInVia, reason?: string): Promise<boo
     }
   }
   if (!(await requireSaving('Signing in keeps you signed in on this device.'))) return false;
-  if (!(await readyToLeave('signing in means leaving the page. Leave anyway?'))) return false;
+  if (!(await readyToLeave('Signing in means leaving the page.'))) return false;
   window.location.assign(signInHref());
   return false;
 }

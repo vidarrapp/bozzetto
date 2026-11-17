@@ -70,6 +70,7 @@ import {
 import { defaultGroupName, heldColor, PolyGroups } from './polyGroups';
 import { GROUP_COLOR_DEFAULT, GROUPS_V } from '../../../shared/bozz';
 import type { SavedGroups } from './groupsRecord';
+import { askWindow } from '../../ui/askWindow';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -775,17 +776,21 @@ export class SculptSession {
    * requires the top level). Results past the soft line ask first, matching
    * upstream's dialog; the hard ceiling refuses silently.
    */
-  subdivide(): boolean {
-    const mul = this.asMultimesh();
+  async subdivide(): Promise<boolean> {
+    let mul = this.asMultimesh();
     if (!mul || mul._sel !== mul._meshes.length - 1) return false;
     const next = mul.getNbTriangles() * 4;
     if (next > MAX_SUBDIVISION_TRIS) return false;
     if (next > SOFT_SUBDIVISION_TRIS) {
-      const ok = window.confirm(
-        `Subdividing takes this mesh to about ${Math.round(next / 1e6)} million triangles, ` +
-          'which can be slow or unstable on weaker devices. Continue?',
-      );
+      const ok = await askWindow({
+        title: `Subdivide to about ${Math.round(next / 1e6)} million triangles?`,
+        text: 'This can be slow or unstable on weaker devices. Undo takes the level away.',
+        yes: 'Subdivide',
+      });
       if (!ok) return false;
+      // The window was open: the scene may have moved on.
+      mul = this.asMultimesh();
+      if (!mul || mul._sel !== mul._meshes.length - 1 || mul.getNbTriangles() * 4 !== next) return false;
     }
     const t0 = performance.now();
     this.stateManager.pushStateMultiresolution(mul, StateMultiresolution.SUBDIVISION);

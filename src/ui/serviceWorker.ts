@@ -31,6 +31,7 @@
  */
 import { announceUpdate, watchUpdates } from './updates';
 import { deviceChoice, deviceStore, mayStore, onDeviceChoice } from './deviceStorage';
+import { askWindow } from './askWindow';
 
 const SW_URL = '/sw.js';
 const OPT_OUT = 'bozzetto-no-sw';
@@ -86,19 +87,22 @@ export function registerServiceWorker(): void {
   if (params.has('nosw')) {
     const url = new URL(window.location.href);
     url.searchParams.delete('nosw');
-    if (
-      window.confirm(
-        'Switch off offline use on this device? The copy of the app kept for working offline is removed, ' +
-          'and it stays off until a link with ?sw turns it back on.',
-      )
-    ) {
-      setOptOut(true);
-      void unregisterAll().then(() => window.location.replace(url.href));
-      return;
-    }
     // Declined: nothing changes, and the switch leaves the address so a
     // reload does not ask again.
     history.replaceState(history.state, '', url);
+    void askWindow({
+      title: 'Switch off offline use on this device?',
+      text:
+        'The copy of the app kept for working offline is removed, ' +
+        'and it stays off until a link with ?sw turns it back on.',
+      yes: 'Switch off',
+      danger: true,
+    }).then((yes) => {
+      if (!yes) return;
+      setOptOut(true);
+      void unregisterAll().then(() => window.location.replace(url.href));
+    });
+    // The rest of the start-up does not wait on the answer.
   }
 
   if (params.has('sw')) setOptOut(false);
