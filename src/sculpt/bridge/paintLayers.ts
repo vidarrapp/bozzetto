@@ -499,16 +499,17 @@ export class PaintLayers {
     };
   }
 
-  private unsnap(p: PerMesh, s: Snapshot): void {
+  private unsnap(p: PerMesh, s: Snapshot, swapped?: Set<PaintLayer> | null, baseSwapped = true): void {
     p.list = [...s.list];
     p.active = s.active;
-    p.base = s.base;
+    if (baseSwapped) p.base = s.base;
     for (const x of s.props) {
       x.l.name = x.name;
       x.l.mode = x.mode;
       x.l.opacity = x.opacity;
       x.l.visible = x.visible;
-      x.l.rgba = x.rgba;
+      // Bytes are put back only where the operation replaced them: strokes write into the live array in place.
+      if (!swapped || swapped.has(x.l)) x.l.rgba = x.rgba;
       x.l.kind = x.kind;
       x.l.parent = x.parent;
       x.l.fill = x.fill;
@@ -520,8 +521,16 @@ export class PaintLayers {
 
   /** Make an operation an undo step: `before` and `after` are snapshots; both ways composite the whole level on screen. */
   private pushSnap(mesh: SculptMesh, p: PerMesh, before: Snapshot, after: Snapshot, squash = false): void {
+    // The layers whose bytes this operation replaced (clear, merge, make paintable, flatten a group): only those are put back.
+    const swapped = new Set<PaintLayer>();
+    for (const x of before.props) {
+      const y = after.props.find((q) => q.l === x.l);
+      if (!y || y.rgba !== x.rgba) swapped.add(x.l);
+    }
+    for (const y of after.props) if (!before.props.some((q) => q.l === y.l)) swapped.add(y.l);
+    const baseSwapped = before.base !== after.base;
     const set = (s: Snapshot): void => {
-      this.unsnap(p, s);
+      this.unsnap(p, s, swapped, baseSwapped);
       if (p.list.length) this.per.set(mesh, p);
       else this.per.delete(mesh);
       if (this.per.get(mesh) === p) this.recomposite(mesh, null);

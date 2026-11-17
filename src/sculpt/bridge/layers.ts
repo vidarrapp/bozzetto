@@ -183,7 +183,6 @@ interface Snap {
     name: string;
     weight: number;
     visible: boolean;
-    delta: Float32Array | null;
     kind: SculptLayer['kind'];
     parent: SculptLayer | null;
     mask: Uint8Array | null;
@@ -495,11 +494,13 @@ export class SculptLayers {
     for (const l of p.list) l.applied = effOf(l).w;
   }
 
+  // A layer's delta is NOT in a snapshot: sync adds to it in place as strokes arrive, so a reference taken
+  // then and put back later would carry strokes that history has undone or not yet redone.
   private snapshot(p: PerMesh): Snap {
     return {
       list: [...p.list],
       active: p.active,
-      props: p.list.map((l) => ({ l, name: l.name, weight: l.weight, visible: l.visible, delta: l.delta, kind: l.kind, parent: l.parent, mask: l.mask, maskOn: l.maskOn, open: l.open })),
+      props: p.list.map((l) => ({ l, name: l.name, weight: l.weight, visible: l.visible, kind: l.kind, parent: l.parent, mask: l.mask, maskOn: l.maskOn, open: l.open })),
       eff: this.effs(p),
     };
   }
@@ -511,7 +512,6 @@ export class SculptLayers {
       x.l.name = x.name;
       x.l.weight = x.weight;
       x.l.visible = x.visible;
-      x.l.delta = x.delta;
       x.l.kind = x.kind;
       x.l.parent = x.parent;
       x.l.mask = x.mask;
