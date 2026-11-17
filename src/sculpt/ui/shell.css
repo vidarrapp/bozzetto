@@ -187,6 +187,8 @@ body:is(.bz-shell, .bz-page) .bz-readout {
   justify-content: center;
   gap: 16px;
   min-width: 0;
+  /* Room on both sides, so the name never reads as one more step of the path. */
+  padding: 0 24px;
   overflow: hidden;
   white-space: nowrap;
 }
