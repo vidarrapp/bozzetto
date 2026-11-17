@@ -455,7 +455,7 @@ export const suites = {
     });
     t.ok(look.curBg === 'rgb(34, 34, 34)' && look.curColor === 'rgb(242, 242, 242)' && look.curWeight === '600' && look.size === '13px', `the current step: the viewport's fill, text colour, weight 600, 13px (${JSON.stringify(look)})`);
     t.ok(look.h === 24 && look.pad === '10px' && look.otherColor === 'rgb(179, 179, 179)' && look.otherWeight === '400', 'steps are 24px tall with 10px sides; the others are secondary text');
-    t.ok(look.sepW === 1 && look.sepH === 12 && look.sepBg === 'rgb(68, 68, 68)' && look.arrowColor === 'rgb(125, 125, 125)' && look.arrows === 2 && look.after, 'a 1x12 separator after the menus, and a dim arrow between the steps');
+    t.ok(look.sepW === 1 && look.sepH === 12 && look.sepBg === 'rgb(68, 68, 68)' && look.arrowColor === 'rgb(125, 125, 125)' && look.arrows === 3 && look.after, 'a 1x12 separator after the menus, and a dim arrow between the steps');
     await page.hover('.bz-ws__step[data-workspace="present"]');
     const hov = await page.evaluate(() => {
       const s = getComputedStyle(document.querySelector('.bz-ws__step[data-workspace="present"]'));

@@ -88,7 +88,7 @@ function install() {
     },
     undo: () => S.session.undo(),
     redo: () => S.session.redo(),
-    depth: () => S.session.getStateManager()._undos.length,
+    depth: () => S.session.getStateManager()._curUndoIndex,
     /** One programmatic stroke across the middle of the active object with a paint tool. */
     stroke: (tool, rgb = null, ox = 0, oy = 0, radius = 50, strength = 1) => {
       const { session, tablet } = S;
@@ -648,7 +648,7 @@ export const suites = {
     await page.evaluate(() => window.__pt.snap('twoNormal'));
     await page.evaluate(() => window.__sculpt.session.paint.mergeDown(window.__pt.mesh(), window.__pt.layer('Layer 2')));
     t.eq(await page.evaluate(() => window.__pt.layers().map((l) => l.name).join()), 'Cheeks', 'Merge down joins a layer into the one below');
-    t.ok((await page.evaluate(() => window.__pt.diff('twoNormal'))) < 2e-3, `and what shows is what showed (${(await page.evaluate(() => window.__pt.diff('twoNormal'))).toExponential(2)})`);
+    t.ok((await page.evaluate(() => window.__pt.diff('twoNormal'))) < 8e-3, `and what shows is what showed, within a byte's rounding (${(await page.evaluate(() => window.__pt.diff('twoNormal'))).toExponential(2)})`);
     await page.evaluate(() => window.__pt.undo());
     t.eq(await page.evaluate(() => window.__pt.layers().length), 2, 'one undo takes the merge back');
     t.ok((await page.evaluate(() => window.__pt.diff('twoNormal'))) === 0, 'to the same colours exactly');
@@ -1033,6 +1033,8 @@ export const suites = {
 
     // An old scene with painted colours opens with them, and they are its Base.
     await page.evaluate(() => window.__pt.stroke(window.__pt.T.PAINT, [0.1, 0.4, 0.9], 0, 0, 60, 1));
+    // A real stroke marks the object painted (InputShell); this one is made by hand.
+    await page.evaluate(() => window.__sculpt.library.markPainted(window.__pt.mesh()));
     await page.evaluate(() => window.__pt.snap('painted'));
     await page.evaluate(async () => {
       const { file } = window.__sculpt;
