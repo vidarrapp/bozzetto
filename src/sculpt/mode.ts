@@ -53,7 +53,8 @@ import { settings } from '../ui/settings';
 import { forcedByUrl } from '../ui/diagnostics';
 import { PublishWindow } from './ui/PublishWindow';
 import { FileMenu } from './ui/FileMenu';
-import { TopMenu } from './ui/TopMenu';
+import { TopMenu, type MenuItem } from './ui/TopMenu';
+import { SHELL_LAYOUT_EVENT } from './ui/shellLayout';
 import { helpMenuItems } from '../help/menu';
 import { TitleStrip, type PathStep, type Workspace } from './ui/TitleStrip';
 import { mountAccountHandle } from '../ui/account/menu';
@@ -627,6 +628,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Present mode (ui/Present): the frame tick turns its turntable, so it is
   // declared before the first frame can ask.
   let present: PresentMode | null = null;
+  // The Paint workspace (enterPaint / leavePaint, below): a workspace of this page as Present is.
+  let paintOn = false;
+  let togglePaintWorkspace: () => void = () => undefined;
+  let viewItems: () => MenuItem[] = () => [];
   const extras = new Map<
     SculptMesh,
     { sync: GeometrySync; handle: ReturnType<Viewer['addSculptExtra']> }
@@ -1204,6 +1209,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     dolly: (factor, at) => viewer.dolly(factor, at),
     toggleChrome: () => chrome.handleTab(),
     togglePresent: () => present?.toggle(),
+    togglePaint: () => togglePaintWorkspace(),
     togglePlay: () => present?.toggleTurning(),
     extractMasked: () => session.extractMasked(modelPanel?.getExtractThickness() ?? (session.getUnits() ? 0.5 : 1)),
     toggleMaskTint: () => {
@@ -1613,13 +1619,99 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   fileActions.adoptUnsent(bootUnsent);
   // Where File > Close goes: set once the snapshot is defined, below.
   let leaveForGallery: () => void = () => undefined;
-  // The workspace path as the strip and the View menu both read it: Sculpt,
+  // --- The Paint workspace --------------------------------------------------------
+  // A workspace of this page, as Present is (see enterPresent): the tool bar shows the
+  // paint tools, the Layers tab the paint layers, and the Sculpt brushes, the transform
+  // gizmo and Negative are put away. Present can be entered from it and returns to it.
+  /** What Sculpt had up when Paint began, put back when it ends. */
+  let paintWas: { tool: number; model: boolean; render: boolean; select: boolean; gizmo: GizmoMode | null } | null = null;
+  /** The address that reopens Paint: the page's own with `paint=1`, kept while Paint is up. */
+  const setPaintAddress = (on: boolean): void => {
+    try {
+      const url = new URL(window.location.href);
+      if (on) url.searchParams.set('paint', '1');
+      else url.searchParams.delete('paint');
+      window.history.replaceState(window.history.state, '', url);
+    } catch {
+      // An address that cannot be written is not worth failing the switch.
+    }
+  };
+  const enterPaint = (): boolean => {
+    if (paintOn || present?.isActive()) return false;
+    if (input.isStroking() || gizmo.isDragging()) return false;
+    paintWas = {
+      tool: input.currentToolIndex(),
+      model: !!modelPanel && !modelPanel.isCollapsed(),
+      render: !(document.querySelector('.panel--render')?.classList.contains('panel--collapsed') ?? true),
+      select: input.isSelecting(),
+      gizmo: gizmo.isActive() ? gizmo.getMode() : null,
+    };
+    input.exitSelect();
+    input.exitMeasure();
+    exitTransform();
+    // The Model and Render tabs are not Paint's: what they had open is put away until Sculpt is back.
+    modelPanel?.setCollapsed(true);
+    window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'settings', open: false } }));
+    paintOn = true;
+    input.paintMode = true;
+    document.body.classList.add('paint-ws');
+    toolbar.setWorkspace(true);
+    layersPanel?.setPaint(true);
+    input.selectBrush(Enums.Tools.PAINT);
+    // Painting is on the object's vertex colours: where the look had them off (Plain colour, chosen in Present), they come on.
+    if (viewer.materials.getMaterialState().vertexColors === false) {
+      viewer.materials.setPlainColor(false);
+      statusToast('').done('Colour is set to Sculpt colours while you paint.');
+    }
+    sculptPanel?.refreshBrush();
+    window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true, mode: 'paint' } }));
+    setPaintAddress(true);
+    paintPath();
+    window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
+    return true;
+  };
+  const leavePaint = (): void => {
+    if (!paintOn || input.isStroking()) return;
+    const was = paintWas;
+    paintWas = null;
+    input.exitSelect();
+    paintOn = false;
+    input.paintMode = false;
+    document.body.classList.remove('paint-ws');
+    toolbar.setWorkspace(false);
+    layersPanel?.setPaint(false);
+    // The tool Sculpt had (never one of Paint's: they are not Sculpt's to carry back).
+    const sculptTool = was && was.tool !== Enums.Tools.PAINT && !(was.tool >= Enums.Tools.PAINT_ERASE) ? was.tool : Enums.Tools.BRUSH;
+    input.selectBrush(sculptTool);
+    if (was?.model) modelPanel?.setCollapsed(false);
+    if (was?.render) window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'settings', open: true } }));
+    if (was?.select) input.enterSelect();
+    else if (was?.gizmo) enterTransform(was.gizmo);
+    sculptPanel?.refreshBrush();
+    window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true, mode: 'sculpt' } }));
+    setPaintAddress(false);
+    paintPath();
+    window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
+  };
+  togglePaintWorkspace = () => (paintOn ? leavePaint() : void enterPaint());
+  // The workspace path as the strip and the View menu both read it: Sculpt, Paint,
   // or Present while presenting, is where you are.
   const workspaceNow = (): { current: Workspace; steps: Partial<Record<Workspace, PathStep>> } => ({
-    current: present?.isActive() ? 'present' : 'sculpt',
+    current: present?.isActive() ? 'present' : paintOn ? 'paint' : 'sculpt',
     steps: {
       armature: { action: () => void goArmature() },
-      sculpt: { action: () => present?.leave() },
+      sculpt: {
+        action: () => {
+          present?.leave();
+          leavePaint();
+        },
+      },
+      paint: {
+        action: () => {
+          present?.leave();
+          enterPaint();
+        },
+      },
       present: { action: () => void present?.enter() },
     },
   });
@@ -1710,8 +1802,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     );
     // View: framing, the viewport's switches, the panels, Hide interface
     // and Present: each the command its hotkey runs.
-    viewMenu = new TopMenu(
-      'View',
+    viewItems = (): MenuItem[] =>
       viewMenuItems({
         frameSelected: frameModel,
         frameAll,
@@ -1735,18 +1826,29 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
           toggle: () => referenceView?.setOverEnabled(!referenceView.isOverEnabled()),
         },
         toolKeys: true,
-        panels: [
-          ['scene', 'Scene'],
-          ['model', 'Model'],
-          ['layers', 'Layers'],
-          ['material', 'Material'],
-          ['sculpt', 'Tool'],
-          ['reference', 'Reference'],
-          ['settings', 'Render'],
-        ],
+        panels: paintOn
+          ? [
+              ['scene', 'Scene'],
+              ['layers', 'Layers'],
+              ['material', 'Material'],
+              ['sculpt', 'Tool'],
+              ['reference', 'Reference'],
+            ]
+          : [
+              ['scene', 'Scene'],
+              ['model', 'Model'],
+              ['layers', 'Layers'],
+              ['material', 'Material'],
+              ['sculpt', 'Tool'],
+              ['reference', 'Reference'],
+              ['settings', 'Render'],
+            ],
         hideInterface: () => chrome.set(true),
         workspace: workspaceNow,
-      }),
+      });
+    viewMenu = new TopMenu(
+      'View',
+      viewItems(),
       'file-menu--view',
       strip.menus,
       true,
@@ -1853,6 +1955,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     refreshReadout();
   };
   // A stroke the active layer cannot take (hidden, or at 0%) says why.
+  // Paint layers: the same panel and the same autosave.
+  session.paint.onChange = () => {
+    layersPanel?.refresh();
+    persist.markDirty();
+  };
+  session.paint.onFirstUse = (mesh) => library.markPainted(mesh);
+  input.onPaintRefused = (why) => failNotice(why);
   session.layers.onRefuse = (_mesh, why) => {
     failNotice(`The layer "${why.name}" is hidden or at 0%. Show the layer to sculpt on it.`);
   };
@@ -2297,11 +2406,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const inPresent = !!present?.isActive();
     const way = workspaceNow();
     strip.setWorkspace(way.current, way.steps);
+    // The View menu's panel list is the workspace's own.
+    viewMenu?.setItems(viewItems());
     publishWindow?.setInPresent(inPresent);
     refreshReadout();
   };
   if (present) present.onChange = paintPath;
   paintPath();
+  // /?sculpt=1&paint=1 reopens in Paint, as the address Paint keeps while it is up.
+  if (new URLSearchParams(window.location.search).get('paint') === '1') enterPaint();
 
   // The hotkey guide (H) swaps to the sculpt table while the mode is active.
   window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));
@@ -2340,6 +2453,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     layersPanel?.dispose();
     session.layers.onChange = null;
     session.layers.onRefuse = null;
+    session.paint.onChange = null;
+    session.paint.onFirstUse = null;
+    input.paintMode = false;
+    document.body.classList.remove('paint-ws');
     materialPanel?.dispose();
     scenePanel?.dispose();
     offIntake();

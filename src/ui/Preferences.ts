@@ -168,6 +168,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
   const tabButtons = new Map<KeyMode, HTMLButtonElement>();
   for (const [m, label] of [
     ['sculpt', 'Sculpt'],
+    ['paint', 'Paint'],
     ['view', 'Viewer'],
   ] as const) {
     const b = document.createElement('button');

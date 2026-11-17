@@ -1671,6 +1671,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     current: 'armature',
     steps: {
       sculpt: { action: () => void send(panel.resolution) },
+      paint: { unavailable: 'A figure is sent to Sculpt first' },
       present: { unavailable: 'A figure is sent to Sculpt first' },
     },
   });

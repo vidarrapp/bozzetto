@@ -114,6 +114,8 @@ export interface InputShellHooks {
   toggleChrome(): void;
   /** Shift+p (or View > Present mode): into Present mode, or back out of it. */
   togglePresent(): void;
+  /** Shift+b (or View > Paint): into the Paint workspace, or back out of it. */
+  togglePaint(): void;
   /** Space (play.toggle) in Present: the turntable on or off. */
   togglePlay(): void;
   /** ctrl+h: show/hide the mask tint (the mask itself stays). */
@@ -506,6 +508,14 @@ export class InputShell {
    * held L still moves the light, which is the look and not the scene.
    */
   presenting = false;
+  /**
+   * The Paint workspace is up (mode.ts sets it): its own tools answer on the
+   * digits (the keymap's 'paint' mode), the sculpting brushes, Calipers and the
+   * transform gizmo are put away, and Shift swaps the blur in over Paint only.
+   */
+  paintMode = false;
+  /** A paint stroke was refused before it started (a hidden layer, no layer to erase on): the shell says why. */
+  onPaintRefused: ((why: string) => void) | null = null;
 
   install(): void {
     // Pen pressure routing lives in the dynamics store (per-brush toggles
@@ -514,10 +524,12 @@ export class InputShell {
     // The eyedropper calls straight through to this; upstream's GUI sets it
     // and there is no null guard in the vendor, so picking a colour threw
     // right after it had (correctly) sampled one.
-    this.session
-      .getSculptManager()
-      .getTool(Enums.Tools.PAINT)
-      .setPickCallback?.(() => this.onPaintColorChange?.());
+    for (const t of [Enums.Tools.PAINT, Enums.Tools.PICK]) {
+      this.session
+        .getSculptManager()
+        .getTool(t)
+        .setPickCallback?.(() => this.onPaintColorChange?.());
+    }
     Tablet.pressure = 0.5;
     this.container.addEventListener('pointerdown', this.onPointerDown, true);
     this.container.addEventListener('pointermove', this.onPointerMove, true);
@@ -744,6 +756,12 @@ export class InputShell {
   /** Whether the paint brush is the active tool (drives its palette rows). */
   isPainting(): boolean {
     return this.session.getSculptManager().getToolIndex() === Enums.Tools.PAINT;
+  }
+
+  /** Whether the tool in hand works with the paint colour (Paint, Fill and Pick), so the Tool panel offers it. */
+  usesColour(): boolean {
+    const t = this.session.getSculptManager().getToolIndex();
+    return t === Enums.Tools.PAINT || t === Enums.Tools.FILL || t === Enums.Tools.PICK;
   }
 
   /**
@@ -1208,9 +1226,8 @@ export class InputShell {
    * as painted from here on.
    */
   fillPaint(): void {
-    const paint = this.session.getSculptManager().getTool(Enums.Tools.PAINT);
-    if (!paint.paintAll) return;
-    paint.paintAll();
+    const fill = this.session.getSculptManager().getTool(Enums.Tools.FILL) as unknown as { fill?: () => boolean };
+    if (!fill.fill?.()) return;
     this.hooks.markPainted();
     this.session.render();
   }
@@ -1519,6 +1536,8 @@ export class InputShell {
     if (e.ctrlKey && !e.metaKey) {
       this.maskPrevTool = s.getSculptManager().getToolIndex();
       s.getSculptManager().setToolIndex(tools.MASKING);
+    } else if (e.shiftKey && this.paintMode && s.getSculptManager().getToolIndex() !== tools.PAINT) {
+      // The Paint workspace keeps Shift for the paint brush alone: smoothing would move the surface.
     } else if (e.shiftKey) {
       // Over the paint brush, shift blurs the paint instead of smoothing
       // the surface (owner call); the blur takes the paint brush's size,
@@ -1598,6 +1617,26 @@ export class InputShell {
       }
     }
 
+    // The same for a paint layer that is hidden or at 0%, and for a tool that needs a layer when none is picked.
+    if (!this.pickedColor && this.paintMode && s.getPicking().intersectionMouseMeshes()) {
+      const hit = s.getPicking().getMesh();
+      const toolNow = s.getSculptManager().getToolIndex();
+      let why = hit ? s.paint.refusalText(hit as never, toolNow) : null;
+      if (!why && hit && toolNow === Enums.Tools.PROJECT) {
+        const project = s.getSculptManager().getTool(toolNow) as unknown as { canProject?: () => boolean };
+        if (project.canProject && !project.canProject()) why = 'Drag a reference into the view first.';
+      }
+      if (why) {
+        this.restoreStrokeTool();
+        s._action = Enums.Action.NOTHING;
+        this.orbitPointer = e.pointerId;
+        this.verdict?.(`orbit ${e.pointerType} (paint layer)`);
+        this.onPaintRefused?.(why);
+        this.hooks.orbitBegin();
+        return;
+      }
+    }
+
     this.worldScale?.sync(); // the depth under this press sets the radius
     this.feedPressure(e); // before start: the first dab already feels it
     // Snapshot BEFORE start() pushes the stroke's undo state, so the
@@ -1647,7 +1686,10 @@ export class InputShell {
     // mesh and orbited, and the flag is permanent: the material colour
     // stopped applying, and it rode the autosave and .bozz files (review
     // finding).
-    if (painting && !e.altKey) this.hooks.markPainted();
+    const strokeNow = s.getSculptManager().getToolIndex();
+    const recolours =
+      strokeNow === Enums.Tools.PROJECT || strokeNow === Enums.Tools.FILL || strokeNow === Enums.Tools.BLUR || strokeNow === Enums.Tools.PAINT_ERASE;
+    if ((painting && !e.altKey) || recolours) this.hooks.markPainted();
     this.strokes++;
     // Only now is the arm committed: a press that missed the mesh, or hit
     // a locked object, has orbited instead and left it set.
@@ -2394,8 +2436,10 @@ export class InputShell {
 
     // The keymap says what this chord means here; the table is the user's
     // to edit (Preferences), so nothing below names a key.
-    const action = keymap.actionFor(e, 'sculpt');
+    const action = keymap.actionFor(e, this.paintMode ? 'paint' : 'sculpt');
     if (!action) {
+      // The digits are the paint tools' alone in Paint: the ones it has no tool for do not reach the viewer's matcaps.
+      if (this.paintMode && /^Digit\d$/.test(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) return this.claim(e);
       // Space unbound from play.toggle would otherwise fall through to the
       // viewer's transport, and sculpt has no timeline to play. Claimed so
       // it stays inert.
@@ -2426,6 +2470,9 @@ export class InputShell {
         return this.claim(e);
       case 'ui.present':
         this.hooks.togglePresent();
+        return this.claim(e);
+      case 'ui.paint':
+        this.hooks.togglePaint();
         return this.claim(e);
       case 'play.toggle':
         // Play / pause, the viewer's key: in Present the turntable is what
@@ -2594,8 +2641,18 @@ export class InputShell {
         return this.selectTool(Enums.Tools.DRAG, e);
       case 'tool.polish':
         return this.selectTool(Enums.Tools.TWIST, e);
-      case 'tool.paint':
+      case 'paint.paint':
         return this.selectTool(Enums.Tools.PAINT, e);
+      case 'paint.erase':
+        return this.selectTool(Enums.Tools.PAINT_ERASE, e);
+      case 'paint.blur':
+        return this.selectTool(Enums.Tools.BLUR, e);
+      case 'paint.fill':
+        return this.selectTool(Enums.Tools.FILL, e);
+      case 'paint.pick':
+        return this.selectTool(Enums.Tools.PICK, e);
+      case 'paint.project':
+        return this.selectTool(Enums.Tools.PROJECT, e);
       default:
         // A shared action this shell does not act on (the guide, the
         // frame meter, the ground) falls through to the viewer's
