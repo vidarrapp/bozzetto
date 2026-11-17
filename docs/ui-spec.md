@@ -544,10 +544,10 @@ states" board. This section adds behaviour.
 
 The figure's controls are outlines, as an animation program draws control
 curves, not balls (owner decision, 2026-11-14 and 2026-11-17). Every
-handle is neutral (`--bz-text-2`, white under the pointer) and orange
+handle is neutral (`--bz-text`, white under the pointer) and orange
 (`--bz-orange`) only while selected or dragged. Each is drawn over the
-figure, with a stroke of 2 px (3 px when orange) and a thin dark casing
-(`--bz-strip`) so it reads over pale clay and over the dark ground, and
+figure, with a stroke of 2 px (3 px when orange) and a faint soft shade
+under it (`--bz-view-shade-line`, no hard dark border) so it reads over pale clay, and
 each has an invisible pick circle 44 px across.
 
 - **Reach** (hands, feet): a ring that faces the camera, 22 px in radius (RING_RADIUS). Pinned, a small

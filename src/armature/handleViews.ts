@@ -12,7 +12,8 @@
  *
  * Every shape is drawn by its fragment shader from a distance in CSS
  * pixels, so a stroke is 2 px at every zoom and on every screen, with a
- * thin dark casing that reads over pale clay and over the dark ground, and
+ * faint soft shade under it (--bz-view-shade-line, about 1.5 px wider each
+ * side, fading out) that lifts it off pale clay, and
  * the same on the WebGPU backend and on the WebGL2 fallback (a line's width
  * is 1 px on both, and a quad is the one thing that is the same on both).
  * The quads are placed by the vertex shader from the camera, so a moving
@@ -67,14 +68,26 @@ const DASH_LENGTH = 5;
 const DASH_PERIOD = 9;
 /** How far short of the arrow's middle the dashes stop, so they end at its base. */
 const DASH_STOP = ARROW_BASE;
-/** The dark casing on each side of a stroke. */
-const EDGE_PX = 1.25;
+/** How far the soft shade reaches past a stroke, on each side. */
+const EDGE_PX = 1.5;
 /** Stroke widths in CSS pixels at rest and selected or dragged. */
 const STROKE = { rest: 2, hot: 3 };
 const DASH_STROKE = { rest: 1, hot: 1.6 };
 
 /** The interface's colours (src/app-layer/tokens.css), read once; the fallbacks are the same values. */
-function tokens(): { rest: string; hover: string; hot: string; edge: string } {
+/** The alpha of --bz-view-shade-line (rgba(0, 0, 0, 0.35)), read once. */
+function shadeOf(): number {
+  try {
+    const v = getComputedStyle(document.documentElement).getPropertyValue('--bz-view-shade-line');
+    const m = v.match(/rgba?\(([^)]*)\)/);
+    const alpha = m ? Number(m[1].split(',')[3]) : NaN;
+    return Number.isFinite(alpha) && alpha > 0 && alpha <= 1 ? alpha : 0.35;
+  } catch {
+    return 0.35;
+  }
+}
+
+function tokens(): { rest: string; hover: string; hot: string; edge: string; shade: number } {
   const read = (name: string, fallback: string): string => {
     try {
       const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -84,16 +97,18 @@ function tokens(): { rest: string; hover: string; hot: string; edge: string } {
     }
   };
   return {
-    rest: read('--bz-text-2', '#b3b3b3'),
+    rest: read('--bz-text', '#f2f2f2'),
     hover: read('--bz-white', '#ffffff'),
     hot: read('--bz-orange', '#ff5a1f'),
-    edge: read('--bz-strip', '#1b1b1b'),
+    edge: '#000000',
+    shade: shadeOf(),
   };
 }
 
 // Shared by every handle's material: the page size the shaders measure pixels against.
 const viewCss = uniform(new Vector2(1, 1));
-const edgeColour = uniform(new Color('#1b1b1b'));
+const edgeColour = uniform(new Color('#000000'));
+const shadeAlpha = uniform(0.35);
 
 /** Tell the shaders how big the canvas is on the page, in CSS pixels. */
 export function setHandleViewport(width: number, height: number): void {
@@ -121,18 +136,22 @@ type Tsl = any;
 
 const toClip = (world: Tsl): Tsl => cameraProjectionMatrix.mul(cameraViewMatrix).mul(vec4(world, 1));
 
-/** A signed distance in px (negative inside the stroke) painted: light stroke, dark casing, soft edges. */
+/**
+ * A signed distance in px (negative inside the stroke) painted: the light
+ * stroke with a faint soft shade round it, about `edge` px wider on each
+ * side and fading out (--bz-view-shade-line), no hard dark border.
+ */
 const paint = (d: Tsl, stroke: Tsl, edge: Tsl): { rgb: Tsl; alpha: Tsl } => {
   const aa = max(fwidth(d), float(0.0001));
   const inside = clamp(float(0.5).sub(d.div(aa)), 0, 1);
-  const outside = clamp(float(0.5).sub(d.sub(edge).div(aa)), 0, 1);
+  const shade = clamp(float(1).sub(max(d, float(0)).div(edge)), 0, 1).mul(shadeAlpha);
+  const alpha = max(inside, shade);
   return {
-    rgb: mix(edgeColour, stroke, clamp(inside.div(max(outside, float(0.001))), 0, 1)),
-    alpha: outside,
+    rgb: mix(edgeColour, stroke, clamp(inside.div(max(alpha, float(0.001))), 0, 1)),
+    alpha,
   };
 };
 
-/** The shapes' materials and the one quad they are drawn on; dispose when the mode ends. */
 /** The twelve edges of the cube from -1 to 1, each a four-corner strip (see the box shape). */
 function cubeEdgeGeometry(): BufferGeometry {
   const corner = (i: number): number[] => [i & 1 ? 1 : -1, i & 2 ? 1 : -1, i & 4 ? 1 : -1];
@@ -171,6 +190,7 @@ export class HandleKit {
 
   constructor() {
     edgeColour.value.set(this.colours.edge);
+    shadeAlpha.value = this.colours.shade;
   }
 
   create(shape: HandleShape, name: string): HandleView {
@@ -315,9 +335,9 @@ export class HandleKit {
   }
 
   /** The three colours, as hex without the hash: for tests that read the scene. */
-  palette(): { rest: string; hover: string; hot: string; edge: string } {
+  palette(): { rest: string; hover: string; hot: string; edge: string; shade: number } {
     const hex = (s: string): string => new Color(s).getHexString();
-    return { rest: hex(this.colours.rest), hover: hex(this.colours.hover), hot: hex(this.colours.hot), edge: hex(this.colours.edge) };
+    return { rest: hex(this.colours.rest), hover: hex(this.colours.hover), hot: hex(this.colours.hot), edge: hex(this.colours.edge), shade: this.colours.shade };
   }
 
   /** Let a handle go (a figure change builds new ones). */

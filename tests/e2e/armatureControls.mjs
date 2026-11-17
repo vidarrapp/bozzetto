@@ -52,6 +52,7 @@ async function armatureControls(page, base, t) {
   );
   t.ok(palette.rest !== palette.hot && palette.hover !== palette.hot, `orange (#${palette.hot}) is not the rest (#${palette.rest}) or the hover (#${palette.hover}) colour`);
 
+  t.ok(palette.shade > 0.25 && palette.shade < 0.45 && palette.edge === '000000', `a handle's edge is a soft shade of black at ${palette.shade} (--bz-view-shade-line), not a dark border`);
   // At rest: every handle neutral, in the shape it is for.
   const shapeOf = (n) => (n === 'root' ? 'box' : n.startsWith('ik:') ? 'ring' : n.startsWith('dash:') ? 'dash' : 'arrow');
   const rest = await page.evaluate(() => Object.fromEntries(window.__armature.handleNames().map((n) => [n, window.__armature.handleLook(n)])));
