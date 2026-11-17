@@ -2067,7 +2067,7 @@ body.presenting .ref-chrome {
   position: absolute;
   box-sizing: border-box;
   border: 1px solid rgba(255, 255, 255, 0.7);
-  outline: 1px solid rgba(0, 0, 0, 0.5);
+  outline: 1px solid var(--bz-view-shade-line);
   pointer-events: auto;
   touch-action: none;
   cursor: grab;
@@ -2089,7 +2089,7 @@ body.presenting .ref-chrome {
   width: 10px;
   height: 10px;
   background: var(--bz-text);
-  outline: 1px solid rgba(0, 0, 0, 0.6);
+  outline: 1px solid var(--bz-view-shade-line);
 }
 
 .ref-frame__corner--nw { left: -22px; top: -22px; cursor: nwse-resize; }
@@ -2105,7 +2105,6 @@ body.presenting .ref-chrome {
   position: absolute;
   display: flex;
   height: 44px;
-  background: var(--bz-panel-fill);
   cursor: default;
 }
 
@@ -2124,13 +2123,15 @@ body.presenting .ref-chrome {
 }
 
 .ref-frame__btn:hover {
-  background: var(--bz-hover);
+  background: rgba(255, 255, 255, 0.14);
 }
 
+/* Floating marks over the view: the light line with the faint shade, no dark box behind. */
 .ref-frame__btn .fi {
   font-size: 18px;
   line-height: 1;
   pointer-events: none;
+  filter: drop-shadow(var(--bz-view-shade));
 }
 
 /* A name on hover, and on a long press. */

@@ -451,7 +451,7 @@ export const suites = {
   },
 
   async refShow(page, base, t) {
-    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.setViewportSize({ width: 1180, height: 820 });
     await openForInput(page, base);
     await openPanel(page);
     await addFiles(page, [{ name: 'first.png', mimeType: 'image/png', buffer: await png(page, 400, 300) }]);
@@ -760,7 +760,7 @@ export const suites = {
   },
 
   async refInput(page, base, t) {
-    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.setViewportSize({ width: 1180, height: 820 });
     await openForInput(page, base);
     await openPanel(page);
     await addFiles(page, [{ name: 'first.png', mimeType: 'image/png', buffer: await png(page, 400, 300) }]);
