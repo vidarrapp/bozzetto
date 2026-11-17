@@ -2240,7 +2240,7 @@ body.bz-shell .panel--layers {
 .layer-row {
   display: flex;
   flex-direction: column;
-  padding: 2px 6px 2px 2px;
+  padding: 0 6px 0 2px;
   background: transparent;
   color: var(--bz-text);
   font: 13px/16px var(--bz-font);
@@ -2260,13 +2260,13 @@ body.bz-shell .panel--layers {
   display: flex;
   align-items: center;
   gap: 2px;
-  min-height: 44px;
+  min-height: 32px;
 }
 
 .layer-row--base {
   flex-direction: row;
   align-items: center;
-  min-height: 44px;
+  min-height: 32px;
   padding-left: 12px;
   border-top: 1px solid var(--bz-line);
   margin-top: 4px;
@@ -2278,9 +2278,9 @@ body.bz-shell .panel--layers {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  min-height: 44px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
   padding: 0;
   border: 0;
   background: none;
@@ -2289,7 +2289,7 @@ body.bz-shell .panel--layers {
 }
 
 .layer-row .layer-row__more {
-  width: 32px;
+  width: 28px;
   margin: 0;
 }
 
@@ -2338,25 +2338,21 @@ body.bz-shell .panel--layers {
   outline: none;
 }
 
-.layer-row__weight {
-  margin: 0 0 4px 44px;
-}
-
 .layer-row .row-menu {
   position: fixed;
   z-index: 40;
 }
 
-/* Paint's rows (ui/layerList.ts with a reorder hook): a handle to drag by at the
-   left, the blend mode under the name, the opacity under that. */
+/* One row a layer, 32px, as Photoshop's panel has them (ui/layerList.ts): the grip
+   (Paint), the eye, the name, a quiet value, the menu. The controls of the active
+   layer stand above the list. */
 .layer-row__grip {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 44px;
-  min-height: 44px;
+  width: 24px;
+  height: 32px;
   padding: 0;
   border: 0;
   background: none;
@@ -2369,15 +2365,144 @@ body.bz-shell .panel--layers {
   color: var(--bz-text);
 }
 
-.layer-row--grip .layer-row__weight,
-.layer-row--grip .layer-row__blend {
-  margin-left: 76px;
+.layer-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 0;
 }
 
-.layer-row__blend {
-  width: calc(100% - 82px);
+.layer-controls__select {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  height: 28px;
+}
+
+.layer-controls__slider {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+}
+
+.layer-controls__slider--off {
+  opacity: 0.4;
+}
+
+/* The bar at the foot, as Photoshop's: bare icons at the right. */
+.layer-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0;
+  border-top: 1px solid var(--bz-line);
+  padding: 4px 8px;
+}
+
+.layer-bar__btn {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
   height: 32px;
-  margin: 0 0 2px 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bz-text);
+  cursor: pointer;
+}
+
+.layer-bar__btn:hover:not(:disabled) {
+  background: var(--bz-hover);
+}
+
+.layer-bar__btn:disabled {
+  color: var(--bz-text-3);
+  cursor: default;
+}
+
+.layer-bar__btn .bz-tip {
+  display: none;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  align-items: baseline;
+  padding: 4px 8px;
+  background: var(--bz-raised);
+  box-shadow: var(--bz-raised-shadow);
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.layer-bar__btn.is-tip > .bz-tip,
+.layer-bar__btn:focus-visible > .bz-tip {
+  display: flex;
+}
+
+@media (hover: hover) {
+  .layer-bar__btn:hover:not(:disabled) > .bz-tip {
+    display: flex;
+  }
+}
+
+.layer-row--nested {
+  padding-left: 18px;
+}
+
+.layer-row__fold {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bz-text-2, var(--bz-text-3));
+  cursor: pointer;
+}
+
+.layer-row--group .layer-row__name {
+  font-weight: 600;
+}
+
+.layer-row__swatch {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0 4px;
+}
+
+.layer-row__swatch .cpick__swatch {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
+  border: 1px solid var(--bz-line);
+  border-radius: 0;
+}
+
+.layer-row__mask {
+  flex: none;
+  display: inline-flex;
+  padding: 0 3px;
+  color: var(--bz-text-2, var(--bz-text-3));
+  font-size: 11px;
+}
+
+.layer-row__mask--off {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.layer-row--drop-into {
+  outline: 1px solid var(--bz-text);
+  outline-offset: -1px;
 }
 
 .layer-row--dragging {

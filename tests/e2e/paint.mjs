@@ -475,12 +475,12 @@ export const suites = {
     await page.evaluate(() => window.__sculpt.session.paint.setOpacity(window.__pt.mesh(), window.__pt.layer('Layer 1'), 1, 'commit'));
     await openPanel(page, 'Layers');
     const sel = await page.evaluate(() => {
-      const s = document.querySelector('.layers-paint .layer-row__blend');
-      return s ? { labels: [...s.options].filter((o) => !o.disabled).map((o) => o.textContent), seps: [...s.options].filter((o) => o.disabled).length, value: s.value } : null;
+      const s = document.querySelector('.layers-paint .layer-controls__select');
+      return s ? { labels: [...s.options].filter((o) => !o.disabled).map((o) => o.textContent), seps: [...s.options].filter((o) => o.disabled && o.value !== 'pass').length, value: s.value } : null;
     });
     t.ok(sel && sel.labels.length === 27 && sel.seps === 5 && sel.labels[0] === 'Normal' && sel.labels[1] === 'Dissolve' && sel.labels[26] === 'Luminosity', `the blend select has the 27 modes in 6 groups (${sel?.labels.length} modes, ${sel?.seps} lines)`);
     await page.evaluate(() => {
-      const s = document.querySelector('.layers-paint .layer-row__blend');
+      const s = document.querySelector('.layers-paint .layer-controls__select');
       s.value = 'color-burn';
       s.dispatchEvent(new Event('change', { bubbles: true }));
     });
@@ -508,20 +508,20 @@ export const suites = {
     await page.evaluate(() => window.__pt.snap('basePaint'));
 
     // --- Add layer: Base becomes the colours it had ---------------------------
-    await page.click('.layers-paint .outliner__btn');
+    await page.click('.layers-paint .layer-bar [data-action=layer]');
     const added = await page.evaluate(() => ({
       rows: [...document.querySelectorAll('.layers-paint .layer-row')].map((r) => r.dataset.layer),
       active: document.querySelector('.layers-paint .layer-row--active')?.dataset.layer,
-      readout: document.querySelector('.layers-paint .layer-row--active .slider-val')?.textContent,
-      caption: document.querySelector('.layers-paint .layer-row--active .layer-row__weight span')?.textContent,
+      readout: document.querySelector('.layers-paint .layer-controls .slider-val')?.textContent,
+      caption: document.querySelector('.layers-paint .layer-controls__slider span')?.textContent,
       grip: !!document.querySelector('.layers-paint .layer-row__grip'),
-      blend: document.querySelector('.layers-paint .layer-row__blend')?.value,
+      blend: document.querySelector('.layers-paint .layer-controls__select')?.value,
       names: window.__pt.layers().map((l) => l.name).join(),
     }));
     t.ok(added.rows.length === 2 && added.rows[1] === 'base' && added.active === added.rows[0], 'Add layer lists a new layer above Base and makes it active');
     t.eq(added.readout, '100%', 'a new layer is at 100% opacity');
     t.eq(added.caption, 'Opacity', 'its slider says Opacity');
-    t.ok(added.grip && added.blend === 'normal', 'the row has a handle to drag and a blend mode select, on Normal');
+    t.ok(added.grip && added.blend === 'normal', 'the row has a handle to drag and the control above shows Normal');
     t.ok((await page.evaluate(() => window.__pt.diff('basePaint'))) === 0, 'the object looks as it did: its painted colours are the Base');
     const baseSame = await page.evaluate(() => {
       const p = window.__pt.state();
@@ -617,7 +617,7 @@ export const suites = {
       const last = rows[rows.length - 1].getBoundingClientRect();
       return { x: g.left + g.width / 2, y: g.top + g.height / 2, toY: last.top + last.height - 4, w: g.width, h: g.height };
     });
-    t.ok(grip.h >= 44 && grip.w >= 30, `the handle is a finger's size (${grip.w}x${grip.h})`);
+    t.ok(grip.h >= 30 && grip.w >= 22, `the handle is a usable size (${grip.w}x${grip.h})`);
     await page.mouse.move(grip.x, grip.y);
     await page.mouse.down();
     await page.mouse.move(grip.x, (grip.y + grip.toY) / 2, { steps: 4 });
@@ -628,7 +628,55 @@ export const suites = {
     t.eq(await page.evaluate(() => window.__pt.layers().map((l) => l.name).join()), 'Cheeks,Layer 2', 'dropping it at the foot of the list moves it to the bottom');
     await page.evaluate(() => window.__pt.undo());
     t.eq(await page.evaluate(() => window.__pt.layers().map((l) => l.name).join()), 'Layer 2,Cheeks', 'and one undo moves it back');
+    // Photoshop's panel: one row a layer, the controls of the active layer above, a quiet value.
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const m = window.__pt.mesh();
+      session.paint.setOpacity(m, window.__pt.layer('Layer 2'), 0.6, 'commit');
+      session.paint.setActive(m, window.__pt.layer('Layer 2'));
+    });
+    const ui = () =>
+      page.evaluate(() => {
+        const c = document.querySelector('.layers-paint .layer-controls');
+        const sel = c.querySelector('select');
+        const i = c.querySelector('input[type=range]');
+        const rows = [...document.querySelectorAll('.layers-paint .layer-row:not(.layer-row--base)')];
+        return {
+          selOff: sel.disabled, sliderOff: i.disabled, mode: sel.value, readout: c.querySelector('.slider-val').textContent,
+          sameRow: Math.abs(sel.getBoundingClientRect().top - i.closest('label').getBoundingClientRect().top) < 12,
+          fields: document.querySelectorAll('.layers-paint .layer-row input, .layers-paint .layer-row select').length,
+          rows: rows.length, h: [...document.querySelectorAll('.layers-paint .layer-row')].map((r) => Math.round(r.getBoundingClientRect().height)),
+          vals: rows.map((r) => r.querySelector('.layer-row__badge')?.textContent ?? ''),
+          baseControls: document.querySelectorAll('.layers-paint .layer-row--base .layer-row__eye, .layers-paint .layer-row--base .layer-row__more').length,
+        };
+      });
+    let u = await ui();
+    t.ok(u.rows === 2 && u.fields === 0, `one row a layer, with no slider or select in a row (${u.rows} rows, ${u.fields} fields)`);
+    t.ok(u.h.every((h) => h <= 34), `rows are about 32px (${u.h.join(',')})`);
+    t.ok(!u.selOff && !u.sliderOff && u.mode === 'multiply' && u.readout === '60%' && u.sameRow, `the select and Opacity above the list show the active layer, on one row (${JSON.stringify({ mode: u.mode, readout: u.readout, sameRow: u.sameRow })})`);
+    t.eq(u.vals.join('|'), 'Multiply 60%|', 'the list shows "Multiply 60%" quietly, and nothing for a Normal layer at 100%');
+    t.eq(u.baseControls, 1, 'Base has no eye, only its menu (Flatten all)');
+    await page.evaluate(() => document.querySelector('.layers-paint .layer-row--base').click());
+    u = await ui();
+    t.ok(u.selOff && u.sliderOff, 'with Base active the select and the slider are disabled');
+    await page.evaluate(() => window.__sculpt.session.paint.setActive(window.__pt.mesh(), window.__pt.layer('Layer 2')));
+    // The controls change the active layer, in one undo step each.
+    const d2 = await page.evaluate(() => window.__pt.depth());
+    await page.evaluate(() => {
+      const sel = document.querySelector('.layers-paint .layer-controls select');
+      sel.value = 'screen';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    t.ok((await page.evaluate(() => window.__pt.layer('Layer 2').mode)) === 'screen' && (await page.evaluate(() => window.__pt.depth())) === d2 + 1, 'the select sets the active layer, as one undo step');
+    await page.evaluate(() => window.__pt.undo());
+    await page.evaluate(() => window.__sculpt.session.paint.add(window.__pt.mesh(), 'Glaze'));
+    await page.evaluate(() => window.__sculpt.session.paint.setActive(window.__pt.mesh(), window.__pt.layer('Layer 2')));
     await page.screenshot({ path: `${SHOTS}/paint-layers-1180.png` });
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.paint.remove(window.__pt.mesh(), window.__pt.layer('Glaze'));
+      session.paint.setOpacity(window.__pt.mesh(), window.__pt.layer('Layer 2'), 1, 'commit');
+    });
 
     // Duplicate.
     await page.evaluate(() => window.__sculpt.session.paint.duplicate(window.__pt.mesh(), window.__pt.layer('Layer 2')));
@@ -665,7 +713,7 @@ export const suites = {
     t.ok((await page.evaluate(() => window.__pt.diff('twoNormal'))) === 0, 'one undo brings the layer and its colour back');
 
     // Flatten all.
-    await page.evaluate(() => [...document.querySelectorAll('.layers-paint .layers-foot .outliner__btn')][0].click());
+    await page.evaluate(() => { document.querySelector('.layers-paint .layer-row--base .layer-row__more').click(); [...document.querySelectorAll('.row-menu:not([hidden]) .file-menu__item')].find((b) => b.textContent === 'Flatten all').click(); });
     t.eq(await page.evaluate(() => window.__pt.layers().length), 0, 'Flatten all empties the list');
     t.ok((await page.evaluate(() => window.__pt.diff('twoNormal'))) === 0, 'and keeps the colours on the object');
     await page.evaluate(() => window.__pt.undo());
@@ -1238,3 +1286,346 @@ export const suites = {
     void screenOf;
   },
 };
+
+// --- groups, masks, fill layers and the foot bar (second pass) ----------------------------
+
+/** A working mask that protects the left half (x below 0) of the active object, as the masking tool holds it. */
+const maskLeft = (page) =>
+  page.evaluate(() => {
+    const m = window.__pt.mesh();
+    const mAr = m.getMaterials();
+    const v = m.getVertices();
+    for (let i = 0; i < m.getNbVertices(); i++) mAr[i * 3 + 2] = v[i * 3] < 0 ? 0 : 1;
+  });
+const clearMask = (page) =>
+  page.evaluate(() => {
+    const m = window.__pt.mesh();
+    const mAr = m.getMaterials();
+    for (let i = 0; i < m.getNbVertices(); i++) mAr[i * 3 + 2] = 1;
+  });
+
+Object.assign(suites, {
+  async paintGroups(page, base, t) {
+    await openForInput(page, base);
+    await page.evaluate(install);
+    await page.evaluate(() => window.__sculpt.paintWorkspace.enter());
+    const lv = await page.evaluate(() => window.__pt.levels());
+    await page.evaluate((n) => window.__pt.go(n - 1), lv.n);
+    await page.evaluate(() => window.__pt.snap('plain'));
+    const P = (code) => page.evaluate(`(() => { const S = window.__sculpt; const m = window.__pt.mesh(); const pt = window.__pt; return (${code}); })()`);
+    await P(`(S.session.paint.add(m), pt.stroke(pt.T.PAINT, [0.9, 0.2, 0.1], 0, 0, 80, 1))`);
+    await P(`(S.session.paint.add(m), pt.stroke(pt.T.PAINT, [0.1, 0.2, 0.9], 0, 10, 80, 1))`);
+    await P(`S.session.paint.setMode(m, pt.layers()[0], 'multiply')`);
+    await page.evaluate(() => window.__pt.snap('flat'));
+
+    // Group a layer: Pass through changes nothing.
+    await P(`S.session.paint.group(m, pt.layers()[0])`);
+    const g = await P(`(() => { const raw = S.session.paint.rawList(m); const grp = raw.find((l) => l.kind === 'group'); return { grp: !!grp, mode: grp?.mode, parent: raw.find((l) => l.name === 'Layer 2')?.parent === grp, n: raw.length }; })()`);
+    t.ok(g.grp && g.mode === 'pass' && g.parent && g.n === 3, `Group wraps a layer in a new group, which passes through (${JSON.stringify(g)})`);
+    t.ok((await page.evaluate(() => window.__pt.diff('flat'))) < 1e-6, 'a Pass through group changes nothing on the model');
+    // Normal: the group's layers are composited together first, so Multiply does not darken what is below the group.
+    await P(`S.session.paint.setMode(m, pt.layers().find((l) => l.kind === 'group'), 'normal')`);
+    await page.evaluate(() => window.__pt.snap('groupNormal'));
+    t.ok((await page.evaluate(() => window.__pt.diff('flat'))) > 1e-3, 'a Normal group gives other colours than Pass through where its layer is Multiply');
+    // The same as that layer being Normal, ungrouped, in the stack.
+    await P(`(S.session.paint.setMode(m, pt.layers().find((l) => l.kind === 'group'), 'pass'), S.session.paint.setMode(m, pt.layer('Layer 2'), 'normal'))`);
+    await page.evaluate(() => window.__pt.snap('layerNormal'));
+    await P(`(S.session.paint.setMode(m, pt.layer('Layer 2'), 'multiply'), S.session.paint.setMode(m, pt.layers().find((l) => l.kind === 'group'), 'normal'))`);
+    t.ok((await page.evaluate(() => window.__pt.diff('layerNormal'))) < 1e-5, 'a Multiply layer inside a Normal group looks as a Normal layer does: it blends with nothing under the group');
+    await P(`S.session.paint.setMode(m, pt.layers().find((l) => l.kind === 'group'), 'pass')`);
+    t.ok((await page.evaluate(() => window.__pt.diff('flat'))) < 1e-6, 'and inside a Pass through group it darkens what is below');
+
+    // Opacity multiplies, the eye hides.
+    await P(`S.session.paint.setOpacity(m, pt.layers().find((l) => l.kind === 'group'), 0.5, 'commit')`);
+    await page.evaluate(() => window.__pt.snap('half'));
+    await P(`(S.session.paint.setOpacity(m, pt.layers().find((l) => l.kind === 'group'), 1, 'commit'), S.session.paint.setOpacity(m, pt.layer('Layer 2'), 0.5, 'commit'))`);
+    t.ok((await page.evaluate(() => window.__pt.diff('half'))) < 1e-6, "a group's opacity multiplies its layers' (50% group = the layer at 50%)");
+    await P(`S.session.paint.setOpacity(m, pt.layer('Layer 2'), 1, 'commit')`);
+    await P(`S.session.paint.setVisible(m, pt.layers().find((l) => l.kind === 'group'), false)`);
+    await P(`(S.session.paint.setVisible(m, pt.layers().find((l) => l.kind === 'group'), true), 0)`);
+    t.ok((await page.evaluate(() => window.__pt.diff('flat'))) < 1e-6, 'showing the group again brings its layers back');
+    await P(`S.session.paint.setVisible(m, pt.layers().find((l) => l.kind === 'group'), false)`);
+    const hidden = await P(`(() => { const out = pt.colours(); let n = 0; for (let i = 0; i < out.length; i += 3) if (Math.abs(out[i] - pt.snaps.flat[i]) > 1e-4) n++; return n; })()`);
+    t.ok(hidden > 10, `the group's eye hides all its layers (${hidden} vertices change)`);
+    await P(`S.session.paint.setVisible(m, pt.layers().find((l) => l.kind === 'group'), true)`);
+
+    // A stroke with a group picked is refused.
+    await P(`S.session.paint.setActive(m, pt.layers().find((l) => l.kind === 'group'))`);
+    t.eq(await P(`S.session.paint.refusalText(m, 8)`), 'Pick a layer to work on.', 'a stroke with a group picked says to pick a layer');
+    const before = await page.evaluate(() => window.__pt.depth());
+    await page.evaluate(() => window.__pt.stroke(window.__pt.T.PAINT, [0.5, 0.5, 0.5], 0, 0, 60, 1));
+    t.ok((await page.evaluate(() => window.__pt.diff('flat'))) < 1e-6 && (await page.evaluate(() => window.__pt.depth())) === before, 'and a stroke made anyway changes nothing and leaves no undo step');
+
+    // Drag in and out; the list shows the group folding.
+    await P(`S.session.paint.add(m, 'Loose')`);
+    await P(`(() => { const grp = pt.layers().find((l) => l.kind === 'group'); S.session.paint.move(m, pt.layer('Loose'), grp, 0); })()`);
+    t.ok(await P(`pt.layer('Loose').parent === pt.layers().find((l) => l.kind === 'group')`), 'a layer is put into a group');
+    await P(`S.session.paint.move(m, pt.layer('Loose'), null, 5)`);
+    t.ok(await P(`pt.layer('Loose').parent === null`), 'and out of it');
+    await P(`S.session.paint.remove(m, pt.layer('Loose'))`);
+    await openPanel(page, 'Layers');
+    const rows = () => page.evaluate(() => [...document.querySelectorAll('.layers-paint .layer-row:not(.layer-row--base)')].map((r) => `${r.classList.contains('layer-row--nested') ? '  ' : ''}${r.querySelector('.layer-row__name')?.textContent}${r.querySelector('.layer-row__fold') ? (r.querySelector('.layer-row__fold').getAttribute('aria-expanded') === 'true' ? ' v' : ' >') : ''}`));
+    t.eq((await rows()).join('|'), 'Group v|  Layer 2|Layer 1', 'the list shows the group with its layer indented under it');
+    await page.evaluate(() => document.querySelector('.layers-paint .layer-row__fold').click());
+    t.eq((await rows()).join('|'), 'Group >|Layer 1', 'folded, the group hides its layers');
+    await page.evaluate(() => document.querySelector('.layers-paint .layer-row__fold').click());
+    // Drag a row into the group with the handle.
+    await P(`S.session.paint.setActive(m, pt.layer('Layer 1'))`);
+    const geo = await page.evaluate(() => {
+      const rs = [...document.querySelectorAll('.layers-paint .layer-row:not(.layer-row--base)')];
+      const from = rs.find((r) => r.querySelector('.layer-row__name')?.textContent === 'Layer 1');
+      const into = rs.find((r) => r.querySelector('.layer-row__name')?.textContent === 'Group');
+      const g = from.querySelector('.layer-row__grip').getBoundingClientRect();
+      const b = into.getBoundingClientRect();
+      return { x: g.left + g.width / 2, y: g.top + g.height / 2, ty: b.top + b.height / 2 };
+    });
+    await page.mouse.move(geo.x, geo.y);
+    await page.mouse.down();
+    await page.mouse.move(geo.x, (geo.y + geo.ty) / 2, { steps: 3 });
+    await page.mouse.move(geo.x, geo.ty, { steps: 3 });
+    const into = await page.evaluate(() => !!document.querySelector('.layer-row--drop-into'));
+    await page.mouse.up();
+    t.ok(into, 'the handle over the middle of a group row marks "into"');
+    t.ok(await P(`pt.layer('Layer 1').parent === pt.layers().find((l) => l.kind === 'group')`), 'and dropping there puts the layer in the group');
+    await P(`pt.undo()`);
+    t.ok(await P(`pt.layer('Layer 1').parent === null`), 'one undo takes it out again');
+
+    // Ungroup keeps the model; undo.
+    await P(`S.session.paint.ungroup(m, pt.layers().find((l) => l.kind === 'group'))`);
+    t.ok((await page.evaluate(() => window.__pt.diff('flat'))) < 1e-5 && (await P(`pt.layers().every((l) => l.kind !== 'group')`)), 'Ungroup leaves the layers and changes nothing on the model');
+    await P(`pt.undo()`);
+    t.ok(await P(`pt.layers().some((l) => l.kind === 'group')`), 'one undo gives the group back');
+
+    // Duplicate and delete a group.
+    await P(`S.session.paint.duplicate(m, pt.layers().find((l) => l.kind === 'group'))`);
+    t.eq(await P(`S.session.paint.rawList(m).length`), 5, 'Duplicate group copies it with its layers');
+    t.eq(await P(`S.session.paint.weight(m, pt.layers().find((l) => l.kind === 'group'))`), 2, 'a group says how many entries Delete would take (itself and its layers)');
+    await P(`S.session.paint.remove(m, pt.layers().find((l) => l.kind === 'group'))`);
+    t.eq(await P(`S.session.paint.rawList(m).length`), 3, 'Delete on a group deletes its layers');
+    await P(`pt.undo()`);
+    t.eq(await P(`S.session.paint.rawList(m).length`), 5, 'and one undo brings them back');
+    await P(`pt.undo()`);
+    // Flatten a group.
+    // (A Pass through group has no colour of its own to flatten: it flattens as a Normal one.)
+    await P(`S.session.paint.setMode(m, pt.layers().find((l) => l.kind === 'group'), 'normal')`);
+    await page.evaluate(() => window.__pt.snap('gn'));
+    await P(`S.session.paint.flattenGroup(m, pt.layers().find((l) => l.kind === 'group'))`);
+    t.ok((await P(`pt.layers().every((l) => l.kind === 'layer')`)) && (await page.evaluate(() => window.__pt.diff('gn'))) < 4e-3, 'Flatten on a group makes its layers one layer');
+    await page.screenshot({ path: `${SHOTS}/paint-groups-1180.png` });
+  },
+
+  async paintMasks(page, base, t) {
+    await openForInput(page, base);
+    await page.evaluate(install);
+    await page.evaluate(() => window.__sculpt.paintWorkspace.enter());
+    const lv = await page.evaluate(() => window.__pt.levels());
+    await page.evaluate((n) => window.__pt.go(n - 1), lv.n);
+    await page.evaluate(() => window.__pt.snap('plain'));
+    const P = (code) => page.evaluate(`(() => { const S = window.__sculpt; const m = window.__pt.mesh(); const pt = window.__pt; return (${code}); })()`);
+    /** Vertices of the object with colours changed from a snapshot, on each side of x = 0. */
+    const sides = (name) =>
+      page.evaluate((n) => {
+        const pt = window.__pt;
+        const v = pt.mesh().getVertices();
+        const c = pt.colours();
+        const o = { left: 0, right: 0 };
+        for (let i = 0; i < c.length / 3; i++) {
+          if (Math.abs(c[i * 3] - pt.snaps[n][i * 3]) + Math.abs(c[i * 3 + 1] - pt.snaps[n][i * 3 + 1]) + Math.abs(c[i * 3 + 2] - pt.snaps[n][i * 3 + 2]) > 1e-5) o[v[i * 3] < 0 ? 'left' : 'right']++;
+        }
+        return o;
+      }, name);
+    await P(`S.session.paint.addFill(m, [0.9, 0.2, 0.1])`);
+    let s = await sides('plain');
+    t.ok(s.left > 100 && s.right > 100, `a fill layer changes both sides (${JSON.stringify(s)})`);
+    await maskLeft(page);
+    await P(`S.session.paint.maskFromWorking(m, pt.layers()[0])`);
+    s = await sides('plain');
+    t.ok(s.left === 0 && s.right > 100, `Add mask from the current mask: the layer shows only where the mask was clear (${JSON.stringify(s)})`);
+    await clearMask(page);
+    t.ok(await P(`!!pt.layers()[0].mask && pt.layers()[0].mask.length === pt.state().n`), 'the mask is a byte a vertex of the highest level');
+    await page.evaluate(() => window.__pt.snap('masked'));
+    // Invert, disable, enable, remove, each one undo step.
+    const d0 = await page.evaluate(() => window.__pt.depth());
+    await P(`S.session.paint.invertMask(m, pt.layers()[0])`);
+    s = await sides('plain');
+    t.ok(s.right === 0 && s.left > 100 && (await page.evaluate(() => window.__pt.depth())) === d0 + 1, `Invert mask flips it, in one undo step (${JSON.stringify(s)})`);
+    await P(`pt.undo()`);
+    t.ok((await page.evaluate(() => window.__pt.diff('masked'))) < 1e-6, 'and one undo flips it back');
+    await P(`S.session.paint.setMaskOn(m, pt.layers()[0], false)`);
+    s = await sides('plain');
+    t.ok(s.left > 100 && s.right > 100, 'Disable mask shows the layer everywhere, keeping the mask');
+    t.ok(await P(`!!pt.layers()[0].mask && !pt.layers()[0].maskOn`), 'the mask is kept');
+    await P(`pt.undo()`);
+    t.ok((await page.evaluate(() => window.__pt.diff('masked'))) < 1e-6, 'undo of Disable brings the mask back into effect');
+    await P(`S.session.paint.removeMask(m, pt.layers()[0])`);
+    t.ok(await P(`pt.layers()[0].mask === null`), 'Remove mask takes it away');
+    await P(`pt.undo()`);
+    t.ok(await P(`pt.layers()[0].mask !== null`), 'and undo gives it back');
+    // Load mask: the working mask becomes the layer's; undo gives the old one back.
+    await P(`(() => { const mm = m.getMaterials(); for (let i = 0; i < m.getNbVertices(); i++) mm[i * 3 + 2] = 0.5; })()`);
+    await P(`S.session.paint.loadMask(m, pt.layers()[0])`);
+    const loaded = await P(`(() => { const mm = m.getMaterials(); const v = m.getVertices(); let ok = 0; let bad = 0; for (let i = 0; i < m.getNbVertices(); i++) { const want = v[i * 3] < 0 ? 0 : 1; if (Math.abs(mm[i * 3 + 2] - want) < 0.01) ok++; else bad++; } return { ok, bad }; })()`);
+    t.ok(loaded.bad === 0 && loaded.ok > 100, `Load mask puts the layer's mask back as the working mask (${JSON.stringify(loaded)})`);
+    await P(`pt.undo()`);
+    t.ok(await P(`Math.abs(m.getMaterials()[2] - 0.5) < 1e-6`), 'and one undo gives the old working mask back');
+    await clearMask(page);
+
+    // A group's mask scales all its layers.
+    await P(`S.session.paint.removeMask(m, pt.layers()[0])`);
+    await P(`S.session.paint.group(m, pt.layers()[0])`);
+    await page.evaluate(() => window.__pt.snap('grouped'));
+    await maskLeft(page);
+    await P(`S.session.paint.maskFromWorking(m, pt.layers().find((l) => l.kind === 'group'))`);
+    s = await sides('plain');
+    t.ok(s.left === 0 && s.right > 100, `a group's mask limits its layers (${JSON.stringify(s)})`);
+    await clearMask(page);
+    await P(`pt.undo()`);
+
+    // The brush is limited while a masked layer is active.
+    await P(`S.session.paint.setActive(m, null)`);
+    await P(`(S.session.paint.add(m, 'Paint here'), 0)`);
+    await maskLeft(page);
+    await P(`S.session.paint.maskFromWorking(m, pt.layer('Paint here'))`);
+    await clearMask(page);
+    await page.evaluate(() => window.__pt.stroke(window.__pt.T.PAINT, [0.1, 0.9, 0.2], 0, 0, 90, 1));
+    const cover = await P(`(() => { const l = pt.layer('Paint here'); const v = m.getVertices(); let left = 0; let right = 0; for (const i of pt.covered(l)) { if (v[i * 3] < 0) left++; else right++; } return { left, right }; })()`);
+    t.ok(cover.left === 0 && cover.right > 20, `the brush is limited by the layer's mask: no colour on the masked side (${JSON.stringify(cover)})`);
+
+    // Subdivide keeps masks; save and reopen.
+    const ok = await page.evaluate(() => window.__sculpt.session.subdivide());
+    t.ok(ok, 'Subdivide adds a level');
+    const sub = await P(`(() => { const l = pt.layer('Paint here'); const v = m.getVertices(); const n = m.getNbVertices(); let left = 0; let right = 0; for (let i = 0; i < n; i++) { const mk = l.mask[i]; if (v[i * 3] < -0.05 * 25 && mk > 5) left++; if (v[i * 3] > 0.05 * 25 && mk < 250) right++; } return { len: l.mask.length === n, left, right }; })()`);
+    t.ok(sub.len && sub.left === 0 && sub.right === 0, `the mask is carried to the new highest level (${JSON.stringify(sub)})`);
+    await P(`pt.undo()`);
+    await P(`window.__sculpt.library.markPainted(m)`);
+    await page.evaluate(async () => {
+      window.__bytes = await window.__sculpt.file.pack();
+    });
+    await page.evaluate(async () => {
+      await window.__sculpt.file.open(window.__bytes);
+    });
+    await page.waitForTimeout(400);
+    await page.evaluate(install);
+    const re = await P(`(() => { const l = pt.layer('Paint here'); const g = pt.layers().find((x) => x.kind === 'group'); return { mask: !!l?.mask, on: l?.maskOn, groupMask: !!g?.mask }; })()`);
+    t.ok(re.mask && re.on, `a .bozz round trip keeps a layer's mask (${JSON.stringify(re)})`);
+  },
+
+  async paintFill(page, base, t) {
+    await openForInput(page, base);
+    await page.evaluate(install);
+    await page.evaluate(() => window.__sculpt.paintWorkspace.enter());
+    const lv = await page.evaluate(() => window.__pt.levels());
+    await page.evaluate((n) => window.__pt.go(n - 1), lv.n);
+    await page.evaluate(() => window.__pt.snap('plain'));
+    const P = (code) => page.evaluate(`(() => { const S = window.__sculpt; const m = window.__pt.mesh(); const pt = window.__pt; return (${code}); })()`);
+    await openPanel(page, 'Layers');
+    // The foot bar: five bare icons, in Photoshop's order, each with a name and a hit area.
+    const bar = await page.evaluate(() => {
+      const bs = [...document.querySelectorAll('.layers-paint .layer-bar__btn')];
+      return bs.map((b) => ({ id: b.dataset.action, label: b.getAttribute('aria-label'), tip: b.querySelector('.bz-tip__name')?.textContent, w: b.getBoundingClientRect().width, h: b.getBoundingClientRect().height, off: b.disabled, icon: b.querySelector('i')?.className, text: b.textContent }));
+    });
+    t.eq(bar.map((b) => b.id).join(), 'mask,fill,group,layer,delete', "the foot is a bar of icons: mask, fill layer, group, layer, delete (Photoshop's order)");
+    t.ok(bar.every((b) => b.label && b.tip === b.label && b.w >= 44 && b.h >= 32 && b.text === b.tip), `each icon has a name and a hit area of at least 44 by 32 (${JSON.stringify(bar.map((b) => [b.id, b.w, b.h]))})`);
+    t.eq(bar.map((b) => b.icon.replace('fi ', '')).join(), 'fi-ss-customize-edit,fi-ss-fill,fi-ss-folder,fi-ss-layers,fi-ss-trash', 'the icons are Uicons solid straight: customize-edit, fill, folder, layers, trash');
+    t.ok(bar.find((b) => b.id === 'mask').off && bar.find((b) => b.id === 'delete').off && !bar.find((b) => b.id === 'layer').off, 'with Base active Add mask and Delete are greyed out; the new ones are not');
+    t.eq(await page.evaluate(() => document.querySelectorAll('.layers-paint .outliner__btn').length), 0, 'there is no text button in the foot');
+    t.eq(await page.evaluate(() => { const b = document.querySelector('.layers-paint .layer-row--base'); return !!b.querySelector('.layer-row__eye') || !!b.querySelector('.layer-row__more') ? 'menu' : 'none'; }), 'menu', 'the Base row has a menu (Flatten all) and no eye');
+    t.eq(await page.evaluate(() => !!document.querySelector('.layers-paint .layer-row--base .layer-row__eye')), false, 'and no eye');
+
+    // New fill layer from the bar.
+    await page.evaluate(() => document.querySelector('.layers-paint .layer-bar [data-action=fill]').click());
+    const f = await P(`(() => { const l = pt.layers()[0]; return { kind: l.kind, fill: l.fill, rgba: l.rgba }; })()`);
+    t.ok(f.kind === 'fill' && f.fill && f.rgba === null, 'New fill layer makes a fill layer that holds one colour and no per-vertex data');
+    // Every vertex shows the composite of the colour with what is below.
+    const setFill = (rgb) => P(`S.session.paint.setFill(m, pt.layers()[0], ${JSON.stringify(rgb)}, 'live')`);
+    await P(`S.session.paint.setFill(m, pt.layers()[0], [0.9, 0.3, 0.1], 'commit')`);
+    const worst = (mode, op) =>
+      page.evaluate(([mode, op]) => {
+        const { session } = window.__sculpt;
+        const pt = window.__pt;
+        const m = pt.mesh();
+        session.paint.setMode(m, pt.layers()[0], mode);
+        session.paint.setOpacity(m, pt.layers()[0], op, 'commit');
+        const l = pt.layers()[0];
+        const p = pt.state();
+        const c = m.getColors();
+        let w = 0;
+        for (let i = 0; i < p.n; i++) {
+          const b = [0, 1, 2].map((k) => pt.enc(p.base[i * 3 + k]));
+          const r = pt.ref[mode](b, l.fill);
+          for (let k = 0; k < 3; k++) w = Math.max(w, Math.abs(c[i * 3 + k] - pt.dec(b[k] + (r[k] - b[k]) * op)));
+        }
+        return w;
+      }, [mode, op]);
+    t.ok((await worst('normal', 1)) < 5e-5, 'every vertex shows the fill colour');
+    t.ok((await worst('multiply', 0.6)) < 5e-5, 'and its composite with what is below, through its mode and opacity (Multiply at 60%)');
+    await P(`S.session.paint.setMode(m, pt.layers()[0], 'normal')`);
+    await P(`S.session.paint.setOpacity(m, pt.layers()[0], 1, 'commit')`);
+    // Changing the colour updates the model, one undo step a pick.
+    await page.evaluate(() => window.__pt.snap('orange'));
+    const d0 = await page.evaluate(() => window.__pt.depth());
+    await setFill([0.2, 0.4, 0.8]);
+    await setFill([0.1, 0.5, 0.7]);
+    await P(`S.session.paint.setFill(m, pt.layers()[0], [0.1, 0.5, 0.7], 'commit')`);
+    t.ok((await page.evaluate(() => window.__pt.diff('orange'))) > 0.01, 'changing the colour updates the model live');
+    t.eq(await page.evaluate(() => window.__pt.depth()), d0 + 1, 'and a pick is one undo step');
+    await P(`pt.undo()`);
+    t.ok((await page.evaluate(() => window.__pt.diff('orange'))) < 1e-6, 'one undo brings the old colour back');
+    // The swatch on the row opens the regular colour picker.
+    const sw = await page.evaluate(() => {
+      const el = document.querySelector('.layers-paint .layer-row__swatch .cpick__swatch');
+      const r = el?.getBoundingClientRect();
+      return el ? { w: Math.round(r.width), h: Math.round(r.height), bg: el.style.background } : null;
+    });
+    t.ok(sw && sw.w >= 14 && sw.w <= 18 && sw.h === sw.w, `the row has a small square swatch (${JSON.stringify(sw)})`);
+    await page.evaluate(() => document.querySelector('.layers-paint .layer-row__swatch .cpick__swatch').click());
+    t.ok(await page.evaluate(() => [...document.querySelectorAll('.cpick__pop')].some((p) => !p.hidden)), "pressing it opens the app's colour picker");
+    await page.keyboard.press('Escape');
+    // Strokes are refused.
+    t.eq(await P(`S.session.paint.refusalText(m, 8)`), 'A fill layer has one colour. Pick it on the layer, or add a mask.', 'a stroke with a fill layer active is refused, with what to do');
+    const d1 = await page.evaluate(() => window.__pt.depth());
+    await page.evaluate(() => window.__pt.snap('fillShown'));
+    await page.evaluate(() => window.__pt.stroke(window.__pt.T.PAINT, [0.5, 0.9, 0.2], 0, 0, 60, 1));
+    await page.evaluate(() => window.__pt.stroke(window.__pt.T.ERASE, null, 0, 0, 60, 1));
+    t.ok((await page.evaluate(() => window.__pt.diff('fillShown'))) === 0 && (await page.evaluate(() => window.__pt.depth())) === d1, 'a stroke made anyway paints nothing');
+    // A mask limits it; it goes in a group; duplicate; merge down; make paintable.
+    await maskLeft(page);
+    await P(`S.session.paint.maskFromWorking(m, pt.layers()[0])`);
+    await clearMask(page);
+    const lim = await page.evaluate(() => {
+      const pt = window.__pt;
+      const v = pt.mesh().getVertices();
+      const c = pt.colours();
+      let left = 0;
+      for (let i = 0; i < c.length / 3; i++) if (v[i * 3] < 0 && Math.abs(c[i * 3] - pt.snaps.plain[i * 3]) > 1e-5) left++;
+      return left;
+    });
+    t.eq(lim, 0, 'a mask limits a fill layer to the unmasked part');
+    await P(`S.session.paint.group(m, pt.layers()[0])`);
+    t.ok(await P(`pt.layers().some((l) => l.kind === 'fill' && l.parent)`), 'a fill layer goes in a group');
+    await P(`S.session.paint.setActive(m, pt.layers().find((l) => l.kind === 'fill'))`);
+    await page.evaluate(() => window.__pt.snap('beforePaintable'));
+    await P(`S.session.paint.makePaintable(m, pt.layers().find((l) => l.kind === 'fill'))`);
+    const mp = await P(`(() => { const l = pt.layers().find((x) => x.name === 'Fill 1'); const cov = pt.covered(l).length; return { kind: l.kind, fill: l.fill, cov, n: pt.state().n }; })()`);
+    t.ok(mp.kind === 'layer' && mp.fill === null && mp.cov === mp.n, `Make paintable turns it into an ordinary layer holding that colour (${JSON.stringify(mp)})`);
+    t.ok((await page.evaluate(() => window.__pt.diff('beforePaintable'))) < 5e-3, 'and what shows is what showed');
+    await P(`pt.undo()`);
+    t.eq(await P(`pt.layers().find((l) => l.name === 'Fill 1').kind`), 'fill', 'one undo makes it a fill layer again');
+    // Save and reopen: the fill is saved as its colour.
+    await P(`window.__sculpt.library.markPainted(m)`);
+    const rec = await page.evaluate(async () => {
+      const r = await window.__sculpt.file.unpack(await window.__sculpt.file.pack());
+      const it = r.meshes[0].paintLayers.items.find((x) => x.kind === 'fill');
+      return it ? { fill: it.fill, ids: it.ids?.length ?? 0 } : null;
+    });
+    t.ok(rec && rec.fill && rec.ids === 0, `a fill layer is saved as its colour, no per-vertex data (${JSON.stringify(rec)})`);
+    await page.evaluate(async () => {
+      window.__bytes = await window.__sculpt.file.pack();
+      await window.__sculpt.file.open(window.__bytes);
+    });
+    await page.waitForTimeout(400);
+    await page.evaluate(install);
+    t.ok(await P(`pt.layers().some((l) => l.kind === 'fill' && l.fill && l.parent)`), 'after reopening the fill layer is there, in its group');
+    await page.screenshot({ path: `${SHOTS}/paint-fill-1180.png` });
+  },
+});

@@ -1990,7 +1990,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   session.paint.onFirstUse = (mesh) => library.markPainted(mesh);
   input.onPaintRefused = (why) => failNotice(why);
   session.layers.onRefuse = (_mesh, why) => {
-    failNotice(`The layer "${why.name}" is hidden or at 0%. Show the layer to sculpt on it.`);
+    failNotice(why.kind === 'group' ? 'Pick a layer to work on.' : `The layer "${why.name}" is hidden or at 0%. Show the layer to sculpt on it.`);
   };
   materialPanel = new MaterialPanel(viewer, { sculpting: true, cavity: true, surface: {
       hasObject: () => !!session.getMesh(),

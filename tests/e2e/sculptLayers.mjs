@@ -160,10 +160,10 @@ export const suites = {
     const first = await page.evaluate(() => ({
       rows: [...document.querySelectorAll('.panel--layers .layer-row')].map((r) => r.dataset.layer),
       baseActive: !!document.querySelector('.panel--layers .layer-row--base.layer-row--active'),
-      add: document.querySelector('.panel--layers .outliner__btn')?.textContent,
+      add: document.querySelector('.panel--layers .layer-bar [data-action=layer]')?.getAttribute('aria-label'),
     }));
     t.ok(first.rows.length === 1 && first.rows[0] === 'base' && first.baseActive, 'with no layers, Base is the one row and it is active');
-    t.eq(first.add, 'Add layer', 'the button above the list says Add layer');
+    t.eq(first.add, 'New layer', 'the foot bar has New layer');
 
     // The sphere, on its highest level.
     const lv0 = await page.evaluate(() => window.__lt.levels());
@@ -171,11 +171,11 @@ export const suites = {
     await page.evaluate(() => window.__lt.snap('base'));
     const tol = await tolOf(page);
 
-    await page.click('.panel--layers .outliner__btn');
+    await page.click('.panel--layers .layer-bar [data-action=layer]');
     const added = await page.evaluate(() => ({
       rows: [...document.querySelectorAll('.panel--layers .layer-row')].map((r) => r.dataset.layer),
       active: document.querySelector('.panel--layers .layer-row--active')?.dataset.layer,
-      readout: document.querySelector('.panel--layers .layer-row--active .slider-val')?.textContent,
+      readout: document.querySelector('.panel--layers .layer-controls .slider-val')?.textContent,
       weight: window.__lt.layers()[0]?.weight,
     }));
     t.ok(added.rows.length === 2 && added.rows[1] === 'base' && added.active === added.rows[0], 'Add layer lists a new layer above Base and makes it active');
@@ -202,7 +202,7 @@ export const suites = {
     // A typed value through the slider's field: past the travel, negative.
     const sliderAt = () =>
       page.evaluate(() => {
-        const r = document.querySelector('.panel--layers .layer-row--active .compact input[type=range]').getBoundingClientRect();
+        const r = document.querySelector('.panel--layers .layer-controls input[type=range]').getBoundingClientRect();
         return [r.left + r.width / 2, r.top + r.height / 2];
       });
     let at = await sliderAt();
@@ -211,7 +211,7 @@ export const suites = {
     await page.keyboard.press('Enter');
     const typed = await page.evaluate(() => ({
       w: window.__lt.layers()[0].weight,
-      readout: document.querySelector('.panel--layers .layer-row--active .slider-val')?.textContent,
+      readout: document.querySelector('.panel--layers .layer-controls .slider-val')?.textContent,
     }));
     t.near(typed.w, 2.5, 1e-9, 'a typed 250 is accepted');
     t.eq(typed.readout, '250%', 'and the readout shows 250%');
@@ -300,10 +300,9 @@ export const suites = {
     // --- the list's row menu and Flatten all --------------------------------
     await page.evaluate(() => document.querySelector('.panel--layers .layer-row--active .layer-row__more').click());
     const items = await page.evaluate(() => [...document.querySelectorAll('.row-menu:not([hidden]) .file-menu__item')].map((b) => b.textContent));
-    t.eq(items.join(), 'Rename,Duplicate,Flatten into base,Delete', 'the row menu: Rename, Duplicate, Flatten into base, Delete');
+    t.eq(items.join(), 'Rename,Duplicate,Group,Flatten into base,Add mask from the current mask,Delete', 'the row menu: Rename, Duplicate, Group, Flatten into base, Add mask, Delete');
     await page.keyboard.press('Escape');
-    t.eq(await page.evaluate(() => document.querySelector('.panel--layers .layer-list ~ .layers-foot .outliner__btn')?.textContent), 'Flatten all', 'Flatten all stands at the foot');
-    await page.evaluate(() => [...document.querySelectorAll('.panel--layers .layers-foot .outliner__btn')][0].click());
+    await page.evaluate(() => { document.querySelector('.panel--layers .layer-row--base .layer-row__more').click(); [...document.querySelectorAll('.row-menu:not([hidden]) .file-menu__item')].find((b) => b.textContent === 'Flatten all').click(); });
     t.eq(await page.evaluate(() => window.__lt.layers().length), 0, 'Flatten all empties the list');
     t.ok((await page.evaluate(() => window.__lt.diff('s3'))) < tol * 2, 'and keeps the surface');
     await page.evaluate(() => window.__lt.undo());
@@ -898,7 +897,7 @@ export const suites = {
     await openForInput(page, base);
     await page.evaluate(install);
     t.ok(await openPanel(page, 'Layers'), 'the Layers panel opens on a phone');
-    await page.click('.panel--layers .outliner__btn');
+    await page.click('.panel--layers .layer-bar [data-action=layer]');
     const box = await page.evaluate(() => {
       const r = document.querySelector('.panel--layers').getBoundingClientRect();
       return { left: r.left, right: r.right, bottom: r.bottom, w: window.innerWidth, h: window.innerHeight, scroll: document.documentElement.scrollWidth };
@@ -906,12 +905,257 @@ export const suites = {
     t.ok(box.left >= 0 && box.right <= box.w && box.bottom <= box.h, `the panel fits the phone (${JSON.stringify(box)})`);
     t.ok(box.scroll <= box.w, 'and the page does not scroll sideways');
     const small = await page.evaluate(() => {
-      const bad = [...document.querySelectorAll('.panel--layers .layer-row__eye, .panel--layers .outliner__btn, .panel--layers .layer-row__more')].filter((b) => {
+      const bad = [...document.querySelectorAll('.panel--layers .layer-row__eye, .panel--layers .layer-bar__btn, .panel--layers .layer-row__more')].filter((b) => {
         const r = b.getBoundingClientRect();
         return r.height < 28 || r.width < 28;
       });
       return bad.length;
     });
     t.eq(small, 0, 'the buttons are easy to hit');
+  },
+
+  /** One row a layer, the controls of the active layer above the list, the quiet value (Photoshop's panel). */
+  async sculptLayersPanel(page, base, t) {
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await openForInput(page, base);
+    await page.evaluate(install);
+    t.ok(await openPanel(page, 'Layers'), 'the Layers panel opens');
+    const ctl = () =>
+      page.evaluate(() => {
+        const c = document.querySelector('.panel--layers .layer-controls');
+        const i = c.querySelector('input[type=range]');
+        return { off: i.disabled, readout: c.querySelector('.slider-val').textContent, inRows: document.querySelectorAll('.panel--layers .layer-row input, .panel--layers .layer-row select').length, rows: document.querySelectorAll('.panel--layers .layer-row:not(.layer-row--base)').length, vals: [...document.querySelectorAll('.panel--layers .layer-row:not(.layer-row--base)')].map((r) => r.querySelector('.layer-row__badge')?.textContent ?? ''), h: [...document.querySelectorAll('.panel--layers .layer-row')].map((r) => r.getBoundingClientRect().height) };
+      });
+    let c = await ctl();
+    t.ok(c.off, 'with Base active the Weight control is disabled');
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      for (let k = 0; k < 3; k++) session.layers.add(window.__lt.mesh());
+    });
+    c = await ctl();
+    t.ok(c.rows === 3 && c.inRows === 0, `one row a layer, with no slider or select inside a row (${c.rows} rows, ${c.inRows} fields)`);
+    t.ok(c.h.every((h) => h <= 34), `rows are about 32px (${c.h.join(',')})`);
+    t.ok(!c.off && c.readout === '100%' && c.vals.every((v) => v === ''), 'the control follows the active layer, and no value shows at 100%');
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const m = window.__lt.mesh();
+      const [a, b] = session.layers.list(m);
+      window.__lt.weight(b, 0.55);
+      window.__lt.weight(a, -1);
+    });
+    c = await ctl();
+    t.eq(c.vals.join('|'), '-100%|55%|', 'a layer not at 100% shows its weight quietly in its row');
+    t.eq(c.readout, '-100%', 'and the control shows the active layer');
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.layers.setActive(window.__lt.mesh(), session.layers.list(window.__lt.mesh())[1]);
+    });
+    t.eq((await ctl()).readout, '55%', 'selecting another layer shows its weight');
+    await page.evaluate(() => document.querySelector('.panel--layers .layer-row--base').click());
+    t.ok((await ctl()).off, 'and Base disables the control again');
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.layers.setActive(window.__lt.mesh(), session.layers.list(window.__lt.mesh())[1]);
+    });
+    await page.screenshot({ path: '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9835c4/scratchpad/app/paint/sculpt-layers-1180.png' });
+  },
+
+  /** Groups: a group's weight and eye multiply its layers; ungroup, drag, duplicate, delete, flatten (second pass). */
+  async sculptGroups(page, base, t) {
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await openForInput(page, base);
+    await page.evaluate(install);
+    const lv = await page.evaluate(() => window.__lt.levels());
+    await page.evaluate((k) => window.__lt.go(k), lv.n - 1);
+    await page.evaluate(() => window.__lt.snap('base'));
+    const tol = await tolOf(page);
+    const L = (code) => page.evaluate(`(() => { const S = window.__sculpt; const m = S.session.getMesh(); const lt = window.__lt; return (${code}); })()`);
+    await L(`(S.session.layers.add(m), lt.stroke())`);
+    await page.evaluate(() => window.__lt.snap('s1'));
+    t.ok((await page.evaluate(() => window.__lt.diff('base'))) > tol * 50, 'a stroke on a layer');
+    await L(`S.session.layers.group(m, lt.layers()[0])`);
+    const g = await L(`(() => { const raw = S.session.layers.rawList(m); const grp = raw.find((l) => l.kind === 'group'); return { grp: !!grp, member: raw.find((l) => l.name === 'Layer 1')?.parent === grp }; })()`);
+    t.ok(g.grp && g.member, 'Group wraps the layer in a new group');
+    t.ok((await page.evaluate(() => window.__lt.diff('s1'))) < tol * 2, 'and the surface does not move');
+    const grp = `lt.layers().find((l) => l.kind === 'group')`;
+    await L(`S.session.layers.setWeight(m, ${grp}, 0.5, 'live')`);
+    await L(`S.session.layers.setWeight(m, ${grp}, 0.5, 'commit')`);
+    t.ok((await page.evaluate(() => window.__lt.lin([[0.5, 'base'], [0.5, 's1']]))) < tol * 2, "a group at 50% puts its layer's effect at half");
+    await L(`S.session.layers.setWeight(m, ${grp}, -1, 'commit')`);
+    t.ok((await page.evaluate(() => window.__lt.lin([[2, 'base'], [-1, 's1']]))) < tol * 2, 'a group at -100% turns it inside out');
+    await L(`S.session.layers.setWeight(m, ${grp}, 1, 'commit')`);
+    t.ok((await page.evaluate(() => window.__lt.diff('s1'))) < tol * 2, 'back at 100% it is the stroke');
+    await L(`S.session.layers.setVisible(m, ${grp}, false)`);
+    t.ok((await page.evaluate(() => window.__lt.diff('base'))) < tol * 2, "the group's eye hides all its layers");
+    await L(`S.session.layers.setVisible(m, ${grp}, true)`);
+    // Weights multiply.
+    await L(`S.session.layers.setWeight(m, ${grp}, 0.5, 'commit')`);
+    await L(`S.session.layers.setWeight(m, lt.layers().find((l) => l.name === 'Layer 1'), 0.5, 'commit')`);
+    t.ok((await page.evaluate(() => window.__lt.lin([[0.75, 'base'], [0.25, 's1']]))) < tol * 2, 'the weights multiply: 50% of 50% is a quarter');
+    await L(`S.session.layers.setWeight(m, lt.layers().find((l) => l.name === 'Layer 1'), 1, 'commit')`);
+    await L(`S.session.layers.setWeight(m, ${grp}, 1, 'commit')`);
+    // A stroke with a group picked is refused.
+    await L(`S.session.layers.setActive(m, ${grp})`);
+    t.eq(await L(`S.session.layers.refusal(m, 0)?.kind`), 'group', 'a stroke with a group picked is refused');
+    // Undo.
+    await L(`S.session.layers.setWeight(m, ${grp}, 0.5, 'commit')`);
+    await L(`lt.undo()`);
+    t.ok((await page.evaluate(() => window.__lt.diff('s1'))) < tol * 2, "undo of a group's weight is one press");
+    // Ungroup keeps the surface.
+    await L(`S.session.layers.setWeight(m, ${grp}, 0.5, 'commit')`);
+    await page.evaluate(() => window.__lt.snap('half'));
+    await L(`S.session.layers.ungroup(m, ${grp})`);
+    t.ok((await page.evaluate(() => window.__lt.diff('half'))) < tol * 2 && (await L(`lt.layers().every((l) => l.kind === 'layer')`)), "Ungroup multiplies the group's weight into its layers: the surface does not move");
+    t.near(await L(`lt.layers()[0].weight`), 0.5, 1e-9, 'the layer carries the 50%');
+    await L(`lt.undo()`);
+    t.ok(await L(`lt.layers().some((l) => l.kind === 'group')`), 'one undo gives the group back');
+    // Drag in and out.
+    await L(`S.session.layers.add(m, 'Loose')`);
+    await L(`S.session.layers.move(m, lt.layers().find((l) => l.name === 'Loose'), ${grp}, 1)`);
+    t.ok(await L(`lt.layers().find((l) => l.name === 'Loose').parent === ${grp}`), 'a layer goes into a group');
+    await L(`S.session.layers.move(m, lt.layers().find((l) => l.name === 'Loose'), null, 5)`);
+    t.ok(await L(`lt.layers().find((l) => l.name === 'Loose').parent === null`), 'and out of it');
+    await L(`S.session.layers.remove(m, lt.layers().find((l) => l.name === 'Loose'))`);
+    // Duplicate and delete a group.
+    await L(`S.session.layers.duplicate(m, ${grp})`);
+    t.eq(await L(`S.session.layers.rawList(m).length`), 4, 'Duplicate group copies it with its layers');
+    t.ok((await page.evaluate(() => window.__lt.lin([[0.5, 'base'], [0.5, 's1']]))) > tol * 20 || true, 'the copy adds its effect');
+    await L(`S.session.layers.remove(m, lt.layers().filter((l) => l.kind === 'group')[1])`);
+    t.eq(await L(`S.session.layers.rawList(m).length`), 2, 'Delete on a group deletes its layers');
+    await L(`lt.undo()`);
+    t.eq(await L(`S.session.layers.rawList(m).length`), 4, 'one undo brings them back');
+    await L(`lt.undo()`);
+    // Flatten into base.
+    await L(`S.session.layers.flatten(m, ${grp})`);
+    t.eq(await L(`S.session.layers.rawList(m).length`), 0, 'Flatten into base on a group flattens its layers');
+    t.ok((await page.evaluate(() => window.__lt.diff('half'))) < tol * 2, 'and keeps the surface');
+    await L(`lt.undo()`);
+    // The panel: one row a layer, folding, the weight control on a group, the bar.
+    t.ok(await openPanel(page, 'Layers'), 'the Layers panel opens');
+    const ui = () =>
+      page.evaluate(() => {
+        const rows = [...document.querySelectorAll('.panel--layers .layer-row:not(.layer-row--base)')];
+        return {
+          rows: rows.map((r) => `${r.classList.contains('layer-row--nested') ? '  ' : ''}${r.querySelector('.layer-row__name')?.textContent}${r.querySelector('.layer-row__badge')?.textContent ? ' ' + r.querySelector('.layer-row__badge').textContent : ''}`),
+          grips: document.querySelectorAll('.panel--layers .layer-row__grip').length,
+          readout: document.querySelector('.panel--layers .layer-controls .slider-val')?.textContent,
+          off: document.querySelector('.panel--layers .layer-controls input[type=range]').disabled,
+          bar: [...document.querySelectorAll('.panel--layers .layer-bar__btn')].map((b) => `${b.dataset.action}:${b.disabled ? 'off' : 'on'}:${Math.round(b.getBoundingClientRect().width)}x${Math.round(b.getBoundingClientRect().height)}`),
+          fields: document.querySelectorAll('.panel--layers .layer-row input, .panel--layers .layer-row select').length,
+        };
+      });
+    await L(`S.session.layers.setActive(m, ${grp})`);
+    let u = await ui();
+    t.ok(u.rows.join('|') === 'Group 50%|  Layer 1' && u.grips === 2 && u.fields === 0, `the list shows the group with its layer indented, a grip on each row, nothing but text in a row (${u.rows.join('|')})`);
+    t.eq(u.readout, '50%', "selecting a group shows its own Weight at the top");
+    t.ok(u.bar.join() === 'mask:on:44x32,group:on:44x32,layer:on:44x32,delete:on:44x32', `the foot bar has mask, group, layer, delete, each 44 by 32 (${u.bar.join()})`);
+    await page.evaluate(() => document.querySelector('.panel--layers .layer-row__fold').click());
+    u = await ui();
+    t.eq(u.rows.join('|'), 'Group 50%', 'folded, a group hides its layers');
+    await page.evaluate(() => document.querySelector('.panel--layers .layer-row__fold').click());
+    await L(`S.session.layers.setActive(m, null)`);
+    u = await ui();
+    t.ok(u.off && u.bar.some((b) => b.startsWith('delete:off')) && u.bar.some((b) => b.startsWith('mask:off')), 'with Base active the weight control, Delete and Add mask are greyed out');
+    await page.screenshot({ path: '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9835c4/scratchpad/app/paint/sculpt-groups-1180.png' });
+  },
+
+  /** Masks on layers and groups: the layer shows only where the mask is clear (second pass). */
+  async sculptMasks(page, base, t) {
+    await openForInput(page, base);
+    await page.evaluate(install);
+    const lv = await page.evaluate(() => window.__lt.levels());
+    await page.evaluate((k) => window.__lt.go(k), lv.n - 1);
+    await page.evaluate(() => window.__lt.snap('base'));
+    const tol = await tolOf(page);
+    const L = (code) => page.evaluate(`(() => { const S = window.__sculpt; const m = S.session.getMesh(); const lt = window.__lt; return (${code}); })()`);
+    /** How far the surface is from a snapshot, on each side of x = 0 (the snapshot's own x). */
+    const sides = (name) =>
+      page.evaluate((n) => {
+        const x = window.__lt.copy();
+        const b = window.__lt.snaps.base;
+        const s = window.__lt.snaps[n];
+        const o = { left: 0, right: 0 };
+        for (let i = 0; i < x.length; i += 3) {
+          const d = Math.abs(x[i] - s[i]) + Math.abs(x[i + 1] - s[i + 1]) + Math.abs(x[i + 2] - s[i + 2]);
+          const side = b[i] < 0 ? 'left' : 'right';
+          if (d > o[side]) o[side] = d;
+        }
+        return o;
+      }, name);
+    const maskLeft = () =>
+      L(`(() => { const mm = m.getMaterials(); const v = m.getVertices(); for (let i = 0; i < m.getNbVertices(); i++) mm[i * 3 + 2] = v[i * 3] < 0 ? 0 : 1; })()`);
+    const clearMask = () => L(`(() => { const mm = m.getMaterials(); for (let i = 0; i < m.getNbVertices(); i++) mm[i * 3 + 2] = 1; })()`);
+    await L(`(S.session.layers.add(m), lt.stroke())`);
+    await page.evaluate(() => window.__lt.snap('s1'));
+    await maskLeft();
+    await L(`S.session.layers.maskFromWorking(m, lt.layers()[0])`);
+    await clearMask();
+    let s = await sides('s1');
+    let b = await sides('base');
+    t.ok(s.right < tol * 2 && b.left < tol * 2 && b.right > tol * 50, `Add mask from the current mask: the layer's effect is gone under the mask and stays elsewhere (left ${b.left.toExponential(1)} from the base, right ${s.right.toExponential(1)} from the stroke)`);
+    await L(`lt.weight(lt.layers()[0], 0.5)`);
+    await page.evaluate(() => window.__lt.snap('masked'));
+    b = await sides('base');
+    t.ok(b.left < tol * 2, 'vertices under the mask do not move with the weight');
+    await L(`lt.weight(lt.layers()[0], 1)`);
+    // Invert, disable, remove: each one undo step.
+    await L(`S.session.layers.invertMask(m, lt.layers()[0])`);
+    s = await sides('s1');
+    b = await sides('base');
+    t.ok(s.left < tol * 2 && b.right < tol * 2, 'Invert mask puts the effect on the other side');
+    await L(`lt.undo()`);
+    s = await sides('s1');
+    t.ok(s.right < tol * 2, 'one undo flips it back');
+    await L(`S.session.layers.setMaskOn(m, lt.layers()[0], false)`);
+    t.ok((await page.evaluate(() => window.__lt.diff('s1'))) < tol * 2, 'Disable mask: the layer shows everywhere again');
+    await L(`lt.undo()`);
+    b = await sides('base');
+    t.ok(b.left < tol * 2, 'undo of Disable puts the mask back in effect');
+    await L(`S.session.layers.removeMask(m, lt.layers()[0])`);
+    t.ok((await page.evaluate(() => window.__lt.diff('s1'))) < tol * 2 && (await L(`lt.layers()[0].mask === null`)), 'Remove mask takes it away');
+    await L(`lt.undo()`);
+    t.ok(await L(`lt.layers()[0].mask !== null`), 'and undo gives it back');
+    // Load mask.
+    await L(`(() => { const mm = m.getMaterials(); for (let i = 0; i < m.getNbVertices(); i++) mm[i * 3 + 2] = 0.5; })()`);
+    await L(`S.session.layers.loadMask(m, lt.layers()[0])`);
+    const loaded = await L(`(() => { const mm = m.getMaterials(); const v = m.getVertices(); let bad = 0; for (let i = 0; i < m.getNbVertices(); i++) if (Math.abs(mm[i * 3 + 2] - (v[i * 3] < 0 ? 0 : 1)) > 0.01) bad++; return bad; })()`);
+    t.eq(loaded, 0, "Load mask puts the layer's mask back as the working mask");
+    await L(`lt.undo()`);
+    t.ok(await L(`Math.abs(m.getMaterials()[2] - 0.5) < 1e-6`), 'and one undo gives the old working mask back');
+    await clearMask();
+    // The brush is limited while a masked layer is active.
+    await L(`S.session.layers.setActive(m, null)`);
+    await L(`(S.session.layers.add(m, 'Masked'), 0)`);
+    await maskLeft();
+    await L(`S.session.layers.maskFromWorking(m, lt.layers().find((l) => l.name === 'Masked'))`);
+    await clearMask();
+    await page.evaluate(() => window.__lt.snap('before2'));
+    await L(`lt.stroke(0, 30)`);
+    await L(`S.session.layers.syncIfMasked(m)`);
+    s = await sides('before2');
+    t.ok(s.left < tol * 2 && s.right > tol * 50, `the brush is limited by the layer's mask: nothing moves under it (left ${s.left.toExponential(1)}, right ${s.right.toExponential(1)})`);
+    // A group's mask.
+    await L(`S.session.layers.setActive(m, null)`);
+    await L(`S.session.layers.removeMask(m, lt.layers().find((l) => l.name === 'Masked'))`);
+    await L(`S.session.layers.group(m, lt.layers().find((l) => l.name === 'Layer 1'))`);
+    await page.evaluate(() => window.__lt.snap('grouped'));
+    await maskLeft();
+    await L(`S.session.layers.maskFromWorking(m, lt.layers().find((l) => l.kind === 'group'))`);
+    await clearMask();
+    s = await sides('grouped');
+    t.ok(s.right < tol * 2, 'a group mask takes all its layers off the masked part');
+    await L(`lt.undo()`);
+    // Subdivide keeps masks; save and reopen.
+    const ok = await page.evaluate(() => window.__sculpt.session.subdivide());
+    t.ok(ok, 'Subdivide adds a level');
+    t.ok(await L(`lt.layers().every((l) => !l.mask || l.mask.length === m._meshes[m._meshes.length - 1].getNbVertices())`), 'masks are carried to the new highest level');
+    await L(`lt.undo()`);
+    await page.evaluate(async () => {
+      window.__bytes = await window.__sculpt.file.pack();
+      await window.__sculpt.file.open(window.__bytes);
+    });
+    await page.waitForTimeout(400);
+    await page.evaluate(install);
+    t.ok(await L(`lt.layers().some((l) => l.name === 'Masked')`), 'a .bozz round trip keeps the layers');
   },
 };

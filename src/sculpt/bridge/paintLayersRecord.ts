@@ -1,5 +1,8 @@
 import { isBlendId, type BlendId } from '../../paint/blend';
 
+/** A mode a layer or a group may hold; 'pass' (Pass through) is a group's alone. */
+export type SavedMode = BlendId | 'pass';
+
 /**
  * The paint layers' scene record (SavedMesh.paintLayers), apart from the
  * model (paintLayers.ts) so that whatever reads a record (sanitize.ts) does
@@ -13,12 +16,24 @@ export const MAX_PAINT_LAYERS = 32;
 /** Names longer than this are cut. */
 export const MAX_PAINT_NAME = 60;
 /** The record's version. */
-export const PAINT_LAYERS_V = 1;
+export const PAINT_LAYERS_V = 2;
 
 /** A layer as a scene record keeps it. */
 export interface SavedPaintLayer {
   name: string;
-  mode: BlendId;
+  mode: SavedMode;
+  /** Absent in a version 1 record: a layer. */
+  kind?: 'layer' | 'fill' | 'group';
+  /** Index into `items` of the group it is in, or -1 (absent: -1). */
+  parent?: number;
+  /** A fill layer's colour, sRGB 0..1. */
+  fill?: [number, number, number];
+  /** A mask as runs over the highest level's vertices: a value, and how many in a row. */
+  maskVals?: Uint8Array;
+  maskLens?: Uint32Array;
+  maskOn?: boolean;
+  /** A group open in the list. */
+  open?: boolean;
   /** 0 to 1. */
   opacity: number;
   visible: boolean;
@@ -29,7 +44,7 @@ export interface SavedPaintLayer {
 }
 
 export interface SavedPaintLayers {
-  v: 1;
+  v: 1 | 2;
   /** Index into `items` of the active layer, or -1 for Base. Oldest layer first. */
   active: number;
   /** What Base holds on most vertices: linear red, green, blue. */
@@ -55,7 +70,7 @@ export function sanitizePaintLayers(v: unknown, vertexCounts: number[]): SavedPa
   };
   if (!v || typeof v !== 'object' || Array.isArray(v)) bad('they are not a record');
   const r = v as Record<string, unknown>;
-  if (r.v !== PAINT_LAYERS_V) bad('a version this app does not read');
+  if (r.v !== 1 && r.v !== PAINT_LAYERS_V) bad('a version this app does not read');
   const n = vertexCounts[vertexCounts.length - 1];
   const items = r.items;
   if (!Array.isArray(items) || items.length > MAX_PAINT_LAYERS) bad(`not 0 to ${MAX_PAINT_LAYERS} layers`);
@@ -90,7 +105,9 @@ export function sanitizePaintLayers(v: unknown, vertexCounts: number[]): SavedPa
     if (!it || typeof it !== 'object' || Array.isArray(it)) return bad('a layer that is not one');
     const l = it as Record<string, unknown>;
     if (typeof l.name !== 'string') bad('a name that is not one');
-    if (!isBlendId(l.mode)) bad('a blend mode that is not one');
+    const kind = (l.kind === undefined ? 'layer' : l.kind) as 'layer' | 'fill' | 'group';
+    if (kind !== 'layer' && kind !== 'fill' && kind !== 'group') bad('a kind of layer that is not one');
+    if (!(isBlendId(l.mode) || (l.mode === 'pass' && kind === 'group'))) bad('a blend mode that is not one');
     const opacity = l.opacity;
     if (typeof opacity !== 'number' || !Number.isFinite(opacity) || opacity < 0 || opacity > 1) bad('an opacity that is not one');
     if (typeof l.visible !== 'boolean') bad('a visibility that is not one');
@@ -101,16 +118,44 @@ export function sanitizePaintLayers(v: unknown, vertexCounts: number[]): SavedPa
       if (!(c instanceof Uint8Array) || c.length !== a.length * 4) bad('data of the wrong kind or size');
       keep = { ids: a, rgba: c as Uint8Array };
     }
+    let fill: [number, number, number] | undefined;
+    if (kind === 'fill') {
+      const f = l.fill;
+      if (!Array.isArray(f) || f.length !== 3 || !f.every((x) => typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 1)) bad('a fill colour that is not one');
+      fill = [(f as number[])[0], (f as number[])[1], (f as number[])[2]];
+    }
+    let parent = -1;
+    if (l.parent !== undefined) {
+      const q = l.parent;
+      if (typeof q !== 'number' || !Number.isInteger(q) || q < -1 || q >= (items as unknown[]).length) bad('a group that is not one');
+      parent = q as number;
+      if (kind === 'group' && parent !== -1) bad('a group inside a group');
+    }
+    let mask: { maskVals: Uint8Array; maskLens: Uint32Array } | null = null;
+    if (l.maskVals !== undefined || l.maskLens !== undefined) {
+      const v = l.maskVals;
+      const k = l.maskLens;
+      if (!(v instanceof Uint8Array) || !(k instanceof Uint32Array) || v.length !== k.length) bad('a mask of the wrong kind');
+      let total = 0;
+      for (const x of k as Uint32Array) total += x;
+      if (total !== n) bad('a mask of the wrong size');
+      mask = { maskVals: v as Uint8Array, maskLens: k as Uint32Array };
+    }
     return {
       name: (l.name as string).slice(0, MAX_PAINT_NAME) || 'Layer',
-      mode: l.mode as BlendId,
+      mode: l.mode as SavedMode,
+      kind,
+      parent,
+      ...(fill ? { fill } : {}),
+      ...(mask ? { ...mask, maskOn: l.maskOn !== false } : {}),
+      open: l.open !== false,
       opacity: opacity as number,
       visible: l.visible as boolean,
       ...(keep ?? {}),
     };
   });
   const b = base as number[];
-  const rec: SavedPaintLayers = { v: 1, active: active as number, base: [b[0], b[1], b[2]], items: out };
+  const rec: SavedPaintLayers = { v: 2, active: active as number, base: [b[0], b[1], b[2]], items: out };
   if (baseIds && baseVals) {
     rec.baseIds = baseIds;
     rec.baseVals = baseVals;

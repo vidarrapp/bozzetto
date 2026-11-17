@@ -429,6 +429,10 @@ export class SculptSession {
     own(Enums.Tools.FILL, new PaintFillTool(this));
     own(Enums.Tools.PICK, new PaintPickTool(this));
     own(Enums.Tools.PROJECT, new PaintProjectBrush(this));
+    // Loading a layer's mask puts it in the masking tool's working mask: the tool redraws it.
+    const redrawMask = (): void => (this.sculptManager.getTool(Enums.Tools.MASKING) as unknown as { updateAndRenderMask?: () => void }).updateAndRenderMask?.();
+    this.layers.afterMaskLoad = redrawMask;
+    this.paint.afterMaskLoad = redrawMask;
     // Smooth with its interpolation clamped: pen pressure maps to a 2x
     // intensity multiplier here, and the vendor lerp diverges past 1.
     this.sculptManager._tools[Enums.Tools.SMOOTH] = new StableSmooth(

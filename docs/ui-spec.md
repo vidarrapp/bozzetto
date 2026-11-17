@@ -722,6 +722,27 @@ reuse it with one more control a row (a blend mode select).
 - Saved per object in the scene (`SavedMesh.layers`, version 1: name,
   weight, visible, and the sparse displacements of the highest level), in the
   autosave, `.bozz` files and the library.
+## Layers panels: Photoshop's model (second pass)
+
+Both Layers panels (sculpt, paint) have the same three parts, top to bottom.
+**Controls** of the picked layer or group (`LayerControls`): the Weight slider
+(sculpt, typed -1000 to 1000%) or a blend mode select with Pass through first
+(groups only) and the Opacity slider (paint) on one row; greyed out with Base
+picked. **The list**: one row a layer, about 32px, no field inside a row: the
+grip, the eye, a fold arrow (groups), a 16px colour swatch (fill layers), the
+name, a mask mark (struck through when off), a quiet value in mono where it is
+not the default ("Multiply 60%", "55%"), the row menu; layers of a group are
+indented and fold away; Base is last with no eye and a menu holding Flatten all.
+**The foot bar** (`LayerBar`): bare icons at the right, each 44 by 32 with the
+panel's hover fill, a name on hover and on a long press (the edge buttons' tip),
+greyed out when they do not apply. Paint: Add mask (`fi-ss-customize-edit`), New
+fill layer (`fi-ss-fill`), New group (`fi-ss-folder`), New layer
+(`fi-ss-layers`), Delete (`fi-ss-trash`); Sculpt has the same without the fill
+layer. One level of groups: Group is greyed out inside a group. A mask is a
+byte a vertex of the highest level (255 shows the layer, 0 hides it where the
+working mask protected), saved run-length; records are version 2 and old
+records open.
+
 ## The Paint workspace
 
 A workspace of the Sculpt page, as Present from Sculpt is: **Armature ›

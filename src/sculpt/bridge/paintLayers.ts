@@ -1,6 +1,7 @@
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import { BYTE_TO_LINEAR, blend, composite, decodeSrgb, dissolveThreshold, encodeSrgb, type BlendId } from '../../paint/blend';
 import { MAX_PAINT_LAYERS, MAX_PAINT_NAME, PAINT_LAYERS_V, type SavedPaintLayers } from './paintLayersRecord';
+import { indexIn, membersOf, moveItem, topLevel, type TreeItem } from '../../ui/layerTree';
 
 export { MAX_PAINT_LAYERS, MAX_PAINT_NAME };
 
@@ -45,28 +46,52 @@ export { MAX_PAINT_LAYERS, MAX_PAINT_NAME };
  * the bytes it replaced. Records on disk are sparse.
  */
 
-export interface PaintLayer {
+/** A group's mode that makes it only multiply its layers' opacity: each layer blends with what is below the group. */
+export type PaintMode = BlendId | 'pass';
+
+export interface PaintLayer extends TreeItem<PaintLayer> {
   /** Unique within the session. */
   id: number;
   name: string;
-  mode: BlendId;
+  /** A layer's blend mode; a group's is Pass through or one of the modes (its layers are composited first, then blended as one). */
+  mode: PaintMode;
   /** 0 to 1. */
   opacity: number;
   visible: boolean;
-  /** sRGB colour and straight alpha, four bytes a vertex of the highest level; null until the layer takes a stroke. */
+  /** sRGB colour and straight alpha, four bytes a vertex of the highest level; null until the layer takes a stroke, and always null for a fill layer or a group. */
   rgba: Uint8Array | null;
+  /** A fill layer's one colour, sRGB 0..1; null otherwise. */
+  fill: [number, number, number] | null;
+  /** A mask, one byte a vertex of the highest level: 255 where the layer shows, 0 where the object's working mask protected. */
+  mask: Uint8Array | null;
+  maskOn: boolean;
+  /** A group is folded in the list (its layers hidden there). */
+  open: boolean;
 }
 
 /** What a stroke asks, before it starts. */
 export interface PaintRefusal {
-  kind: 'hidden';
+  kind: 'hidden' | 'fill' | 'group';
   name: string;
 }
 
 interface Snapshot {
   list: PaintLayer[];
   active: PaintLayer | null;
-  props: Array<{ l: PaintLayer; name: string; mode: BlendId; opacity: number; visible: boolean; rgba: Uint8Array | null }>;
+  props: Array<{
+    l: PaintLayer;
+    name: string;
+    mode: PaintMode;
+    opacity: number;
+    visible: boolean;
+    rgba: Uint8Array | null;
+    kind: PaintLayer['kind'];
+    parent: PaintLayer | null;
+    fill: [number, number, number] | null;
+    mask: Uint8Array | null;
+    maskOn: boolean;
+    open: boolean;
+  }>;
   base: Float32Array;
 }
 
@@ -182,6 +207,11 @@ export class PaintLayers {
     return p ? [...p.list].reverse() : [];
   }
 
+  /** The object's layers and groups in the model's own order: oldest first, a group's layers after it. */
+  rawList(mesh: SculptMesh | null): PaintLayer[] {
+    return (mesh ? this.per.get(mesh)?.list : null) ?? [];
+  }
+
   count(mesh: SculptMesh | null): number {
     return (mesh ? this.per.get(mesh)?.list.length : 0) ?? 0;
   }
@@ -213,6 +243,22 @@ export class PaintLayers {
     return out;
   }
 
+  /** The vertices a change of `ls` can touch (a group's members counted in); null when it can touch all of them (a fill, a mask). */
+  private coverage(p: PerMesh, ls: PaintLayer[]): Set<number> | null {
+    const hit = new Set<number>();
+    const add = (l: PaintLayer): boolean => {
+      if (l.kind === 'fill' || l.mask) return false;
+      if (l.kind === 'group') return membersOf(p.list, l).every(add) && !l.mask;
+      for (const i of this.touched(l)) hit.add(i);
+      return true;
+    };
+    for (const l of ls) {
+      if (!add(l)) return null;
+      if (l.parent && (l.parent.mask || l.parent.kind !== 'group')) return null;
+    }
+    return hit;
+  }
+
   private uniqueName(p: PerMesh, base: string): string {
     const taken = new Set(p.list.map((l) => l.name));
     if (!taken.has(base)) return base;
@@ -226,16 +272,16 @@ export class PaintLayers {
    * screen (synthesis up and the selection put back, as sculpt layers read
    * the highest level). False when a level above has no detail yet.
    */
-  private viewTop(mesh: SculptMesh, fn: (c: Float32Array, n: number) => void): boolean {
+  private viewTop(mesh: SculptMesh, fn: (c: Float32Array, n: number, m: Float32Array) => void): boolean {
     const st = stackOf(mesh);
     if (!st) {
-      fn(mesh.getColors(), mesh.getNbVertices());
+      fn(mesh.getColors(), mesh.getNbVertices(), mesh.getMaterials());
       return true;
     }
     const cur = st._sel;
     const top = st._meshes.length - 1;
     if (cur === top) {
-      fn(mesh.getColors(), mesh.getNbVertices());
+      fn(mesh.getColors(), mesh.getNbVertices(), mesh.getMaterials());
       return true;
     }
     for (let k = cur + 1; k <= top; k++) if (!(st._meshes[k] as unknown as { _detailsXYZ?: unknown })._detailsXYZ) return false;
@@ -243,7 +289,7 @@ export class PaintLayers {
     const normals = st._meshes.slice(cur + 1).map((m) => new Float32Array(m.getNormals()));
     try {
       for (let k = cur; k < top; k++) st.higherLevel();
-      fn(mesh.getColors(), mesh.getNbVertices());
+      fn(mesh.getColors(), mesh.getNbVertices(), mesh.getMaterials());
     } finally {
       st.setSelection(cur);
       st.updateResolution();
@@ -276,26 +322,102 @@ export class PaintLayers {
 
   // --- the composite -------------------------------------------------------
 
+  /** The stack as the composite reads it: the shown top-level entries, a group's shown members under it. */
+  private structure(p: PerMesh): Array<{ e: PaintLayer; ms: PaintLayer[] }> {
+    const out: Array<{ e: PaintLayer; ms: PaintLayer[] }> = [];
+    for (const e of topLevel(p.list)) {
+      if (!e.visible) continue;
+      out.push({ e, ms: e.kind === 'group' ? membersOf(p.list, e).filter((m) => m.visible) : [] });
+    }
+    return out;
+  }
+
+  private maskAt(l: PaintLayer | null, i: number): number {
+    return l && l.mask && l.maskOn ? l.mask[i] / 255 : 1;
+  }
+
+  /** A layer's own coverage at vertex `i` (0..1), before its opacity and masks. */
+  private alphaAt(l: PaintLayer, i: number): number {
+    if (l.kind === 'fill') return 1;
+    const d = l.rgba;
+    return d ? d[i * 4 + 3] / 255 : 0;
+  }
+
+  private rgbAt(l: PaintLayer, i: number, into: [number, number, number]): void {
+    if (l.fill) {
+      into[0] = l.fill[0];
+      into[1] = l.fill[1];
+      into[2] = l.fill[2];
+    } else {
+      const d = l.rgba!;
+      into[0] = d[i * 4] / 255;
+      into[1] = d[i * 4 + 1] / 255;
+      into[2] = d[i * 4 + 2] / 255;
+    }
+  }
+
+  /** One layer over `below` (sRGB, null while nothing has been laid): its mode, its alpha through the masks, its opacity times the group's. */
+  private lay(p: PerMesh, below: [number, number, number] | null, l: PaintLayer, gOpacity: number, gMask: number, i: number): [number, number, number] | null {
+    const a = this.alphaAt(l, i);
+    if (a <= 0) return below;
+    const sa = a * this.maskAt(l, i) * gMask;
+    const op = l.opacity * gOpacity;
+    if (sa <= 0 || op <= 0) return below;
+    const b = p.base;
+    const bi = i * 3;
+    if (!below) below = [encodeSrgb(b[bi]), encodeSrgb(b[bi + 1]), encodeSrgb(b[bi + 2])];
+    const src = this.srcScratch;
+    this.rgbAt(l, i, src);
+    composite(l.mode, below, src, sa, op, dissolveThreshold(i), this.tmpScratch);
+    below[0] = this.tmpScratch[0];
+    below[1] = this.tmpScratch[1];
+    below[2] = this.tmpScratch[2];
+    return below;
+  }
+
   /** The composite colour (linear) of highest-level vertex `i`, into `out` at `o`. */
-  private colourAt(p: PerMesh, i: number, out: Float32Array, o: number): void {
+  private colourAt(p: PerMesh, st: Array<{ e: PaintLayer; ms: PaintLayer[] }>, i: number, out: Float32Array, o: number): void {
     const b = p.base;
     const bi = i * 3;
     let below: [number, number, number] | null = null;
-    const src = this.srcScratch;
-    const tmp = this.tmpScratch;
-    for (const l of p.list) {
-      const d = l.rgba;
-      if (!l.visible || !d) continue;
-      const a = d[i * 4 + 3];
-      if (a === 0 || l.opacity <= 0) continue;
+    for (const { e, ms } of st) {
+      if (e.kind !== 'group') {
+        below = this.lay(p, below, e, 1, 1, i);
+        continue;
+      }
+      const gm = this.maskAt(e, i);
+      if (gm <= 0 || e.opacity <= 0 || !ms.length) continue;
+      if (e.mode === 'pass') {
+        for (const m of ms) below = this.lay(p, below, m, e.opacity, gm, i);
+        continue;
+      }
+      // Normal and the other modes: the group's layers are composited together first, as one layer.
+      let acc: [number, number, number] | null = null;
+      let aa = 0;
+      const s3: [number, number, number] = [0, 0, 0];
+      for (const m of ms) {
+        let sa = this.alphaAt(m, i) * this.maskAt(m, i) * m.opacity;
+        if (sa <= 0) continue;
+        if (m.mode === 'dissolve') sa = dissolveThreshold(i) < sa ? 1 : 0;
+        if (sa <= 0) continue;
+        this.rgbAt(m, i, s3);
+        if (!acc) {
+          acc = [s3[0], s3[1], s3[2]];
+          aa = sa;
+          continue;
+        }
+        const ar = aa + sa * (1 - aa);
+        const bl = m.mode === 'dissolve' ? s3 : blend(m.mode, acc, s3);
+        const k = sa / ar;
+        for (let c = 0; c < 3; c++) acc[c] = (1 - k) * acc[c] + k * ((1 - aa) * s3[c] + aa * bl[c]);
+        aa = ar;
+      }
+      if (!acc || aa <= 0) continue;
       if (!below) below = [encodeSrgb(b[bi]), encodeSrgb(b[bi + 1]), encodeSrgb(b[bi + 2])];
-      src[0] = d[i * 4] / 255;
-      src[1] = d[i * 4 + 1] / 255;
-      src[2] = d[i * 4 + 2] / 255;
-      composite(l.mode, below, src, a / 255, l.opacity, dissolveThreshold(i), tmp);
-      below[0] = tmp[0];
-      below[1] = tmp[1];
-      below[2] = tmp[2];
+      composite(e.mode, below, acc, aa * gm, e.opacity, dissolveThreshold(i), this.tmpScratch);
+      below[0] = this.tmpScratch[0];
+      below[1] = this.tmpScratch[1];
+      below[2] = this.tmpScratch[2];
     }
     if (!below) {
       out[o] = b[bi];
@@ -313,7 +435,7 @@ export class PaintLayers {
     const p = this.per.get(mesh);
     if (!p || i < 0 || i >= p.n) return null;
     const out = new Float32Array(3);
-    this.colourAt(p, i, out, 0);
+    this.colourAt(p, this.structure(p), i, out, 0);
     return [out[0], out[1], out[2]];
   }
 
@@ -327,13 +449,14 @@ export class PaintLayers {
     const cols = mesh.getColors();
     const map = this.lineage(mesh, p);
     const n = mesh.getNbVertices();
+    const st = this.structure(p);
     if (ids) {
       for (let k = 0; k < ids.length; k++) {
         const j = ids[k];
-        this.colourAt(p, map ? map[j] : j, cols, j * 3);
+        this.colourAt(p, st, map ? map[j] : j, cols, j * 3);
       }
     } else {
-      for (let j = 0; j < n; j++) this.colourAt(p, map ? map[j] : j, cols, j * 3);
+      for (let j = 0; j < n; j++) this.colourAt(p, st, map ? map[j] : j, cols, j * 3);
     }
     this.refreshGl(mesh, ids, push);
   }
@@ -350,17 +473,12 @@ export class PaintLayers {
     if (push) mesh.updateColorBuffer();
   }
 
-  /** Composite what the layers in `ls` cover (or all, when the level on screen is not the highest). */
+  /** Composite what the layers in `ls` cover (or all, when the level on screen is not the highest, or a fill or a mask is in it). */
   private recompositeLayers(mesh: SculptMesh, ls: PaintLayer[]): void {
     const p = this.per.get(mesh);
     if (!p) return;
-    if (this.lineage(mesh, p)) {
-      this.recomposite(mesh, null);
-      return;
-    }
-    const hit = new Set<number>();
-    for (const l of ls) for (const i of this.touched(l)) hit.add(i);
-    this.recomposite(mesh, Uint32Array.from(hit));
+    const hit = this.lineage(mesh, p) ? null : this.coverage(p, ls);
+    this.recomposite(mesh, hit ? Uint32Array.from(hit) : null);
   }
 
   /** After a step between levels (or an undo across one): the level on screen shows the layers' composite. */
@@ -376,7 +494,7 @@ export class PaintLayers {
     return {
       list: [...p.list],
       active: p.active,
-      props: p.list.map((l) => ({ l, name: l.name, mode: l.mode, opacity: l.opacity, visible: l.visible, rgba: l.rgba })),
+      props: p.list.map((l) => ({ l, name: l.name, mode: l.mode, opacity: l.opacity, visible: l.visible, rgba: l.rgba, kind: l.kind, parent: l.parent, fill: l.fill, mask: l.mask, maskOn: l.maskOn, open: l.open })),
       base: p.base,
     };
   }
@@ -391,6 +509,12 @@ export class PaintLayers {
       x.l.opacity = x.opacity;
       x.l.visible = x.visible;
       x.l.rgba = x.rgba;
+      x.l.kind = x.kind;
+      x.l.parent = x.parent;
+      x.l.fill = x.fill;
+      x.l.mask = x.mask;
+      x.l.maskOn = x.maskOn;
+      x.l.open = x.open;
     }
   }
 
@@ -428,30 +552,75 @@ export class PaintLayers {
     return p;
   }
 
-  /** A new empty layer at 100%, Normal, above the active one; it becomes the active layer. Null when none can be made. */
-  add(mesh: SculptMesh, name?: string): PaintLayer | null {
-    if (!this.allowed(mesh)) return null;
-    const fresh = !this.per.has(mesh);
-    const p = this.ensure(mesh);
-    if (!p || p.list.length >= MAX_PAINT_LAYERS) {
-      if (p && fresh && !p.list.length) this.per.delete(mesh);
-      return null;
-    }
-    const before = this.snap(p);
-    const layer: PaintLayer = {
+  /** A fresh item of a kind, not yet in the list. */
+  private fresh(p: PerMesh, kind: PaintLayer['kind'], base: string): PaintLayer {
+    return {
       id: nextId++,
-      name: this.uniqueName(p, (name ?? `Layer ${p.list.length + 1}`).slice(0, MAX_PAINT_NAME)),
-      mode: 'normal',
+      name: this.uniqueName(p, base.slice(0, MAX_PAINT_NAME)),
+      kind,
+      parent: null,
+      mode: kind === 'group' ? 'pass' : 'normal',
       opacity: 1,
       visible: true,
       rgba: null,
+      fill: null,
+      mask: null,
+      maskOn: true,
+      open: true,
     };
-    const at = p.active ? p.list.indexOf(p.active) + 1 : p.list.length;
-    p.list.splice(at, 0, layer);
-    p.active = layer;
+  }
+
+  /** Put a new item above the active one: inside its group when the active layer is in one, else in the stack above it (or the group). */
+  private place(p: PerMesh, item: PaintLayer): void {
+    const ref = p.active;
+    let parent: PaintLayer | null = null;
+    let index = topLevel(p.list).length;
+    if (ref) {
+      if (item.kind === 'group') {
+        // A group stands in the stack, above the group the active layer is in, or above the active entry.
+        const anchor = ref.parent ?? ref;
+        index = indexIn(p.list, anchor) + 1;
+      } else if (ref.kind === 'group') {
+        // A layer made with a group picked goes at the top of that group.
+        parent = ref;
+        index = membersOf(p.list, ref).length;
+      } else {
+        parent = ref.parent;
+        index = indexIn(p.list, ref) + 1;
+      }
+    }
+    p.list = moveItem(p.list, item, parent, index);
+    p.active = item;
+  }
+
+  /** A new empty layer, Normal at 100%, above the active one; it becomes the active one. Null when none can be made. */
+  add(mesh: SculptMesh, name?: string): PaintLayer | null {
+    return this.addKind(mesh, 'layer', name ?? undefined);
+  }
+
+  /** A fill layer: one colour for every vertex, stored as that one colour. */
+  addFill(mesh: SculptMesh, hex?: [number, number, number], name?: string): PaintLayer | null {
+    return this.addKind(mesh, 'fill', name, hex);
+  }
+
+  /** An empty group, above the active layer's place in the stack. */
+  addGroup(mesh: SculptMesh, name?: string): PaintLayer | null {
+    return this.addKind(mesh, 'group', name);
+  }
+
+  private addKind(mesh: SculptMesh, kind: PaintLayer['kind'], name?: string, fill?: [number, number, number]): PaintLayer | null {
+    if (!this.allowed(mesh)) return null;
+    const first = !this.per.has(mesh);
+    const p = this.ensure(mesh);
+    if (!p || p.list.length >= MAX_PAINT_LAYERS) return null;
+    const before = this.snap(p);
+    const word = kind === 'group' ? 'Group' : kind === 'fill' ? 'Fill' : 'Layer';
+    const layer = this.fresh(p, kind, name ?? `${word} ${p.list.filter((l) => l.kind === kind).length + 1}`);
+    if (kind === 'fill') layer.fill = fill ?? [0.5, 0.5, 0.5];
+    this.place(p, layer);
     const after = this.snap(p);
-    // The undo of the first layer takes the object back to having none; a redo gives it back.
-    if (fresh) this.onFirstUse?.(mesh);
+    if (first) this.onFirstUse?.(mesh);
+    this.recomposite(mesh, null);
     this.pushSnap(mesh, p, before, after);
     this.changed();
     return layer;
@@ -474,6 +643,13 @@ export class PaintLayers {
     this.changed();
   }
 
+  /** Fold or open a group in the list. Not an undo step. */
+  setOpen(layer: PaintLayer, open: boolean): void {
+    if (layer.open === open) return;
+    layer.open = open;
+    this.changed();
+  }
+
   /** One property of a layer, as an undo step (visibility, mode). */
   private setProp(mesh: SculptMesh, layer: PaintLayer, apply: () => void): void {
     const p = this.per.get(mesh);
@@ -492,62 +668,175 @@ export class PaintLayers {
     this.setProp(mesh, layer, () => (layer.visible = visible));
   }
 
-  setMode(mesh: SculptMesh, layer: PaintLayer, mode: BlendId): void {
-    if (layer.mode === mode) return;
+  setMode(mesh: SculptMesh, layer: PaintLayer, mode: PaintMode): void {
+    if (layer.mode === mode || (mode === 'pass' && layer.kind !== 'group')) return;
     this.setProp(mesh, layer, () => (layer.mode = mode));
+  }
+
+  /** A drag in progress (an opacity, a fill colour): where it began, so the release is one undo step. */
+  private beginDrag(mesh: SculptMesh, layer: PaintLayer, p: PerMesh): void {
+    if (!this.drag || this.drag.layer !== layer) this.drag = { mesh, layer, from: this.snap(p) };
+  }
+
+  private endDrag(mesh: SculptMesh, p: PerMesh, layer: PaintLayer): void {
+    const from = this.drag!.from;
+    this.drag = null;
+    const after = this.snap(p);
+    const was = from.props.find((x) => x.l === layer);
+    if (was && was.opacity === layer.opacity && was.fill?.join() === layer.fill?.join()) return;
+    this.pushSnap(mesh, p, from, after);
+    this.changed();
   }
 
   /** Set a layer's opacity (0 to 1). `live` while a slider is dragged, `commit` at its release, which is one undo step for the drag. */
   setOpacity(mesh: SculptMesh, layer: PaintLayer, opacity: number, phase: 'live' | 'commit'): void {
     const p = this.per.get(mesh);
     if (!p || !p.list.includes(layer) || !Number.isFinite(opacity)) return;
-    if (!this.drag || this.drag.layer !== layer) this.drag = { mesh, layer, from: this.snap(p) };
+    this.beginDrag(mesh, layer, p);
     layer.opacity = Math.max(0, Math.min(1, opacity));
     this.recompositeLayers(mesh, [layer]);
     this.host.render();
-    if (phase === 'live') return;
-    const from = this.drag.from;
-    this.drag = null;
-    const after = this.snap(p);
-    if (from.props.find((x) => x.l === layer)?.opacity === layer.opacity) return;
-    this.pushSnap(mesh, p, from, after);
-    this.changed();
+    if (phase === 'commit') this.endDrag(mesh, p, layer);
   }
 
-  /** Move a layer to a place in the list (0 is the bottom, just above Base). Order matters here. */
-  reorder(mesh: SculptMesh, layer: PaintLayer, to: number): void {
+  /** A fill layer's colour (sRGB 0..1). `live` while a picker moves, `commit` when it closes: one undo step. */
+  setFill(mesh: SculptMesh, layer: PaintLayer, rgb: [number, number, number], phase: 'live' | 'commit'): void {
     const p = this.per.get(mesh);
-    if (!p) return;
-    const at = p.list.indexOf(layer);
-    const dest = Math.max(0, Math.min(p.list.length - 1, Math.round(to)));
-    if (at < 0 || at === dest) return;
+    if (!p || !p.list.includes(layer) || layer.kind !== 'fill') return;
+    this.beginDrag(mesh, layer, p);
+    layer.fill = [Math.max(0, Math.min(1, rgb[0])), Math.max(0, Math.min(1, rgb[1])), Math.max(0, Math.min(1, rgb[2]))];
+    this.recomposite(mesh, null);
+    this.host.render();
+    if (phase === 'commit') this.endDrag(mesh, p, layer);
+  }
+
+  /** "Make paintable": a fill layer becomes an ordinary layer holding that colour. */
+  makePaintable(mesh: SculptMesh, layer: PaintLayer): void {
+    const p = this.per.get(mesh);
+    if (!p || layer.kind !== 'fill' || !layer.fill) return;
     const before = this.snap(p);
-    p.list.splice(at, 1);
-    p.list.splice(dest, 0, layer);
+    layer.rgba = this.materialize(p, layer);
+    layer.fill = null;
+    layer.kind = 'layer';
     const after = this.snap(p);
-    this.recompositeLayers(mesh, [layer, ...p.list.slice(Math.min(at, dest), Math.max(at, dest) + 1)]);
     this.pushSnap(mesh, p, before, after);
     this.host.render();
     this.changed();
   }
 
-  /** A copy of a layer, above it. */
+  /** A fill layer's colour as bytes for every vertex (alpha full). */
+  private materialize(p: PerMesh, l: PaintLayer): Uint8Array {
+    const out = new Uint8Array(p.n * 4);
+    const f = l.fill ?? [0, 0, 0];
+    const c = [clampByte(f[0] * 255), clampByte(f[1] * 255), clampByte(f[2] * 255)];
+    for (let i = 0; i < p.n; i++) {
+      out[i * 4] = c[0];
+      out[i * 4 + 1] = c[1];
+      out[i * 4 + 2] = c[2];
+      out[i * 4 + 3] = 255;
+    }
+    return out;
+  }
+
+  /**
+   * Put a layer (or group) in a container (a group, or null for the stack)
+   * at an index counted from the bottom of it. A group cannot go into a group.
+   */
+  move(mesh: SculptMesh, layer: PaintLayer, parent: PaintLayer | null, index: number): void {
+    const p = this.per.get(mesh);
+    if (!p || !p.list.includes(layer)) return;
+    if (parent && (parent.kind !== 'group' || layer.kind === 'group' || !p.list.includes(parent))) return;
+    const before = this.snap(p);
+    p.list = moveItem(p.list, layer, parent, index);
+    if (parent) parent.open = true;
+    const after = this.snap(p);
+    this.recomposite(mesh, null);
+    this.pushSnap(mesh, p, before, after);
+    this.host.render();
+    this.changed();
+  }
+
+  /** Move a layer to a place among the stack's top-level entries (0 is the bottom, just above Base). */
+  reorder(mesh: SculptMesh, layer: PaintLayer, to: number): void {
+    this.move(mesh, layer, layer.parent, to);
+  }
+
+  /** A group of its own around a layer, in the layer's place. */
+  group(mesh: SculptMesh, layer: PaintLayer): PaintLayer | null {
+    const p = this.per.get(mesh);
+    if (!p || layer.kind === 'group' || layer.parent || p.list.length >= MAX_PAINT_LAYERS) return null;
+    const before = this.snap(p);
+    const at = indexIn(p.list, layer);
+    const g = this.fresh(p, 'group', 'Group');
+    p.list = moveItem(p.list, g, null, at + 1);
+    p.list = moveItem(p.list, layer, g, 0);
+    p.active = layer;
+    const after = this.snap(p);
+    this.recomposite(mesh, null);
+    this.pushSnap(mesh, p, before, after);
+    this.host.render();
+    this.changed();
+    return g;
+  }
+
+  /**
+   * Take the layers out of a group, into the stack where it stood, and
+   * delete the group. Its opacity and its mask are multiplied into the
+   * layers' (nothing changes on the model for a Pass through group).
+   */
+  ungroup(mesh: SculptMesh, group: PaintLayer): void {
+    const p = this.per.get(mesh);
+    if (!p || group.kind !== 'group') return;
+    const before = this.snap(p);
+    const members = membersOf(p.list, group);
+    let at = indexIn(p.list, group);
+    for (const m of members) {
+      m.opacity *= group.opacity;
+      if (!m.visible || !group.visible) m.visible = m.visible && group.visible;
+      if (group.mask && group.maskOn) {
+        const out = new Uint8Array(p.n);
+        for (let i = 0; i < p.n; i++) out[i] = Math.round((this.maskAt(m, i) * group.mask[i]) );
+        m.mask = out;
+        m.maskOn = true;
+      }
+      p.list = moveItem(p.list, m, null, ++at);
+    }
+    p.list = p.list.filter((x) => x !== group);
+    if (p.active === group) p.active = members[members.length - 1] ?? null;
+    const after = this.snap(p);
+    this.recomposite(mesh, null);
+    this.pushSnap(mesh, p, before, after);
+    this.host.render();
+    this.changed();
+  }
+
+  /** A copy of a layer, above it; a group copies with its layers. */
   duplicate(mesh: SculptMesh, layer: PaintLayer): PaintLayer | null {
     const p = this.per.get(mesh);
-    if (!p || p.list.length >= MAX_PAINT_LAYERS) return null;
-    const at = p.list.indexOf(layer);
-    if (at < 0) return null;
+    if (!p || p.list.length + 1 + (layer.kind === 'group' ? membersOf(p.list, layer).length : 0) > MAX_PAINT_LAYERS) return null;
+    if (!p.list.includes(layer)) return null;
     const before = this.snap(p);
-    const copy: PaintLayer = {
-      ...layer,
+    const copyOf = (l: PaintLayer, parent: PaintLayer | null): PaintLayer => ({
+      ...l,
       id: nextId++,
-      name: this.uniqueName(p, `${layer.name} copy`.slice(0, MAX_PAINT_NAME)),
-      rgba: layer.rgba ? new Uint8Array(layer.rgba) : null,
-    };
-    p.list.splice(at + 1, 0, copy);
+      name: this.uniqueName(p, `${l.name} copy`.slice(0, MAX_PAINT_NAME)),
+      parent,
+      rgba: l.rgba ? new Uint8Array(l.rgba) : null,
+      fill: l.fill ? [...l.fill] : null,
+      mask: l.mask ? new Uint8Array(l.mask) : null,
+    });
+    const copy = copyOf(layer, null);
+    p.list = moveItem(p.list, copy, layer.parent, indexIn(p.list, layer) + 1);
+    if (layer.kind === 'group') {
+      let k = 0;
+      for (const m of membersOf(p.list, layer)) {
+        const c = copyOf(m, copy);
+        p.list = moveItem(p.list, c, copy, k++);
+      }
+    }
     p.active = copy;
     const after = this.snap(p);
-    this.recompositeLayers(mesh, [copy]);
+    this.recomposite(mesh, null);
     this.pushSnap(mesh, p, before, after);
     this.host.render();
     this.changed();
@@ -559,61 +848,80 @@ export class PaintLayers {
     const p = this.per.get(mesh);
     if (!p || !layer.rgba) return;
     const before = this.snap(p);
-    const was = this.touched(layer);
     layer.rgba = null;
     const after = this.snap(p);
-    if (this.lineage(mesh, p)) this.recomposite(mesh, null);
-    else this.recomposite(mesh, Uint32Array.from(was));
+    this.recomposite(mesh, null);
     this.pushSnap(mesh, p, before, after);
     this.host.render();
     this.changed();
   }
 
-  /** Delete takes the layer's colour off the object with it. */
+  /** How many layers deleting this would delete (a group takes its layers with it). */
+  weight(mesh: SculptMesh, layer: PaintLayer): number {
+    const p = this.per.get(mesh);
+    return p && layer.kind === 'group' ? 1 + membersOf(p.list, layer).length : 1;
+  }
+
+  /** Delete takes the layer's colour off the object with it; a group takes its layers. */
   remove(mesh: SculptMesh, layer: PaintLayer): void {
     const p = this.per.get(mesh);
     if (!p) return;
     const at = p.list.indexOf(layer);
     if (at < 0) return;
     const before = this.snap(p);
-    const was = this.touched(layer);
-    p.list.splice(at, 1);
-    if (p.active === layer) p.active = p.list[Math.min(at, p.list.length - 1)] ?? null;
+    const gone = new Set<PaintLayer>([layer, ...(layer.kind === 'group' ? membersOf(p.list, layer) : [])]);
+    p.list = p.list.filter((x) => !gone.has(x));
+    if (p.active && gone.has(p.active)) p.active = p.list[Math.min(at, p.list.length - 1)] ?? null;
     const after = this.snap(p);
-    if (this.lineage(mesh, p)) this.recomposite(mesh, null);
-    else this.recomposite(mesh, Uint32Array.from(was));
+    this.recomposite(mesh, null);
     if (!p.list.length) this.per.delete(mesh);
     this.pushSnap(mesh, p, before, after);
     this.host.render();
     this.changed();
   }
 
+  /** Whether Merge down is offered: a layer with a plain layer or a fill under it in its container, or the lowest one in the stack (which joins Base). */
+  canMergeDown(mesh: SculptMesh, layer: PaintLayer): boolean {
+    const p = this.per.get(mesh);
+    if (!p || layer.kind === 'group') return false;
+    const peers = layer.parent ? membersOf(p.list, layer.parent) : topLevel(p.list);
+    const at = peers.indexOf(layer);
+    if (at < 0) return false;
+    if (at === 0) return !layer.parent;
+    return peers[at - 1].kind !== 'group';
+  }
+
   /**
-   * Join a layer into the one below it, or into Base when it is the lowest.
-   * Into Base the result is exact. Into a layer, the lower layer keeps its
-   * own blend mode and opacity and takes the upper one's colour by the
+   * Join a layer into the one below it in its container, or into Base when
+   * it is the lowest in the stack. Into Base the result is exact. Into a
+   * layer, the lower layer keeps its own blend mode and opacity (a fill layer
+   * under it becomes an ordinary layer) and takes the upper one's colour by the
    * layer-over-layer arithmetic (exact when the lower is Normal at 100%).
    */
   mergeDown(mesh: SculptMesh, layer: PaintLayer): void {
     const p = this.per.get(mesh);
-    if (!p) return;
-    const at = p.list.indexOf(layer);
-    if (at < 0) return;
+    if (!p || !this.canMergeDown(mesh, layer)) return;
+    const peers = layer.parent ? membersOf(p.list, layer.parent) : topLevel(p.list);
+    const at = peers.indexOf(layer);
     const before = this.snap(p);
-    const was = this.touched(layer);
     const src: [number, number, number] = [0, 0, 0];
     const tmp: [number, number, number] = [0, 0, 0];
+    const upper = layer.kind === 'fill' ? this.materialize(p, layer) : layer.rgba;
+    const was = upper ? ((): number[] => {
+      const out: number[] = [];
+      for (let i = 3; i < upper.length; i += 4) if (upper[i] !== 0) out.push((i - 3) >> 2);
+      return out;
+    })() : [];
     if (at === 0) {
       const base = new Float32Array(p.base);
-      const d = layer.rgba;
-      if (d && layer.visible) {
+      if (upper && layer.visible) {
         for (const i of was) {
           const bi = i * 3;
           const below: [number, number, number] = [encodeSrgb(base[bi]), encodeSrgb(base[bi + 1]), encodeSrgb(base[bi + 2])];
-          src[0] = d[i * 4] / 255;
-          src[1] = d[i * 4 + 1] / 255;
-          src[2] = d[i * 4 + 2] / 255;
-          composite(layer.mode, below, src, d[i * 4 + 3] / 255, layer.opacity, dissolveThreshold(i), tmp);
+          src[0] = upper[i * 4] / 255;
+          src[1] = upper[i * 4 + 1] / 255;
+          src[2] = upper[i * 4 + 2] / 255;
+          composite(layer.mode, below, src, (upper[i * 4 + 3] / 255) * this.maskAt(layer, i), layer.opacity, dissolveThreshold(i), tmp);
           base[bi] = decodeSrgb(tmp[0]);
           base[bi + 1] = decodeSrgb(tmp[1]);
           base[bi + 2] = decodeSrgb(tmp[2]);
@@ -621,37 +929,165 @@ export class PaintLayers {
       }
       p.base = base;
     } else {
-      const lower = p.list[at - 1];
-      const out = lower.rgba ? new Uint8Array(lower.rgba) : new Uint8Array(p.n * 4);
-      const d = layer.rgba;
-      if (d && layer.visible) {
+      const lower = peers[at - 1];
+      const lowerBytes = lower.kind === 'fill' ? this.materialize(p, lower) : lower.rgba;
+      const out = lowerBytes ? new Uint8Array(lowerBytes) : new Uint8Array(p.n * 4);
+      if (upper && layer.visible) {
         for (const i of was) {
-          const ab = out[i * 4 + 3] / 255;
-          const as = (d[i * 4 + 3] / 255) * layer.opacity;
+          const ab = (out[i * 4 + 3] / 255) * this.maskAt(lower, i);
+          const as = (upper[i * 4 + 3] / 255) * layer.opacity * this.maskAt(layer, i);
           const ar = ab + as * (1 - ab);
           if (ar <= 0) continue;
           const cb: [number, number, number] = [out[i * 4] / 255, out[i * 4 + 1] / 255, out[i * 4 + 2] / 255];
-          const cs: [number, number, number] = [d[i * 4] / 255, d[i * 4 + 1] / 255, d[i * 4 + 2] / 255];
-          const bl = ab > 0 && layer.mode !== 'dissolve' ? blend(layer.mode, cb, cs) : cs;
+          const cs: [number, number, number] = [upper[i * 4] / 255, upper[i * 4 + 1] / 255, upper[i * 4 + 2] / 255];
+          const bl = ab > 0 && layer.mode !== 'dissolve' && layer.mode !== 'pass' ? blend(layer.mode, cb, cs) : cs;
           const k = as / ar;
           for (let c = 0; c < 3; c++) out[i * 4 + c] = clampByte(255 * ((1 - k) * cb[c] + k * ((1 - ab) * cs[c] + ab * bl[c])));
           out[i * 4 + 3] = clampByte(255 * ar);
         }
       }
       lower.rgba = out;
+      lower.fill = null;
+      lower.kind = 'layer';
+      // The lower layer's mask was applied into the bytes above.
+      lower.mask = null;
     }
-    p.list.splice(at, 1);
-    p.active = at > 0 ? p.list[at - 1] : (p.list[0] ?? null);
+    p.list = p.list.filter((x) => x !== layer);
+    p.active = at > 0 ? peers[at - 1] : (p.list[0] ?? null);
     const after = this.snap(p);
     this.recomposite(mesh, null);
-    if (!p.list.length) {
-      // No layer left: Base alone is the object's colour; the object is plain again.
-      this.per.delete(mesh);
-    }
+    if (!p.list.length) this.per.delete(mesh);
     this.pushSnap(mesh, p, before, after);
     this.host.render();
     this.changed();
   }
+
+  /** A group's layers become one layer: composited together, in the group's place, with its mode, opacity and mask. */
+  flattenGroup(mesh: SculptMesh, group: PaintLayer): void {
+    const p = this.per.get(mesh);
+    if (!p || group.kind !== 'group') return;
+    const members = membersOf(p.list, group).filter((m) => m.visible);
+    const before = this.snap(p);
+    const out = new Uint8Array(p.n * 4);
+    const s3: [number, number, number] = [0, 0, 0];
+    for (let i = 0; i < p.n; i++) {
+      let acc: [number, number, number] | null = null;
+      let aa = 0;
+      for (const m of members) {
+        const sa = this.alphaAt(m, i) * this.maskAt(m, i) * m.opacity;
+        if (sa <= 0) continue;
+        this.rgbAt(m, i, s3);
+        if (!acc) {
+          acc = [s3[0], s3[1], s3[2]];
+          aa = sa;
+          continue;
+        }
+        const ar = aa + sa * (1 - aa);
+        const bl = m.mode === 'dissolve' || m.mode === 'pass' ? s3 : blend(m.mode, acc, s3);
+        const k = sa / ar;
+        for (let c = 0; c < 3; c++) acc[c] = (1 - k) * acc[c] + k * ((1 - aa) * s3[c] + aa * bl[c]);
+        aa = ar;
+      }
+      if (acc && aa > 0) {
+        out[i * 4] = clampByte(255 * acc[0]);
+        out[i * 4 + 1] = clampByte(255 * acc[1]);
+        out[i * 4 + 2] = clampByte(255 * acc[2]);
+        out[i * 4 + 3] = clampByte(255 * aa);
+      }
+    }
+    const gone = new Set(membersOf(p.list, group));
+    p.list = p.list.filter((x) => !gone.has(x));
+    group.kind = 'layer';
+    group.rgba = out;
+    if (group.mode === 'pass') group.mode = 'normal';
+    p.active = group;
+    const after = this.snap(p);
+    this.recomposite(mesh, null);
+    this.pushSnap(mesh, p, before, after);
+    this.host.render();
+    this.changed();
+  }
+
+  // --- masks -------------------------------------------------------------------
+
+  /** The object's working mask (the masking tool's) as a byte a vertex of the highest level: 255 where it is clear, 0 where masked. */
+  private workingMask(mesh: SculptMesh, p: PerMesh): Uint8Array | null {
+    let out: Uint8Array | null = null;
+    this.viewTop(mesh, (_c, n, m) => {
+      const o = new Uint8Array(n);
+      for (let i = 0; i < n; i++) o[i] = clampByte(m[i * 3 + 2] * 255);
+      out = o;
+    });
+    void p;
+    return out;
+  }
+
+  private setMask(mesh: SculptMesh, layer: PaintLayer, make: (p: PerMesh) => { mask: Uint8Array | null; on: boolean } | null): void {
+    const p = this.per.get(mesh);
+    if (!p || !p.list.includes(layer)) return;
+    const r = make(p);
+    if (!r) return;
+    const before = this.snap(p);
+    layer.mask = r.mask;
+    layer.maskOn = r.on;
+    const after = this.snap(p);
+    this.recomposite(mesh, null);
+    this.pushSnap(mesh, p, before, after);
+    this.host.render();
+    this.changed();
+  }
+
+  /** "Add mask from the current mask" (and "Replace mask from the current mask"): the object's working mask is stored on the layer or group. */
+  maskFromWorking(mesh: SculptMesh, layer: PaintLayer): void {
+    this.setMask(mesh, layer, (p) => {
+      const m = this.workingMask(mesh, p);
+      return m ? { mask: m, on: true } : null;
+    });
+  }
+
+  invertMask(mesh: SculptMesh, layer: PaintLayer): void {
+    if (!layer.mask) return;
+    this.setMask(mesh, layer, () => ({ mask: layer.mask!.map((v) => 255 - v), on: layer.maskOn }));
+  }
+
+  setMaskOn(mesh: SculptMesh, layer: PaintLayer, on: boolean): void {
+    if (!layer.mask || layer.maskOn === on) return;
+    this.setMask(mesh, layer, () => ({ mask: layer.mask, on }));
+  }
+
+  removeMask(mesh: SculptMesh, layer: PaintLayer): void {
+    if (!layer.mask) return;
+    this.setMask(mesh, layer, () => ({ mask: null, on: true }));
+  }
+
+  /** "Load mask": the layer's mask becomes the object's working mask again (one undo step, which gives the old working mask back). */
+  loadMask(mesh: SculptMesh, layer: PaintLayer): void {
+    const p = this.per.get(mesh);
+    if (!p || !layer.mask) return;
+    const mats = mesh.getMaterials();
+    const n = mesh.getNbVertices();
+    const map = this.lineage(mesh, p);
+    const was = new Float32Array(n);
+    for (let j = 0; j < n; j++) was[j] = mats[j * 3 + 2];
+    const now = new Float32Array(n);
+    for (let j = 0; j < n; j++) now[j] = layer.mask[map ? map[j] : j] / 255;
+    const set = (v: Float32Array): void => {
+      const m = mesh.getMaterials();
+      for (let j = 0; j < n; j++) m[j * 3 + 2] = v[j];
+      this.afterMaskLoad?.(mesh);
+      this.host.setMesh(mesh);
+    };
+    set(now);
+    this.sm.pushStateCustom(
+      () => set(was),
+      () => set(now),
+    );
+    this.host.render();
+    this.changed();
+  }
+
+  /** Told when the working mask was written, so the masking tool redraws it (set by the session). */
+  afterMaskLoad: ((mesh: SculptMesh) => void) | null = null;
 
   /**
    * Every layer becomes part of the object's colour, in one undo step.
@@ -713,12 +1149,15 @@ export class PaintLayers {
 
   // --- strokes ---------------------------------------------------------------
 
-  /** Whether a stroke on `mesh` must not start, and why: the active layer is hidden or at 0%. */
+  /** Whether a stroke on `mesh` must not start, and why: the active layer (or its group) is hidden or at 0%, is a fill, or a group is picked. */
   refusal(mesh: SculptMesh | null): PaintRefusal | null {
     if (!mesh) return null;
     const layer = this.active(mesh);
     if (!layer) return null;
-    if (!layer.visible || layer.opacity <= 0) return { kind: 'hidden', name: layer.name };
+    if (layer.kind === 'group') return { kind: 'group', name: layer.name };
+    if (layer.kind === 'fill') return { kind: 'fill', name: layer.name };
+    const g = layer.parent;
+    if (!layer.visible || layer.opacity <= 0 || (g && (!g.visible || g.opacity <= 0))) return { kind: 'hidden', name: layer.name };
     return null;
   }
 
@@ -730,6 +1169,8 @@ export class PaintLayers {
   refusalText(mesh: SculptMesh | null, tool: number): string | null {
     if (!mesh) return null;
     const hidden = this.refusal(mesh);
+    if (hidden?.kind === 'group') return 'Pick a layer to work on.';
+    if (hidden?.kind === 'fill') return 'A fill layer has one colour. Pick it on the layer, or add a mask.';
     if (hidden) return `The layer "${hidden.name}" is hidden or at 0%. Show it to paint on it.`;
     // Erase (the vendor's index 15) takes alpha off a layer: Base has none.
     if (tool === 15 && !(this.has(mesh) && this.active(mesh))) return 'Erase works on a layer. Add a layer, or tap one, first.';
@@ -740,7 +1181,10 @@ export class PaintLayers {
   beginStroke(mesh: SculptMesh): PaintStroke | null {
     const p = this.per.get(mesh);
     if (!p || !p.list.length) return null;
-    return new PaintStroke(this, mesh, p, p.active);
+    const s = new PaintStroke(this, mesh, p, p.active);
+    // A group or a fill layer takes no stroke: the stroke is there, and does nothing.
+    if (p.active && p.active.kind !== 'layer') s.dead = true;
+    return s;
   }
 
   /** @internal The stroke's reach into the model. */
@@ -867,6 +1311,17 @@ export class PaintLayers {
       }
       l.rgba = out;
     }
+    // Masks go up the same way: a byte a vertex, subdivided as a colour is.
+    for (const l of p.list) {
+      const m = l.mask;
+      if (!m) continue;
+      const ch = new Float32Array(old * 3);
+      for (let i = 0; i < old; i++) ch[i * 3] = m[i] / 255;
+      const up = sub(ch, zero)[0];
+      const out = new Uint8Array(n);
+      for (let i = 0; i < n; i++) out[i] = clampByte(255 * up[i * 3]);
+      l.mask = out;
+    }
     p.n = n;
     p.lin = null;
     const after = this.snap(p);
@@ -923,6 +1378,13 @@ export class PaintLayers {
       }
       l.rgba = out;
     }
+    for (const l of p.list) {
+      const m = l.mask;
+      if (!m) continue;
+      const out = new Uint8Array(n);
+      for (let i = 0; i < n; i++) out[i] = m[pick(i)];
+      l.mask = out;
+    }
     const oldN = p.n;
     p.n = n;
     p.lin = null;
@@ -951,7 +1413,31 @@ export class PaintLayers {
     const ids: number[] = [];
     for (let i = 0; i < p.n; i++) if (b[i * 3] !== uni[0] || b[i * 3 + 1] !== uni[1] || b[i * 3 + 2] !== uni[2]) ids.push(i);
     const items = p.list.map((l) => {
-      const out: SavedPaintLayers['items'][number] = { name: l.name, mode: l.mode, opacity: l.opacity, visible: l.visible };
+      const out: SavedPaintLayers['items'][number] = {
+        name: l.name,
+        mode: l.mode,
+        opacity: l.opacity,
+        visible: l.visible,
+        kind: l.kind,
+        parent: l.parent ? p.list.indexOf(l.parent) : -1,
+        open: l.open,
+      };
+      if (l.fill) out.fill = [l.fill[0], l.fill[1], l.fill[2]];
+      if (l.mask) {
+        // Run-length: a value and how many vertices have it.
+        const vals: number[] = [];
+        const lens: number[] = [];
+        for (let i = 0; i < l.mask.length; i++) {
+          if (vals.length && vals[vals.length - 1] === l.mask[i]) lens[lens.length - 1]++;
+          else {
+            vals.push(l.mask[i]);
+            lens.push(1);
+          }
+        }
+        out.maskVals = Uint8Array.from(vals);
+        out.maskLens = Uint32Array.from(lens);
+        out.maskOn = l.maskOn;
+      }
       const hit = this.touched(l);
       if (hit.length && l.rgba) {
         const a = Uint32Array.from(hit);
@@ -986,7 +1472,32 @@ export class PaintLayers {
         rgba = new Uint8Array(n * 4);
         for (let k = 0; k < s.ids.length; k++) rgba.set(s.rgba.subarray(k * 4, k * 4 + 4), s.ids[k] * 4);
       }
-      return { id: nextId++, name: s.name, mode: s.mode, opacity: s.opacity, visible: s.visible, rgba };
+      let mask: Uint8Array | null = null;
+      if (s.maskVals && s.maskLens) {
+        mask = new Uint8Array(n);
+        let at = 0;
+        for (let k = 0; k < s.maskVals.length; k++) {
+          mask.fill(s.maskVals[k], at, at + s.maskLens[k]);
+          at += s.maskLens[k];
+        }
+      }
+      return {
+        id: nextId++,
+        name: s.name,
+        kind: s.kind ?? 'layer',
+        parent: null,
+        mode: s.mode,
+        opacity: s.opacity,
+        visible: s.visible,
+        rgba,
+        fill: s.fill ? [s.fill[0], s.fill[1], s.fill[2]] : null,
+        mask,
+        maskOn: s.maskOn !== false,
+        open: s.open !== false,
+      };
+    });
+    saved.items.forEach((s, k) => {
+      if (s.parent !== undefined && s.parent >= 0) list[k].parent = list[s.parent];
     });
     if (!list.length) return;
     this.per.set(mesh, { list, active: list[saved.active] ?? null, base, n, lin: null });
@@ -1007,6 +1518,8 @@ export class PaintStroke {
   private afterBytes: number[] | null = null;
   private readonly stamp: Map<number, number> = new Map();
   readonly base: boolean;
+  /** The target takes no stroke (a group, a fill layer): every operation does nothing. */
+  dead = false;
 
   constructor(
     private readonly owner: PaintLayers,
@@ -1093,15 +1606,24 @@ export class PaintStroke {
     return map ? map[j] : j;
   }
 
+  /** How much of a dab the layer's masks let through at highest-level vertex `i`: the layer's and its group's. */
+  private let(i: number): number {
+    const l = this.layer;
+    if (!l) return 1;
+    const m = l.mask && l.maskOn ? l.mask[i] / 255 : 1;
+    const g = l.parent && l.parent.mask && l.parent.maskOn ? l.parent.mask[i] / 255 : 1;
+    return m * g;
+  }
+
   /** Lay colour `rgb` (linear) over the vertices, each by its weight (0 to 1): paint. */
   over(screen: ArrayLike<number>, weights: ArrayLike<number>, rgb: ArrayLike<number>, perVertex = false): void {
     const m = this.owner.internals(this.mesh);
-    if (!m) return;
+    if (!m || this.dead) return;
     const map = m.map;
     for (let k = 0; k < screen.length; k++) {
-      const w = Math.min(1, weights[k]);
-      if (!(w > 0)) continue;
       const i = this.top(screen[k], map);
+      const w = Math.min(1, weights[k]) * this.let(i);
+      if (!(w > 0)) continue;
       const o = perVertex ? k * 3 : 0;
       if (this.layer) {
         const cur = this.read(i);
@@ -1124,13 +1646,13 @@ export class PaintStroke {
 
   /** Lower the alpha of the vertices by their weights: erase. Only a layer has an alpha. */
   erase(screen: ArrayLike<number>, weights: ArrayLike<number>): void {
-    if (!this.layer || !this.layer.rgba) return;
+    if (!this.layer || !this.layer.rgba || this.dead) return;
     const m = this.owner.internals(this.mesh);
     if (!m) return;
     for (let k = 0; k < screen.length; k++) {
-      const w = Math.min(1, weights[k]);
-      if (!(w > 0)) continue;
       const i = this.top(screen[k], m.map);
+      const w = Math.min(1, weights[k]) * this.let(i);
+      if (!(w > 0)) continue;
       const cur = this.read(i);
       if (cur[3] === 0) continue;
       const a = clampByte(cur[3] * (1 - w));
@@ -1146,7 +1668,7 @@ export class PaintStroke {
    */
   blur(screen: ArrayLike<number>, weights: ArrayLike<number>): void {
     const m = this.owner.internals(this.mesh);
-    if (!m) return;
+    if (!m || this.dead) return;
     const mesh = this.mesh as unknown as { getVerticesRingVert(): Uint32Array; getVerticesRingVertStartCount(): Uint32Array };
     const ring = mesh.getVerticesRingVert();
     const rsc = mesh.getVerticesRingVertStartCount();
@@ -1179,9 +1701,9 @@ export class PaintStroke {
     }
     for (let k = 0; k < screen.length; k++) {
       const av = avg[k];
-      const w = Math.min(1, weights[k]);
-      if (!av.length || !(w > 0)) continue;
       const i = this.top(screen[k], map);
+      const w = Math.min(1, weights[k]) * this.let(i);
+      if (!av.length || !(w > 0)) continue;
       const cur = this.read(i);
       if (this.layer) {
         const pa = cur[3] / 255;
