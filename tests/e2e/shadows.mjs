@@ -267,7 +267,10 @@ export const suites = {
     const tierOf = async (cores, viewport, query) => {
       const ctx = await browser.newContext({ viewport, hasTouch: true, isMobile: true, deviceScaleFactor: 2, serviceWorkers: 'block' });
       try {
-        await ctx.addInitScript((n) => Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => n }), cores);
+        await ctx.addInitScript((n) => {
+          Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => n });
+          Object.defineProperty(navigator, 'userAgentData', { get: () => ({ mobile: true }) });
+        }, cores);
         const p = await ctx.newPage();
         await openSculpt(p, base, query);
         return await p.evaluate(() => window.__bozzetto.lighting.baseTier.key + '/' + window.__bozzetto.lighting.baseTier.blurSamples);
