@@ -38,6 +38,14 @@ function eventTime(e: Event): number {
 }
 
 /**
+ * The Calipers button's icon: the Flaticon uicons glyph below, unless an
+ * `icons/calipers.svg` exists (the slot, see icons/README.md), which takes
+ * its place with no code change. This is the one place to swap it.
+ */
+const CALIPERS_SLOT = 'calipers';
+const CALIPERS_ICON = 'fi-ss-ruler-combined';
+
+/**
  * Palette-heading names per tool: the Sculpt panel's top section is named
  * for the ACTIVE brush ("Polish", not "Brush"), so it is clear whose
  * settings the sliders drive. Kept beside the toolbar's own tuple list -
@@ -86,6 +94,16 @@ export class SculptToolbar {
   onToggleSelect: (() => void) | null = null;
   private selectBtn!: HTMLButtonElement;
   private selectOn = false;
+  /** Toolbar calipers toggle (the shell owns the mode). */
+  onToggleMeasure: (() => void) | null = null;
+  private measureBtn!: HTMLButtonElement;
+  private measureOn = false;
+
+  setMeasureActive(on: boolean): void {
+    this.measureOn = on;
+    this.measureBtn.classList.toggle('sculpt-toolbar__btn--active', on);
+    this.refresh();
+  }
 
   setTransformActive(on: boolean): void {
     this.transformBtn.classList.toggle('sculpt-toolbar__btn--active', on);
@@ -288,6 +306,13 @@ export class SculptToolbar {
     onTap(this.transformBtn, () => this.onToggleTransform?.());
     center.appendChild(this.transformBtn);
 
+    // Calipers measure and edit nothing, so like Select and Transform it
+    // is not a brush. Its glyph is the uicons ruler until a drawn one is
+    // dropped in as icons/calipers.svg (the slot name below is the swap).
+    this.measureBtn = toolButton('c', 'Calipers (c): tap the model twice to measure between the points', CALIPERS_SLOT, CALIPERS_ICON, 'Calipers');
+    onTap(this.measureBtn, () => this.onToggleMeasure?.());
+    center.appendChild(this.measureBtn);
+
     this.root.append(center);
     document.body.appendChild(this.root);
 
@@ -306,7 +331,7 @@ export class SculptToolbar {
     for (const [id, btn] of this.brushBtns) {
       // With the Select tool up no brush is the active one, whatever the
       // vendor's current tool index still says.
-      btn.classList.toggle('sculpt-toolbar__btn--active', id === active && !this.selectOn);
+      btn.classList.toggle('sculpt-toolbar__btn--active', id === active && !this.selectOn && !this.measureOn);
     }
     // Latched fills the button like any active tool; armed is the lighter
     // look, since it lasts one stroke.

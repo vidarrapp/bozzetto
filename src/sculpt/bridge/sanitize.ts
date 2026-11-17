@@ -9,6 +9,7 @@ import { parseStoredCurve, parseV1Points, serializeAnchors, type StoredCurve } f
 import type { BrushSymmetry } from './symmetry';
 import { sanitizeSource } from './objSource';
 import { sanitizeGroups } from './groupsRecord';
+import { sanitizeMeasures } from './measure';
 
 /**
  * The one way a scene record comes in: a .bozz file, a shelf entry, a
@@ -172,6 +173,7 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
     painted: bool(m.painted),
     source,
     groups,
+    measures: sanitizeMeasures(m.measures),
   });
 }
 

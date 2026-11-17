@@ -179,6 +179,27 @@ export const TOOLS: Topic[] = [
     ],
   },
   {
+    id: 'tool-calipers',
+    title: 'Calipers',
+    group: G,
+    tools: ['Calipers'],
+    blocks: [
+      p('Measures the straight distance between two points on the model, in centimetres. It is not a brush: it never changes the model and never makes an undo step. Default hotkey: **C**. It needs real units, so in a scene without them the Tool panel says "Set the scene\'s scale first" and has a Set scale button.'),
+      list(
+        '**Tap** the model, or press with the pen, to set the first point. Tap again for the second. A line joins them, with the length to one decimal at its middle.',
+        '**Drag** either end to move it along the surface.',
+        'A **third tap** starts a new measurement. Picking another tool clears the one you have not pinned.',
+        'Two fingers still orbit, pan and pinch, and one finger off the model still orbits.',
+      ),
+      h('In the Tool panel'),
+      options(
+        ['Pin', 'Keeps the measurement in the scene. It is listed in the Model panel\'s Measure section, and is saved with the scene. The label by the line has a Pin button too.'],
+        ['Mirror', 'With **Mirror sculpting** on, adds the mirror of the measurement across the symmetry plane and shows both lengths with their difference. Unmirror takes it away again.'],
+      ),
+      p('Points are kept on the object, so moving, turning or scaling it keeps them on it, and the length follows its scale. A measurement belongs to one object: both points must be on it. Tab hides the lines with the rest of the interface.'),
+    ],
+  },
+  {
     id: 'tool-negative',
     title: 'Carve (negative)',
     group: G,

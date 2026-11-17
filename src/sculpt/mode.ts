@@ -42,6 +42,7 @@ import { isProjectId } from '../net/ids';
 import { takeOpen } from '../ui/openToken';
 import { beforeLeaving } from '../ui/leaving';
 import { SculptToolbar } from './ui/SculptToolbar';
+import { MeasureOverlay } from './ui/MeasureOverlay';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
 import { ScaleBanner, sceneSubjects } from './ui/SetScale';
@@ -744,6 +745,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sculptPanel?.refreshState();
     modelPanel?.refreshState();
     modelPanel?.refreshGroups();
+    modelPanel?.refreshMeasures();
     syncPanelMaterial();
     if (gizmo.isActive()) gizmo.attach(gizmoTarget());
     refreshReadout();
@@ -839,8 +841,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // used to follow from onTick, a frame behind the view while it turned.
   // The cursor re-projects when the camera moves under a still pointer
   // (wheel zoom), and a hover owed a pick gets it, once a frame.
+  // The calipers' lines and labels re-project with the camera and with
+  // any object that moves under them (MeasureOverlay.tick compares).
+  let measureOverlay: MeasureOverlay | null = null;
   const followTick = (): void => {
     input.flushHover();
+    measureOverlay?.tick();
     const cam = viewer.camera;
     if (cam.position.equals(camScratch.prevPos) && cam.quaternion.equals(camScratch.prevQuat)) {
       return;
@@ -1229,6 +1235,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const enterTransform = (mode: GizmoMode): void => {
     if (gizmo.isActive() && mode !== 'all' && gizmo.getMode() === mode) return;
     input.exitSelect();
+    input.exitMeasure();
     gizmo.enter(mode, gizmoTarget());
     cursor.hide();
     toolbar.setTransformActive(true);
@@ -1310,6 +1317,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       maskTint: viewer.materials.getSculptMaskTint(),
     };
     input.exitSelect();
+    input.exitMeasure();
     exitTransform();
     for (const p of sidePanels) p?.setCollapsed(true);
     // The mask's darkening is a working aid, not the look.
@@ -1364,6 +1372,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     else enterTransform('all');
   };
   toolbar.onToggleSelect = () => input.toggleSelect();
+  toolbar.onToggleMeasure = () => input.toggleMeasure();
+  // Calipers: the tool bar, the Tool panel and the highlights follow the
+  // mode; a pinned measurement is something to save with the scene.
+  input.onMeasureModeChange = (on) => {
+    toolbar.setMeasureActive(on);
+    sculptPanel?.refreshBrush();
+    syncHighlights();
+  };
+  session.measure.onPersist = () => persist.markDirty();
+  measureOverlay = new MeasureOverlay(viewer, session, input.measureTool, () => input.isMeasuring());
   strip.onToggleChrome = () => chrome.toggle();
   chrome.onChange = (hidden) => {
     strip.setChromeHidden(hidden);
@@ -1764,6 +1782,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
   });
   modelPanel.onGroupColors = (on) => setGroupColors(on);
+  // Symmetry decides whether a measurement can be mirrored: the Measure list follows the switch.
+  {
+    const prevSymmetry = session.onSymmetryChange;
+    session.onSymmetryChange = (on) => {
+      prevSymmetry?.(on);
+      modelPanel?.refreshMeasures();
+    };
+  }
   modelPanel.onGroupFromMask = () => groupFromMask();
   modelPanel.onMerge = () => scenePanel?.mergeSelected();
   // A quad remesh holds its object while it runs: drawn as locked, the
@@ -1785,6 +1811,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     modelPanel?.refreshUnits();
     sculptPanel?.refreshBrush();
     scaleBanner?.refresh();
+    modelPanel?.refreshMeasures();
     // The Render panel's GTAO Radius is in centimetres on real units and a
     // share of the subject without: it is built again on the scale it has now.
     window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
@@ -1838,6 +1865,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       persist.markDirty(false);
     },
   });
+  // The Calipers ask for the scale when a scene has none: both panels open Set scale.
+  if (sculptPanel) sculptPanel.onSetScale = () => scaleBanner.offer();
+  if (modelPanel) modelPanel.onSetScale = () => scaleBanner.offer();
   // Both callbacks are single-slot and already claimed (the toolbar owns
   // onToolChange, the rail owns onBrushChange), so the palette chains onto
   // each rather than replacing it.
@@ -2252,6 +2282,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.materials.setSculptGroupColors(false);
     GeometrySync.decor = null;
     input.exitSelect();
+    input.exitMeasure();
+    measureOverlay?.dispose();
+    measureOverlay = null;
+    session.measure.onPersist = null;
+    input.onMeasureModeChange = null;
     viewer.tapToFocus = true;
     viewer.onTick = null;
     viewer.onPostControls = null;

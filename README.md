@@ -150,6 +150,7 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 
 ### Unreleased
 
+- **Calipers.** A new tool (C, after Transform) measures the distance between two points on the model in centimetres: tap or press with the Pencil twice, drag an end to move it, and pin the measurement to keep it with the scene and compare it with others in the Model panel's **Measure** section. With symmetry on, **Mirror** adds the other side and shows the difference.
 - **Hiding the interface slides.** Tab (or the eye button) now slides the left tabs and the brush controls out to the left, the right tabs out to the right, the tool bar and transport down and the menu bar up, and brings them back the same way; with reduced motion it is instant as before.
 - **Sliders you can grab anywhere.** On a phone or iPad, press anywhere on a slider's row (its name, its number or its line) and drag sideways to change it, so a slider at 0 or full is no longer hard to catch. A plain tap does nothing, and dragging up or down still scrolls the panel. Depth of field now sits under **Camera** in the Render panel.
 - **One Render panel.** Render now has the same sections everywhere (Lighting, Camera with depth of field, Environment, Ambient occlusion), with every light's controls and **Reset look** in Sculpt, Armature, Present, the viewer and review, and in the viewer **Material** is a tab on the left like the workspaces.
