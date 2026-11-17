@@ -167,7 +167,8 @@ export class FileMenu {
 
   /** Save to library for anyone who has an account or the owner's access; for a guest, the way in where the site has accounts, and nothing where it has none. */
   private libraryItems(full: () => boolean): MenuItem[] {
-    if (this.role === 'guest') {
+    // Until the sign-in has answered, nobody is known to be here: the menu shows what a guest's does.
+    if (this.role === null || this.role === 'guest') {
       if (!this.accounts) return [];
       return [
         {
