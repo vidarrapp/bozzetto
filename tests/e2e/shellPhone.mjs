@@ -258,7 +258,7 @@ export const suites = {
         const b = document.querySelector('.sculpt-toolbar__brushes');
         b.scrollLeft = b.scrollWidth;
       });
-      await p.waitForTimeout(300);
+      await p.waitForFunction(() => /^(start|both)$/.test(document.querySelector('.sculpt-toolbar__brushes').dataset.scrollCue), null, { timeout: 5000 }).catch(() => {});
       const end = await p.evaluate(() => {
         const b = document.querySelector('.sculpt-toolbar__brushes');
         return `${b.dataset.scrollCue} at ${b.scrollLeft} of ${b.scrollWidth - b.clientWidth}`;

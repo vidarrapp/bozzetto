@@ -398,7 +398,16 @@ export const suites = {
     t.eq(await page.evaluate(() => document.querySelectorAll('.panel--material').length), 1, 'once');
     // The phone: five tabs on 390px.
     await page.setViewportSize({ width: 390, height: 844 });
-    await settle(page, 500);
+    // The page is busy a while after a resize (the view's buffers are made again): wait for the row to be laid out again.
+    await page.waitForFunction(
+      () => {
+        const row = [...document.querySelectorAll('.panel--left > .panel__handle')].filter((e) => e.getClientRects().length > 0).map((e) => e.getBoundingClientRect());
+        return innerWidth === 390 && row.length > 1 && Math.abs(row[1].left - row[0].right - 1) < 0.5;
+      },
+      null,
+      { timeout: 30_000 },
+    );
+    await settle(page, 300);
     const r = await tabs(page);
     fitChecks(t, r, 390, 'Present at 390');
     await page.setViewportSize({ width: 1280, height: 800 });

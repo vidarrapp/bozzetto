@@ -216,9 +216,11 @@ export function startShellLayout(): () => void {
   const afterResize = (): void => {
     soon();
     clearTimeout(late);
-    late = window.setTimeout(soon, 200);
+    late = window.setTimeout(soon, 400);
   };
   window.addEventListener('resize', afterResize);
+  const phoneRules = window.matchMedia('(max-width: 599px)');
+  phoneRules.addEventListener('change', afterResize);
   window.addEventListener(SHELL_LAYOUT_EVENT, soon);
   // A panel sliding in or out moves its tab while it goes (the tab is fixed inside it): measure again once it has stopped.
   document.addEventListener('transitionend', soon, true);
@@ -230,6 +232,7 @@ export function startShellLayout(): () => void {
     ro.disconnect();
     mo.disconnect();
     window.removeEventListener('resize', afterResize);
+    phoneRules.removeEventListener('change', afterResize);
     window.removeEventListener(SHELL_LAYOUT_EVENT, soon);
     document.removeEventListener('transitionend', soon, true);
     const root = document.documentElement.style;
