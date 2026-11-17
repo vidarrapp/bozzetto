@@ -550,13 +550,13 @@ figure, with a stroke of 2 px (3 px when orange) and a thin dark casing
 (`--bz-strip`) so it reads over pale clay and over the dark ground, and
 each has an invisible pick circle 44 px across.
 
-- **Reach** (hands, feet): a ring that faces the camera. Pinned, a small
+- **Reach** (hands, feet): a ring that faces the camera, 22 px in radius (RING_RADIUS). Pinned, a small
   dot in its middle. A tap selects it, with the move gizmo.
-- **Root**: a rectangle framing the hips; drag it and the whole figure
-  moves. It is orange while dragged or while the pelvis is selected.
+- **Root**: a wire box (12 edges) around the pelvis part, in the pelvis's own frame, so it turns with the hips; drag it and the whole figure moves.
+  It is orange while dragged or while the pelvis is selected.
 - **Pole** (knee, elbow): an arrowhead out from the joint along the way it
   points, half the limb segment above it away (in front of a knee, behind
-  an elbow), pointing at the joint it aims, joined to it by a thin dashed
+  an elbow), pointing away from the joint, the way it aims, joined to it by a thin dashed
   line. Dragging it turns the joint toward it.
 - **Look-at** (head): the same arrowhead and dashed line, a head and a
   half in front of the face. Dragging it turns the head to face it, the

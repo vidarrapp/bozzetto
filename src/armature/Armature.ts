@@ -1124,13 +1124,45 @@ export class Armature {
   }
 
   /**
-   * Where the root's ball sits in the world: halfway along the pelvis bone,
-   * which is the middle of the blocks' pelvis and inside the mannequins'
-   * hips. The root's own joint is at the bottom of the blocks' pelvis, and
-   * under the centre of its gizmo.
+   * The box round the hips, as a matrix: a unit cube (corners at plus and
+   * minus one) maps onto the pelvis part's bounds, with a small margin, in
+   * the pelvis part's own frame, so it turns and scales with the hips. A
+   * rig whose pelvis has no part mesh gets one from the span of its hip
+   * joints. False when the rig has no root bone to frame.
+   */
+  rootBoxMatrix(out: Matrix4): boolean {
+    const bone = this.partBones.get(this.root.name) ?? this.root;
+    const g = this.partGeometry.get(this.root.name);
+    const centre = _pa;
+    const half = _pb;
+    this.mesh.updateMatrixWorld(true);
+    if (g) {
+      g.boundingBox ??= new Box3().setFromBufferAttribute(g.getAttribute('position') as BufferAttribute);
+      g.boundingBox.getCenter(centre);
+      g.boundingBox.getSize(half).multiplyScalar(0.5);
+    } else {
+      const l = this.bones.get('thigh.L');
+      const r = this.bones.get('thigh.R');
+      if (!l || !r) return false;
+      const a = bone.worldToLocal(_pc.setFromMatrixPosition(l.matrixWorld));
+      const b = bone.worldToLocal(_pd.setFromMatrixPosition(r.matrixWorld));
+      centre.addVectors(a, b).multiplyScalar(0.5);
+      const span = a.distanceTo(b);
+      half.set(span * 0.85, span * 0.5, span * 0.55);
+    }
+    // A small margin, so the lines stand off the surface.
+    half.addScalar(this.len(0.008)).multiplyScalar(1.03);
+    return !!out.copy(bone.matrixWorld).multiply(_bm.makeTranslation(centre.x, centre.y, centre.z)).multiply(_bm.makeScale(half.x, half.y, half.z));
+  }
+
+  /**
+   * Where the root's handle sits in the world: the middle of the box round
+   * the hips (rootBoxMatrix), which is where the pelvis's move gizmo sits
+   * when the pelvis is selected.
    */
   rootHandleWorld(out: Vector3): Vector3 {
-    return this.effectorWorld(this.root.name, out, 0.5);
+    if (!this.rootBoxMatrix(_bm2)) return this.effectorWorld(this.root.name, out, 0.5);
+    return out.setFromMatrixPosition(_bm2);
   }
 
   /**
@@ -1951,6 +1983,8 @@ const _lw = new Quaternion();
 const _lh = new Quaternion();
 const _lR = new Quaternion();
 const _le = new Euler();
+const _bm = new Matrix4();
+const _bm2 = new Matrix4();
 /** A look is settled when the head faces the point to within a fiftieth of a degree. */
 const LOOK_SETTLED = Math.cos((0.02 * Math.PI) / 180);
 

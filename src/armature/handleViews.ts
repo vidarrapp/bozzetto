@@ -4,9 +4,9 @@
  *
  *   ring    a reach handle: a circle that always faces the camera. Pinned,
  *           the same ring with a small filled dot in its middle.
- *   rect    the root's: a rectangle framing the hips, as a bounding box does.
+ *   box     the root's: the wire box round the hips, in the pelvis's own frame.
  *   arrow   a pole or look-at target: an arrowhead outline, turned on the
- *           page to point at the joint or the head it aims.
+ *           page to point away from the joint or the head it belongs to.
  *   dash    the thin dashed line from that joint to its target.
  *   floor   the ring under a planted foot, flat on the floor.
  *
@@ -22,10 +22,11 @@
  * and orange - the interface's one colour for the thing in hand - only
  * while selected or dragged.
  */
-import { Color, DoubleSide, Mesh, PlaneGeometry, Vector2, Vector3 } from 'three';
+import { BufferGeometry, Color, DoubleSide, Float32BufferAttribute, Mesh, PlaneGeometry, Vector2, Vector3 } from 'three';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import {
   abs,
+  attribute,
   cameraProjectionMatrix,
   cameraViewMatrix,
   clamp,
@@ -48,13 +49,13 @@ import {
   vec4,
 } from 'three/tsl';
 
-export type HandleShape = 'ring' | 'rect' | 'arrow' | 'dash' | 'floor';
+export type HandleShape = 'ring' | 'box' | 'arrow' | 'dash' | 'floor';
 export type HandleState = 'rest' | 'hover' | 'hot';
 
 /** Sizes in CSS pixels. */
-export const RING_RADIUS = 11;
-const RING_HALF = 17;
-const DOT_RADIUS = 3.4;
+export const RING_RADIUS = 22;
+const RING_HALF = RING_RADIUS + 6;
+const DOT_RADIUS = RING_RADIUS * 0.31;
 const ARROW_HALF = 16;
 /** The arrowhead: its tip, the depth of its base below the middle, and half its base. */
 const ARROW_TIP = 11;
@@ -64,12 +65,10 @@ const ARROW_WING = 9.5;
 const DASH_HALF = 3;
 const DASH_LENGTH = 5;
 const DASH_PERIOD = 9;
-/** How far short of the arrow's middle the dashes stop, so they end at its tip. */
-const DASH_STOP = ARROW_TIP;
+/** How far short of the arrow's middle the dashes stop, so they end at its base. */
+const DASH_STOP = ARROW_BASE;
 /** The dark casing on each side of a stroke. */
 const EDGE_PX = 1.25;
-/** The smallest the root's rectangle is drawn, half-extent in CSS pixels. */
-export const RECT_MIN_HALF = 15;
 /** Stroke widths in CSS pixels at rest and selected or dragged. */
 const STROKE = { rest: 2, hot: 3 };
 const DASH_STROKE = { rest: 1, hot: 1.6 };
@@ -110,10 +109,9 @@ export interface HandleView {
   colour: { value: Color };
   thick: { value: number };
   dot: { value: number };
-  /** Arrow: the world point it points at. Dash: its two ends. Rect: its half size in world units. */
+  /** Arrow: the joint or head it points away from. Dash: its two ends. */
   toward: { value: Vector3 };
   from: { value: Vector3 };
-  half: { value: Vector2 };
   state: HandleState;
 }
 
@@ -135,9 +133,39 @@ const paint = (d: Tsl, stroke: Tsl, edge: Tsl): { rgb: Tsl; alpha: Tsl } => {
 };
 
 /** The shapes' materials and the one quad they are drawn on; dispose when the mode ends. */
+/** The twelve edges of the cube from -1 to 1, each a four-corner strip (see the box shape). */
+function cubeEdgeGeometry(): BufferGeometry {
+  const corner = (i: number): number[] => [i & 1 ? 1 : -1, i & 2 ? 1 : -1, i & 4 ? 1 : -1];
+  const a: number[] = [];
+  const b: number[] = [];
+  const side: number[] = [];
+  const index: number[] = [];
+  for (let i = 0; i < 8; i++) {
+    for (const bit of [1, 2, 4]) {
+      if (i & bit) continue;
+      const base = a.length / 3;
+      for (const [along, across] of [[0, -1], [0, 1], [1, 1], [1, -1]]) {
+        a.push(...corner(i));
+        b.push(...corner(i | bit));
+        side.push(along, across);
+      }
+      index.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(new Array(a.length).fill(0), 3));
+  g.setAttribute('edgeA', new Float32BufferAttribute(a, 3));
+  g.setAttribute('edgeB', new Float32BufferAttribute(b, 3));
+  g.setAttribute('side', new Float32BufferAttribute(side, 2));
+  g.setIndex(index);
+  return g;
+}
+
+/** The shapes' materials and the one quad they are drawn on; dispose when the mode ends. */
 export class HandleKit {
   private readonly quad = new PlaneGeometry(2, 2);
   private readonly floorQuad = new PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
+  private readonly cubeEdges = cubeEdgeGeometry();
   private readonly made: HandleView[] = [];
   private readonly colours = tokens();
 
@@ -151,7 +179,6 @@ export class HandleKit {
     const pin = uniform(0);
     const toward = uniform(new Vector3());
     const from = uniform(new Vector3());
-    const half = uniform(new Vector2(1, 1));
     const material = new MeshBasicNodeMaterial();
     material.transparent = true;
     material.depthTest = shape === 'floor';
@@ -173,29 +200,32 @@ export class HandleKit {
       const ring = abs(r.sub(RING_RADIUS)).sub(thick.mul(0.5));
       const centreDot = r.sub(DOT_RADIUS).add(float(1).sub(pin).mul(1000));
       out = paint(min(ring, centreDot), colour, edge);
-    } else if (shape === 'rect') {
-      // A rectangle of world size, facing the camera, never smaller than RECT_MIN_HALF on the page.
-      const view = cameraViewMatrix.mul(vec4(centre, 1));
-      const clipC = cameraProjectionMatrix.mul(view);
-      const clipE = cameraProjectionMatrix.mul(view.add(vec4(half.x, half.y, 0, 0)));
-      const ndcHalf = clipE.xy.div(clipE.w).sub(clipC.xy.div(clipC.w));
-      const px0 = abs(ndcHalf).mul(viewCss).mul(0.5);
-      const grow = max(float(1), float(RECT_MIN_HALF).div(max(min(px0.x, px0.y), float(0.001))));
-      const clip = cameraProjectionMatrix.mul(view.add(vec4(positionGeometry.xy.mul(half).mul(grow), 0, 0)));
-      material.vertexNode = clip;
-      const hPx = varying(px0.mul(grow));
-      const p = local.mul(hPx);
-      const q = abs(p).sub(hPx.sub(EDGE_PX + 3));
-      const box = length(max(q, vec2(0, 0))).add(min(max(q.x, q.y), float(0)));
-      out = paint(abs(box).sub(thick.mul(0.5)), colour, edge);
+    } else if (shape === 'box') {
+      // The twelve edges of a unit cube carried by the mesh's own matrix,
+      // each a strip between its two ends, a fixed width on the page.
+      const ea = attribute('edgeA', 'vec3');
+      const eb = attribute('edgeB', 'vec3');
+      const side = attribute('side', 'vec2');
+      const a = toClip(modelWorldMatrix.mul(vec4(ea, 1)).xyz);
+      const b = toClip(modelWorldMatrix.mul(vec4(eb, 1)).xyz);
+      const pa = a.xy.div(a.w).mul(viewCss).mul(0.5);
+      const pb = b.xy.div(b.w).mul(viewCss).mul(0.5);
+      const d = pb.sub(pa);
+      const dir = d.div(max(length(d), float(0.0001)));
+      const across = vec2(dir.y.negate(), dir.x);
+      const spot = pa.add(d.mul(side.x)).add(across.mul(side.y.mul(DASH_HALF)));
+      material.vertexNode = vec4(spot.div(viewCss.mul(0.5)), 0.5, 1);
+      const band = abs(varying(side.y).mul(DASH_HALF)).sub(thick.mul(0.5));
+      out = paint(band, colour, edge);
     } else if (shape === 'arrow') {
-      // The quad is turned on the page so its +y points at the joint or head it aims.
+      // The quad is turned on the page so its +y points away from the joint or head it belongs to.
       const clipC = toClip(centre);
       const clipJ = toClip(toward);
       const ndcDelta = clipJ.xy.div(clipJ.w).sub(clipC.xy.div(clipC.w));
       const px = ndcDelta.mul(viewCss).mul(0.5);
       const len = length(px);
-      const dir = mix(vec2(0, 1), px.div(max(len, float(0.0001))), clamp(len.mul(1000), 0, 1));
+      // Pointing away from the joint, the way it aims: the quad's +y is the direction from the joint.
+      const dir = mix(vec2(0, 1), px.div(max(len, float(0.0001))), clamp(len.mul(1000), 0, 1)).negate();
       const right = vec2(dir.y, dir.x.negate());
       const spot = positionGeometry.xy.mul(ARROW_HALF);
       const turned = right.mul(spot.x).add(dir.mul(spot.y));
@@ -243,7 +273,8 @@ export class HandleKit {
     // what is there. Written over the whole quad, they put a dark box round
     // every handle.
     material.mrtNode = mrt({ output: vec4(out.rgb, out.alpha), normal: vec4(0, 0, 0, 0), wire: vec4(0, 0, 0, 0) }) as unknown as typeof material.mrtNode;
-    const mesh = new Mesh(shape === 'floor' ? this.floorQuad : this.quad, material);
+    const mesh = new Mesh(shape === 'floor' ? this.floorQuad : shape === 'box' ? this.cubeEdges : this.quad, material);
+    if (shape === 'box') mesh.matrixAutoUpdate = false;
     mesh.name = name;
     mesh.renderOrder = shape === 'floor' ? 20 : 30;
     mesh.frustumCulled = false;
@@ -257,7 +288,6 @@ export class HandleKit {
       dot: pin as unknown as { value: number },
       toward: toward as unknown as { value: Vector3 },
       from: from as unknown as { value: Vector3 },
-      half: half as unknown as { value: Vector2 },
       state: 'rest',
     };
     this.made.push(handle);
@@ -306,5 +336,6 @@ export class HandleKit {
     this.made.length = 0;
     this.quad.dispose();
     this.floorQuad.dispose();
+    this.cubeEdges.dispose();
   }
 }
