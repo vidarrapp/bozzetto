@@ -377,6 +377,20 @@ export const suites = {
     await page.keyboard.press('x');
 
     t.ok((await meshSum(page)) === sum0 && (await history(page)) === hist0, 'through all of it the mesh and the undo stack were never touched');
+
+    // Vertices change under a pinned point (as a sculpt, remesh or subdivide would): no throw, the stored point
+    // stays, and once the mesh is still it is re-snapped to the nearest point of the new surface.
+    const grown = await page.evaluate(async () => {
+      const ss = window.__sculpt.session;
+      const mesh = ss.getMesh();
+      const m = ss.measure.list(mesh)[0];
+      const r0 = Math.hypot(...m.a);
+      const v = mesh.getVertices();
+      for (let i = 0; i < v.length; i++) v[i] *= 1.25;
+      for (let i = 0; i < 40; i++) await new Promise((r) => requestAnimationFrame(r));
+      return { r0, r1: Math.hypot(...m.a) };
+    });
+    t.ok(Math.abs(grown.r1 / grown.r0 - 1.25) < 0.04, `a pinned point follows a changed surface by re-snapping (radius ${grown.r0.toFixed(2)} to ${grown.r1.toFixed(2)})`);
   },
 
   async calipersTouch(page, base, t) {

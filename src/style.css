@@ -1376,12 +1376,13 @@ html.is-page :is(#app, #admin, .page-scroll).page-scroll {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px;
-  background: var(--bz-raised);
+  padding: 1px 4px;
+  /* No box: a dark halo keeps the length readable over clay and ground alike. */
+  background: none;
   color: var(--bz-text);
-  box-shadow: var(--bz-raised-shadow);
+  text-shadow: 0 0 2px #141414, 0 0 2px #141414, 0 0 4px #141414, 0 0 4px #141414;
   font-family: var(--bz-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 16px;
   white-space: nowrap;
 }
@@ -1394,6 +1395,7 @@ html.is-page :is(#app, #admin, .page-scroll).page-scroll {
   border-radius: 0;
   background: var(--bz-control);
   color: var(--bz-text);
+  text-shadow: none;
   font-family: var(--bz-font);
   font-size: 12px;
   cursor: pointer;

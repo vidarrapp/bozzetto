@@ -69,6 +69,75 @@ export function lengthIn(m: Mat4, a: Vec3, b: Vec3): number {
   return distance(toWorld(m, a), toWorld(m, b));
 }
 
+
+const TRI_INDEX = 4294967295;
+
+/** The point on triangle (a, b, c) nearest p (Ericson, Real-Time Collision Detection). */
+function closestOnTriangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3): Vec3 {
+  const sub = (u: Vec3, v: Vec3): Vec3 => [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
+  const dot = (u: Vec3, v: Vec3): number => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const at = (o: Vec3, d: Vec3, t: number): Vec3 => [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t];
+  const ab = sub(b, a);
+  const ac = sub(c, a);
+  const ap = sub(p, a);
+  const d1 = dot(ab, ap);
+  const d2 = dot(ac, ap);
+  if (d1 <= 0 && d2 <= 0) return a;
+  const bp = sub(p, b);
+  const d3 = dot(ab, bp);
+  const d4 = dot(ac, bp);
+  if (d3 >= 0 && d4 <= d3) return b;
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) return at(a, ab, d1 / (d1 - d3));
+  const cp = sub(p, c);
+  const d5 = dot(ab, cp);
+  const d6 = dot(ac, cp);
+  if (d6 >= 0 && d5 <= d6) return c;
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) return at(a, ac, d2 / (d2 - d6));
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) return at(b, sub(c, b), (d4 - d3) / (d4 - d3 + (d5 - d6)));
+  const denom = 1 / (va + vb + vc);
+  return at(at(a, ab, vb * denom), ac, vc * denom);
+}
+
+/** The nearest point on a mesh's surface (its local space) to a local point. Brute force: called once a change has settled. */
+export function nearestOnSurface(mesh: SculptMesh, p: Vec3): Vec3 {
+  const v = mesh.getVertices();
+  const f = mesh.getFaces();
+  const nf = mesh.getNbFaces();
+  const P = (i: number): Vec3 => [v[i * 3], v[i * 3 + 1], v[i * 3 + 2]];
+  let best = p;
+  let bestD = Infinity;
+  const tri = (i: number, j: number, k: number): void => {
+    const q = closestOnTriangle(p, P(i), P(j), P(k));
+    const d = distance(p, q);
+    if (d < bestD) {
+      bestD = d;
+      best = q;
+    }
+  };
+  for (let i = 0; i < nf; i++) {
+    const a = f[i * 4];
+    const b = f[i * 4 + 1];
+    const c = f[i * 4 + 2];
+    const d = f[i * 4 + 3];
+    tri(a, b, c);
+    if (d !== TRI_INDEX && d !== undefined) tri(a, c, d);
+  }
+  return best;
+}
+
+/** A cheap fingerprint of a mesh's vertices: its counts and a spread of sampled coordinates. */
+function meshStamp(mesh: SculptMesh): string {
+  const v = mesh.getVertices();
+  const n = mesh.getNbVertices();
+  let h = 0;
+  const step = Math.max(1, Math.floor(n / 48));
+  for (let i = 0; i < n; i += step) h += v[i * 3] * 1.3 + v[i * 3 + 1] * 2.9 + v[i * 3 + 2] * 5.3;
+  return `${n}:${mesh.getNbFaces()}:${h.toFixed(5)}`;
+}
+
 const NAME = /^Measure (\d+)$/;
 /** More than anyone pins; a file's thousands are not measurements. */
 const MAX_PER_OBJECT = 200;
@@ -259,6 +328,45 @@ export class Measurements {
     m.mirror = null;
     this.changed();
     if (m.pinned) this.onPersist?.();
+  }
+
+
+  // --- the mesh changed under a pinned point ---------------------------------
+
+  private readonly stamps = new WeakMap<object, { seen: string; snapped: string; still: number }>();
+
+  /**
+   * Called every frame by the overlay. When an object's vertices change
+   * (sculpting, remesh, subdivide) the pinned points keep their stored
+   * local positions and are drawn there; once the mesh has been still for
+   * a few frames they are re-snapped to the nearest point of the surface,
+   * so a point never throws or vanishes and ends up on the new surface.
+   */
+  settle(mesh: SculptMesh): void {
+    const list = this.pinned.get(mesh);
+    const w = this.working?.mesh === mesh ? this.working.m : null;
+    if (!list?.length && !w) return;
+    const now = meshStamp(mesh);
+    const st = this.stamps.get(mesh);
+    if (!st) {
+      this.stamps.set(mesh, { seen: now, snapped: now, still: 0 });
+      return;
+    }
+    if (st.seen !== now) {
+      st.seen = now;
+      st.still = 0;
+      return;
+    }
+    if (st.snapped === now || ++st.still < 8) return;
+    st.snapped = now;
+    const snap = (p: Vec3): Vec3 => nearestOnSurface(mesh, p);
+    for (const m of [...(list ?? []), ...(w ? [w] : [])]) {
+      m.a = snap(m.a);
+      if (m.b) m.b = snap(m.b);
+      if (m.mirror) m.mirror = { a: snap(m.mirror.a), b: snap(m.mirror.b) };
+    }
+    this.changed();
+    if (list?.length) this.onPersist?.();
   }
 
   // --- lengths -----------------------------------------------------------

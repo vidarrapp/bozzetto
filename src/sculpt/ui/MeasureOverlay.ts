@@ -72,6 +72,7 @@ export class MeasureOverlay {
    */
   tick(): void {
     const items = this.items();
+    for (const mesh of new Set(items.map((i) => i.mesh))) this.session.measure.settle(mesh);
     if (!items.length) {
       if (this.seen !== '') this.clear();
       return;
