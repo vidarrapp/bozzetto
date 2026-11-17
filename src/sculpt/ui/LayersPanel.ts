@@ -23,7 +23,7 @@ export class LayersPanel extends SidePanel {
   /** Everything of the sculpt layers, which the Paint workspace puts away for its own. */
   private readonly sculptEl: HTMLDivElement;
   /** The paint layers (PaintLayersView), shown in the Paint workspace in place of the sculpt layers. */
-  readonly paintView: PaintLayersView;
+  private paintViewMade: PaintLayersView | null = null;
   private paintOn = false;
 
   /** A layer edit that the autosave and the display must hear of. */
@@ -97,19 +97,25 @@ export class LayersPanel extends SidePanel {
     foot.append(this.flattenBtn);
     this.sculptEl.append(foot);
 
-    this.paintView = new PaintLayersView(session);
-    this.paintView.el.hidden = true;
-    this.paintView.onEdit = () => this.onEdit?.();
-    this.body.append(this.paintView.el);
-
     this.refresh();
+  }
+
+  /** The paint layers' view, made the first time Paint is entered (Sculpt's tab has nothing of it). */
+  get paintView(): PaintLayersView {
+    if (!this.paintViewMade) {
+      const v = new PaintLayersView(this.session);
+      v.onEdit = () => this.onEdit?.();
+      this.body.append(v.el);
+      this.paintViewMade = v;
+    }
+    return this.paintViewMade;
   }
 
   /** In the Paint workspace the tab shows the paint layers; in Sculpt, the sculpt layers. */
   setPaint(on: boolean): void {
     this.paintOn = on;
     this.sculptEl.hidden = on;
-    this.paintView.el.hidden = !on;
+    if (on || this.paintViewMade) this.paintView.el.hidden = !on;
     this.refresh();
   }
 

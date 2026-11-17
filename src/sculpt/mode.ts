@@ -56,6 +56,8 @@ import { FileMenu } from './ui/FileMenu';
 import { TopMenu, type MenuItem } from './ui/TopMenu';
 import { SHELL_LAYOUT_EVENT } from './ui/shellLayout';
 import * as blendModule from '../paint/blend';
+import { projectSource, type PictureLookup } from './bridge/projectSource';
+import type { ProjectSource } from './bridge/paintTools';
 import { helpMenuItems } from '../help/menu';
 import { TitleStrip, type PathStep, type Workspace } from './ui/TitleStrip';
 import { mountAccountHandle } from '../ui/account/menu';
@@ -632,6 +634,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The Paint workspace (enterPaint / leavePaint, below): a workspace of this page as Present is.
   let paintOn = false;
   let togglePaintWorkspace: () => void = () => undefined;
+  let projectPrefetch: (() => void) | null = null;
   let viewItems: () => MenuItem[] = () => [];
   const extras = new Map<
     SculptMesh,
@@ -1943,6 +1946,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   referencePanel = new ReferencePanel(referenceBoard);
   referencePanel.setLinked(() => !!fileActions.link);
   referenceView = new ReferenceView(referenceBoard, viewer);
+  // Project paints the pictures in the view onto the model (bridge/projectSource.ts).
+  {
+    const lookup = referenceView as unknown as Partial<PictureLookup>;
+    if (typeof lookup.imageAt === 'function' && typeof lookup.picturesInView === 'function') {
+      const source = projectSource(lookup as PictureLookup);
+      (session.getSculptManager().getTool(Enums.Tools.PROJECT) as unknown as { source: ProjectSource | null }).source = source;
+      projectPrefetch = () => source.prefetch();
+    }
+  }
   const offIntake = installIntake(referenceBoard, () => !!referencePanel?.isOpen());
   modelPanel = new ModelPanel(session, viewer);
   layersPanel = new LayersPanel(session);
@@ -2071,6 +2083,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     input.onToolChange = () => {
       prevToolChange?.();
       sculptPanel?.refreshBrush();
+      // Project reads the pictures in the view: have them ready before the first press.
+      if (input.currentToolIndex() === Enums.Tools.PROJECT) projectPrefetch?.();
     };
     input.onPaintColorChange = () => sculptPanel?.refreshBrush();
     const prevBrushChange = input.onBrushChange;

@@ -128,6 +128,10 @@ export class PaintPickTool extends Paint {
   override pushState(): void {
     // Sampling edits nothing: no undo step.
   }
+
+  override stroke(): void {
+    // A press samples; it never lays colour down.
+  }
 }
 
 /**

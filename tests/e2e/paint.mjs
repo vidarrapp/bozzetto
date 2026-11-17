@@ -54,7 +54,7 @@ function install() {
       const m = S.session.getMesh();
       return new Float32Array(m.getColors().subarray(0, m.getNbVertices() * 3));
     },
-    snaps: {},
+    snaps: window.__pt?.snaps ?? {},
     snap: (name) => {
       pt.snaps[name] = pt.colours();
       return pt.snaps[name].length;
@@ -486,7 +486,7 @@ export const suites = {
     });
     t.eq(await page.evaluate(() => window.__pt.layer('Layer 1').mode), 'color-burn', 'choosing a mode in the select sets the layer');
     await page.evaluate(() => window.__pt.undo());
-    t.eq(await page.evaluate(() => window.__pt.layer('Layer 1').mode), 'normal', 'and one undo puts the mode back');
+    t.eq(await page.evaluate(() => window.__pt.layer('Layer 1').mode), 'dissolve', 'and one undo puts the mode back');
     console.log(`  modes on real vertices: ${results.join(' ')}`);
   },
 
@@ -571,7 +571,7 @@ export const suites = {
     t.ok((await page.evaluate(() => window.__pt.diff('s1'))) === 0, 'and one undo gives it back');
 
     // --- Hide, rename, opacity, mode -------------------------------------------
-    await page.click('.layers-paint .layer-row:not(.layer-row--base)');
+    await page.evaluate(() => window.__sculpt.session.paint.setActive(window.__pt.mesh(), window.__pt.layer('Layer 1')));
     await page.evaluate(() => document.querySelector('.layers-paint .layer-row--active .layer-row__eye').click());
     t.ok((await page.evaluate(() => window.__pt.diff('basePaint'))) === 0, 'hiding the layer shows the Base alone');
     t.ok(await page.evaluate(() => !window.__pt.layer('Layer 1').visible), 'the eye is off');

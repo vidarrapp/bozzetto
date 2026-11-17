@@ -2192,6 +2192,7 @@ body.bz-shell.paint-ws:not(.presenting) .panel--render {
   display: none;
 }
 
-body.paint-ws .sculpt-toolbar__neg {
+body.paint-ws .sculpt-toolbar__neg,
+body.bz-shell.paint-ws .bz-edge .sculpt-toolbar__neg {
   display: none;
 }
