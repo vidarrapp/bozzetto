@@ -14,6 +14,8 @@ export interface AskOptions {
   text?: string;
   /** The orange button: the choice, in a word or two. */
   yes: string;
+  /** The button is red, for a delete. */
+  danger?: boolean;
 }
 
 export function askWindow(opts: AskOptions): Promise<boolean> {
@@ -35,7 +37,7 @@ export function askWindow(opts: AskOptions): Promise<boolean> {
     }
     const yes = document.createElement('button');
     yes.type = 'button';
-    yes.className = 'btn btn--primary bz-ask-yes';
+    yes.className = `btn ${opts.danger ? 'btn--danger' : 'btn--primary'} bz-ask-yes`;
     yes.textContent = opts.yes;
     const cancel = document.createElement('button');
     cancel.type = 'button';

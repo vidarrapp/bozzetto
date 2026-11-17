@@ -7,7 +7,7 @@ import { sidesOverlap } from './shellLayout';
  * of its edge, the heading, and the scrolling body.
  *
  * One panel is open per side. Each side holds two (left: Scene, Model;
- * right: Tool, Render) and opening one closes the other: panels announce
+ * right: Tool, Reference, Render) and opening one closes the other: panels announce
  * themselves on 'bozzetto:panel-open' with {id, side}, and a panel
  * collapses when a DIFFERENT id opens on the SAME side. Older dispatchers
  * that omit `side` are treated as right-edge. A left and a right panel can

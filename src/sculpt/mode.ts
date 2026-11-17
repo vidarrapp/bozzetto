@@ -66,6 +66,10 @@ import { ModelPanel } from './ui/ModelPanel';
 import { MaterialPanel } from '../ui/MaterialPanel';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { SculptPanel } from './ui/SculptPanel';
+import { ReferenceBoard, fromFileReferences, toFileReferences } from '../reference/board';
+import { ReferencePanel } from '../reference/ReferencePanel';
+import { ReferenceView } from '../reference/ReferenceView';
+import { installIntake, pasteFromClipboard } from '../reference/intake';
 import { imageName, stillRatio } from '../viewer/capture/still';
 import { PresentMode, type TurntableRequest } from './ui/Present';
 import { recordTurntable } from '../viewer/capture/turntable';
@@ -298,7 +302,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         // A new scene: the autosave and its look go, as New Sculpt's do -
         // once the object stands, so a file that would not build leaves
         // the work where it was.
-        if (objMesh) await Promise.all([clearSavedScene(), clearSculptLook()]);
+        if (objMesh) await Promise.all([clearSavedScene(true), clearSculptLook()]);
       }
     }
     const url = new URL(window.location.href);
@@ -1494,6 +1498,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     cleanState = at;
   };
   const hasWork = (): boolean => !sceneOnDisk || session.getStateManager().getCurrentState() !== cleanState;
+  // The reference pictures: on this device only, never part of the scene that
+  // is saved to the library or published (reference/board.ts).
+  const referenceBoard = new ReferenceBoard('sculpt');
+  let referencePanel: ReferencePanel | null = null;
+  let referenceView: ReferenceView | null = null;
   // One implementation of File, behind the web menu and the console
   // handle alike.
   const fileActions = new FileActions(session, {
@@ -1524,9 +1533,21 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // the geometry), or a reload would forget where Save to library goes.
     // Neither is an edit: the scene is as it was (SavedScene.synced). A
     // new link is not its project's as saved until a save says so.
-    onLinkChange: () => {
+    onLinkChange: (link) => {
       persist.unsync();
       persist.markDirty(false);
+      // The pictures are kept under the project's id too, so reopening it here brings them back.
+      referenceBoard.bindProject(link?.id ?? null);
+      referencePanel?.setLinked(() => !!link);
+    },
+    references: () => toFileReferences(referenceBoard),
+    adoptReferences: (refs) => {
+      if (refs) {
+        const got = fromFileReferences(refs);
+        referenceBoard.replace(got.items, got.view);
+      } else {
+        void referenceBoard.clear();
+      }
     },
     onUnsentChange: () => persist.markDirty(false),
     syncPoint: () => persist.editCount(),
@@ -1534,6 +1555,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   });
   fileActionsRef = fileActions;
   fileActions.adoptLink(bootLink);
+  // What this device kept for the scene that opened: the autosave's pictures on a reload, a
+  // library project's by its id (none when they were added on another device), nothing for a
+  // template, an OBJ or anything else that opened as a new scene.
+  if (openedExplicitly || objMesh) {
+    if (bootLink) void referenceBoard.restore({ project: bootLink.id });
+    else void referenceBoard.clear();
+  } else {
+    void referenceBoard.restore({ current: true }).then(() => referenceBoard.bindProject(bootLink?.id ?? null));
+  }
   fileActions.adoptUnsent(bootUnsent);
   // Where File > Close goes: set once the snapshot is defined, below.
   let leaveForGallery: () => void = () => undefined;
@@ -1553,6 +1583,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       close: () => leaveForGallery(),
       publish: () => publishWindow?.toggle(),
       canPublish: () => !!publishWindow?.isAvailable(),
+      hasReferences: () => referenceBoard.list().length > 0,
     });
     // What used to be the Scene panel's buttons (owner call: only Create
     // stays there), each on the whole selection as before.
@@ -1623,6 +1654,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
             },
             action: () => scenePanel?.splitActive('delete-hidden'),
           },
+          { separator: true },
+          { label: 'Paste picture', hint: 'Adds the clipboard\'s picture to the Reference panel', action: () => void pasteFromClipboard(referenceBoard) },
         ],
       }),
       'file-menu--edit',
@@ -1651,12 +1684,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
           },
         },
         groupColors: { get: () => session.groups.isShowing(), toggle: () => setGroupColors(!session.groups.isShowing()) },
+        referenceOver: {
+          get: () => referenceView?.isOverEnabled() ?? true,
+          toggle: () => referenceView?.setOverEnabled(!referenceView.isOverEnabled()),
+        },
         toolKeys: true,
         panels: [
           ['scene', 'Scene'],
           ['model', 'Model'],
           ['material', 'Material'],
           ['sculpt', 'Tool'],
+          ['reference', 'Reference'],
           ['settings', 'Render'],
         ],
         hideInterface: () => chrome.set(true),
@@ -1752,6 +1790,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       // Not worth failing the tick over.
     }
   };
+  referencePanel = new ReferencePanel(referenceBoard);
+  referencePanel.setLinked(() => !!fileActions.link);
+  referenceView = new ReferenceView(referenceBoard, viewer);
+  const offIntake = installIntake(referenceBoard, () => !!referencePanel?.isOpen());
   modelPanel = new ModelPanel(session, viewer);
   materialPanel = new MaterialPanel(viewer, { sculpting: true, surface: {
       hasObject: () => !!session.getMesh(),
@@ -1997,7 +2039,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   if (saved && !openedExplicitly) {
     toast = bootToast(openedLabel(opened), () => {
       persist.disable();
-      void clearSavedScene().then(() => location.reload());
+      void clearSavedScene(true).then(() => location.reload());
     });
   } else if (saved && opened?.from === 'device') {
     toast = bootToast(openedLabel(opened));
@@ -2079,6 +2121,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewMenu,
     helpMenu,
     fileActions,
+    reference: { board: referenceBoard, view: referenceView, panel: referencePanel },
     sculptPanel,
     modelPanel,
     materialPanel,
@@ -2219,6 +2262,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     modelPanel?.dispose();
     materialPanel?.dispose();
     scenePanel?.dispose();
+    offIntake();
+    referenceView?.dispose();
+    referencePanel?.dispose();
+    referenceBoard.dispose();
     scaleBanner.dispose();
     publishWindow?.dispose();
     fileMenu?.dispose();
