@@ -16,7 +16,7 @@ async function boot(page, base, query = '') {
   await page.waitForTimeout(250);
 }
 
-/** Where the Armature panel, its tab, the Render panel's tab, the undo chips and the title strip are. */
+/** Where the Armature panel, its tab, the Reference panel's tab, the undo chips and the title strip are. */
 const layout = (page) =>
   page.evaluate(() => {
     const box = (el) => {
@@ -31,7 +31,7 @@ const layout = (page) =>
       return hs.display === 'none' || hs.visibility === 'hidden' ? null : box(handle);
     };
     const arm = document.querySelector('.panel--armature');
-    const render = [...document.querySelectorAll('.panel')].find((p) => p.dataset.panel === 'Render');
+    const render = [...document.querySelectorAll('.panel')].find((p) => p.dataset.panel === 'Reference');
     return {
       left: arm?.classList.contains('panel--left') ?? false,
       open: arm ? !arm.classList.contains('panel--collapsed') : false,
@@ -62,7 +62,7 @@ const setOpen = (page, which, open) =>
  * The Armature panel docks on the left edge (owner request), as Sculpt's
  * Scene and Model do, with the same tab: at its edge, on the screen, clear
  * of the top row and of the undo chips below it, and open, clear of both
- * too; the Render panel keeps the right edge, and the two open together.
+ * too; the Reference panel keeps the right edge, and the two open together.
  */
 export async function armaturePanelSide(page, base, t, sizes = [[1024, 768], [744, 1133]]) {
   const problems = [];
@@ -75,31 +75,31 @@ export async function armaturePanelSide(page, base, t, sizes = [[1024, 768], [74
     let l = await layout(page);
     seen.push(`${at}: tab ${Math.round(l.tab?.l ?? -1)},${Math.round(l.tab?.t ?? -1)}`);
     if (!l.left) problems.push(`${at}: the Armature panel is not on the left`);
-    if (l.renderLeft !== false) problems.push(`${at}: Render left its right edge`);
+    if (l.renderLeft !== false) problems.push(`${at}: Reference left its right edge`);
     if (!l.tab) problems.push(`${at}: the Armature panel has no tab`);
     else {
       if (Math.abs(l.tab.l) > 1) problems.push(`${at}: its tab is not at the left edge (${l.tab.l})`);
       if (l.tab.t < 0 || l.tab.b > h || l.tab.r > w) problems.push(`${at}: its tab leaves the screen`);
       if (l.topbar.some((x) => meets(l.tab, x))) problems.push(`${at}: its tab runs into the top row`);
       if (l.hist.some((x) => meets(l.tab, x))) problems.push(`${at}: its tab runs into the undo chips`);
-      if (meets(l.tab, l.renderTab)) problems.push(`${at}: its tab meets Render's`);
+      if (meets(l.tab, l.renderTab)) problems.push(`${at}: its tab meets Reference's`);
     }
     if (l.hist.length !== 2 || l.hist.some((x) => x.l < 0 || x.b > h)) problems.push(`${at}: the undo chips are not both on the screen`);
     await setOpen(page, 'Armature', true);
-    await setOpen(page, 'Render', true);
+    await setOpen(page, 'Reference', true);
     // The shell sets the panels' height limits a frame after they open or the window changes.
     await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
     l = await layout(page);
-    if (!l.open || !l.renderOpen) problems.push(`${at}: Armature and Render do not open together (${l.open}, ${l.renderOpen})`);
+    if (!l.open || !l.renderOpen) problems.push(`${at}: Armature and Reference do not open together (${l.open}, ${l.renderOpen})`);
     if (l.body && (l.body.l < 0 || l.body.r > w || l.body.b > h)) problems.push(`${at}: the open panel leaves the screen`);
     if (l.topbar.some((x) => meets(l.body, x))) problems.push(`${at}: the open panel runs into the top row`);
     if (l.hist.some((x) => meets(l.body, x))) problems.push(`${at}: the open panel covers the undo chips`);
-    if (meets(l.body, l.renderBody)) problems.push(`${at}: the open Armature and Render panels overlap`);
+    if (meets(l.body, l.renderBody)) problems.push(`${at}: the open Armature and Reference panels overlap`);
     await setOpen(page, 'Armature', false);
     l = await layout(page);
     if (l.open || !l.tab) problems.push(`${at}: closed, its tab does not come back`);
   }
-  t.ok(!problems.length, `the Armature panel docks left, clear of the top row, the undo chips and Render (${seen.join('; ')})${problems.length ? `: ${problems.join('; ')}` : ''}`);
+  t.ok(!problems.length, `the Armature panel docks left, clear of the top row, the undo chips and Reference (${seen.join('; ')})${problems.length ? `: ${problems.join('; ')}` : ''}`);
 }
 
 /**

@@ -41,7 +41,7 @@ export class FramesPanel extends SidePanel {
   private busy = false;
 
   constructor(hooks: FramesHooks) {
-    super({ id: 'frames', title: 'Frames', side: 'left', variant: 'panel--frames', collapsed: true });
+    super({ id: 'frames', title: 'Frames', side: 'right', variant: 'panel--frames', collapsed: true });
     this.hooks = hooks;
 
     const seq = section(this.body, 'Sequence');

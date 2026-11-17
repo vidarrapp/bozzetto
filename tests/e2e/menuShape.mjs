@@ -19,7 +19,7 @@ const FILE_RANK = new Map([
 
 const viewRank = (label) => {
   if (label === 'Frame selected' || label === 'Frame all') return 0;
-  if (['Wireframe', 'Shadows', 'Poly group colours', 'Reference over the view', 'Hotkeys on tools'].includes(label)) return 1;
+  if (['Wireframe', 'Shadows', 'Move light', 'Poly group colours', 'Reference over the view', 'Hotkeys on tools'].includes(label)) return 1;
   if (/ panel$/.test(label) || label === 'Hide interface') return 2;
   if (['Armature', 'Sculpt', 'Present'].includes(label)) return 3;
   return -1;
@@ -102,7 +102,7 @@ export const suites = {
   async menuShape(page, base, t) {
     await openSculpt(page, base);
     const sculptFile = 'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
-    const sculptView = 'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|Reference over the view|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present';
+    const sculptView = 'Frame selected|Frame all|Wireframe|Shadows|Move light|Poly group colours|Reference over the view|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Present';
     const sculpt = await readMenus(page, 'Sculpt');
     checkShape(t, 'Sculpt', sculpt, { names: 'File,Edit,View,Help', file: sculptFile, view: sculptView });
     const ws = (menus) => Object.fromEntries(menus.View.filter((r) => ['Armature', 'Sculpt', 'Present'].includes(r.label)).map((r) => [r.label, r.disabled]));
@@ -111,7 +111,11 @@ export const suites = {
     await page.keyboard.press('Shift+P');
     await page.waitForFunction(() => document.querySelector('.bz-ws__step--on')?.textContent?.includes('Present'), null, { timeout: 8000 });
     const present = await readMenus(page, 'Present from Sculpt');
-    checkShape(t, 'Present from Sculpt', present, { names: 'File,Edit,View,Help', file: sculptFile, view: sculptView });
+    checkShape(t, 'Present from Sculpt', present, {
+      names: 'File,Edit,View,Help',
+      file: sculptFile,
+      view: 'Frame selected|Frame all|Wireframe|Shadows|Move light|Poly group colours|Reference over the view|Hotkeys on tools|Lighting panel|Camera panel|Render panel|Material panel|Output panel|Hide interface|Armature|Sculpt|Present',
+    });
     t.eq(JSON.stringify(ws(present)), JSON.stringify({ Armature: false, Sculpt: false, Present: true }), 'Present from Sculpt: Present is greyed out and Sculpt is the way back');
 
     await openArmature(page, base);
@@ -119,7 +123,7 @@ export const suites = {
     checkShape(t, 'Armature', armature, {
       names: 'File,Edit,View,Help',
       file: 'New armature|Open…|Open recent|Rename…|Save file|Load model…|Send to Sculpt|Close',
-      view: 'Frame all|Wireframe|Shadows|Reference over the view|Armature panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present',
+      view: 'Frame all|Wireframe|Shadows|Move light|Reference over the view|Armature panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Present',
       edit: 'Undo|Redo|Paste picture|Preferences…',
     });
     const a = armature.View.filter((r) => ['Armature', 'Sculpt', 'Present'].includes(r.label));

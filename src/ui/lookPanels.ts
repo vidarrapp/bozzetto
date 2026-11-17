@@ -8,6 +8,9 @@ import { FLOOR_OFFSET_LIMIT } from '../viewer/units';
 import { SidePanel, type PanelSide } from '../sculpt/ui/SidePanel';
 import {
   AMOUNT,
+  CAVITY_RADIUS_MAX,
+  CAVITY_RADIUS_MIN,
+  CAVITY_STRENGTH_MAX,
   DEGREES,
   FRACTION,
   button,
@@ -94,7 +97,7 @@ export class LookPanels {
     this.lighting = opts.tabs.includes('lighting') ? new LightingPanel(shared) : null;
     this.camera = opts.tabs.includes('camera') ? new CameraPanel(shared) : null;
     this.render = opts.tabs.includes('render') ? new RenderPanel(shared) : null;
-    this.all = [this.lighting, this.camera, this.render].filter((p): p is LookPanel => !!p);
+    this.all = ([this.lighting, this.camera, this.render] as Array<LookPanel | null>).filter((p): p is LookPanel => !!p);
   }
 
   /** Re-sync controls that hotkeys can change (the shortcuts call this). */
@@ -948,9 +951,6 @@ const AO_RADIUS_MIN = 0.05;
 const AO_RADIUS_MAX = 1;
 const AO_RADIUS_CM_MIN = 0.1;
 const AO_RADIUS_CM_MAX = 10;
-export const CAVITY_STRENGTH_MAX = 2;
-export const CAVITY_RADIUS_MIN = 2;
-export const CAVITY_RADIUS_MAX = 12;
 
 /** Lens slider stops, in 35mm-equivalent mm (wide normal through short tele). */
 const LENS_STEPS: number[] = [35, 50, 55, 80, 105, 135];

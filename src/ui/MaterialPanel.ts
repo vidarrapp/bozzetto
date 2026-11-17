@@ -14,6 +14,8 @@ export interface MaterialPanelOptions {
    * model's own and sit with the display controls (MaterialControls).
    */
   sculpting: boolean;
+  /** Plain Sculpt: the Display section has the Cavity switch (Armature and Present have no cavity). */
+  cavity?: boolean;
   /**
    * Sculpt only: whether there is an active object. Gives the panel its
    * Surface section, the active object's own values; without it the panel
@@ -65,7 +67,7 @@ export class MaterialPanel extends SidePanel {
     this.hasObject = opts.surface?.hasObject ?? null;
     this.materialName = opts.surface?.materialName ?? null;
     if (opts.surface) this.buildSurface(this.body);
-    this.display = new MaterialControls(viewer, { sculpting: opts.sculpting, heading: 'Display' });
+    this.display = new MaterialControls(viewer, { sculpting: opts.sculpting, heading: 'Display', cavity: opts.cavity });
     this.body.appendChild(this.display.root);
     this.display.rebuild();
     window.addEventListener('bozzetto:present', this.onPresent);
@@ -138,8 +140,8 @@ export class MaterialPanel extends SidePanel {
 
   /**
    * What hotkeys change (mode, matcap, smooth shading, wireframe) is read
-   * again whenever the shortcuts say so: the Render panel announces it
-   * (CONTROLS_REFRESH_EVENT) from refreshControls, which they call.
+   * again whenever the shortcuts say so: the shortcuts announce it
+   * (CONTROLS_REFRESH_EVENT).
    */
   private readonly onControlsRefresh = (): void => {
     this.display.refresh();

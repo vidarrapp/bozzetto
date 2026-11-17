@@ -53,14 +53,13 @@ const recordModes = (page) =>
   });
 const modesSeen = (page) => page.evaluate(() => [...new Set(window.__modes ?? [])]);
 
-/** The Render panel's AO model, picked the way a user picks it. */
+/** The AO model, picked as the Render tab's select does (Sculpt has no Render tab: the viewer's own setters). */
 const aoModel = (page, value) =>
   page.evaluate((m) => {
-    const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
-    const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model').querySelector('select');
-    sel.value = m;
-    sel.dispatchEvent(new Event('change', { bubbles: true }));
-    return sel.value;
+    const v = window.__bozzetto;
+    v.setAO({ enabled: m === 'gtao' });
+    v.setSculptAO({ strength: m === 'cavity' ? 0.9 : 0 });
+    return m;
   }, value);
 
 /**
@@ -541,7 +540,7 @@ export const suites = {
     await openPrefsChoice(page, 'antialias', 'Off');
     await page.keyboard.press('3');
     await page.keyboard.press('f');
-    t.eq(await aoModel(page, 'gtao'), 'gtao', 'GTAO picked in the Render panel');
+    t.eq(await aoModel(page, 'gtao'), 'gtao', 'GTAO picked');
     await page.evaluate(() => window.__bozzetto.setGround('floor'));
     // No mirrored copy of the stroke: the reach below is this stroke's own,
     // and the copy (on the sphere's far side, at its silhouette from here)

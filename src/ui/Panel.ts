@@ -1,1021 +1,33 @@
-import { DEFAULT_CAVITY, type Viewer, type LookState, type GroundMode, type ToneMappingId } from '../viewer/Viewer';
-import type { LightId } from '../viewer/Lighting';
-import { div, labelRow, onTap, selectEl } from './dom';
+import { DEFAULT_CAVITY, type Viewer } from '../viewer/Viewer';
+import { div, labelRow, selectEl } from './dom';
 import { colorPicker, type ColorPickerHandle } from './ColorPicker';
-import { installSwatchPick } from './swatchPick';
 import { matcapPicker, type MatcapPickerHandle } from './MatcapPicker';
-import { formatSliderNumber, sliderText, typedSlider, type Limits } from './sliderEntry';
-import { FLOOR_OFFSET_LIMIT } from '../viewer/units';
+import { sliderText, typedSlider, type Limits } from './sliderEntry';
 import { keyedLabel } from './keymap';
-import { sidesOverlap } from '../sculpt/ui/shellLayout';
 
 /**
  * Something a hotkey or a restore changed in the viewer (material mode,
- * matcap, shading, wireframe): panels that show those controls read them
- * again. Panel.refreshControls sends it, being what the shortcuts call.
+ * matcap, shading, wireframe, the lights): panels that show those controls
+ * read them again. The shortcuts send it (LookPanels.refreshControls).
+ *
+ * The row helpers below are the panels' shared building blocks; the look
+ * panels (Lighting, Camera, Render) are in lookPanels.ts.
  */
 export const CONTROLS_REFRESH_EVENT = 'bozzetto:controls-refresh';
 
-export interface PanelOptions {
-  /**
-   * The handle of the member whose work this is, for a project from the
-   * Community (docs/accounts.md §13): "by @handle" under the title, a link
-   * to their page.
-   */
-  author?: string;
-  /**
-   * The panel under the app shell's folder tab (the title strip says whose
-   * work it is): headed Render, with no byline. The sections are the same
-   * everywhere (Lighting, Camera, Environment, Ambient occlusion); this only
-   * sets the heading.
-   */
-  shell?: boolean;
-  /**
-   * The look Reset look goes back to: the one the scene or project opened
-   * with (the published look, in the viewer). Taken from the viewer as it
-   * stands when the panel is built when this is left out. Sculpt and
-   * Armature keep their own, and answer the reset themselves.
-   */
-  openedLook?: LookState;
-}
-
-/**
- * Side control panel. The viewer variant is the same everywhere (starts collapsed in the viewer;
- * Lighting, Camera with depth of field, Environment, Ambient occlusion) — the timeline lives in the
- * bottom Transport and the theme toggle is global. Keyboard shortcuts live in
- * installShortcuts, which calls refreshControls() here; Tab's close-all reaches it
- * as PANEL_CLOSE_ALL_EVENT (ChromeToggle).
- */
-export class Panel {
-  private readonly root: HTMLDivElement;
-  private readonly bodyEl: HTMLDivElement;
-  private readonly collapseBtn: HTMLButtonElement;
-  private readonly handleArrow: HTMLSpanElement;
-  private titleEl!: HTMLSpanElement;
-  /** "by @handle" under the title, for a member's work from the Community. */
-  private bylineEl: HTMLAnchorElement | null = null;
-  /** The look Reset look goes back to (PanelOptions.openedLook). */
-  private readonly openedLook: LookState;
-  private collapsed = false;
-
-  /** Fired when the handle is clicked (editor coordinates both panels). */
-  onToggle: ((collapsed: boolean) => void) | null = null;
-
-  /** Ground-mode select lives in the editor's Environment section (or null). */
-  private groundSelect: HTMLSelectElement | null = null;
-  /** DoF on/off checkbox (viewer + editor); absent when DoF isn't available. */
-  private dofCheckbox?: HTMLInputElement;
-  /** DoF's Aperture/Focus rows, folded away while the effect is off. */
-  private dofRows?: HTMLDivElement;
-  /** Re-applies the Environment section's conditional rows (set per build). */
-  private syncEnvRows: (() => void) | null = null;
-  /**
-   * Whether the cavity is an AO model here: only in sculpt mode, whose
-   * composite is the one that draws it. Armature mode shows the look-dev
-   * sections too, but renders through the viewer's composite, as the
-   * viewer and the editors do.
-   */
-  private cavityOffered = false;
-  /** The cavity strength to come back to after another model (zero is its "off"). */
-  private cavityStrength: number = DEFAULT_CAVITY.strength;
-  /** Master shadows checkbox (viewer + editor + sculpt). */
-  private shadowsCheckbox?: HTMLInputElement;
-  private readonly onOtherPanelOpen = (e: Event): void => {
-    const detail = (e as CustomEvent<{ id?: string; side?: string }>).detail;
-    // Only panels sharing this one's edge contend for the space; the left
-    // stack (Scene, Model) can be open alongside it.
-    // On a phone the two sides cover each other, so any other panel closes this one.
-    if (!detail?.id || detail.id === 'settings' || ((detail.side ?? 'right') !== 'right' && !sidesOverlap())) return;
-    // Through setCollapsed, not straight to applyCollapsed: collapsing must
-    // announce on 'bozzetto:panel-close' so tabs ducked under this panel
-    // come back (SidePanel listens for the id that hid them).
-    if (!this.collapsed) this.setCollapsed(true);
-  };
-
-  /** Tab tidies the screen before it clears it, in every mode (ChromeToggle). */
-  private readonly onCloseAll = (): void => {
-    if (!this.collapsed) this.setCollapsed(true);
-  };
-
-  private sculpting = false;
-  private readonly onSculptMode = (e: Event): void => {
-    const detail = (e as CustomEvent<{ active?: boolean; mode?: string }>).detail;
-    this.sculpting = !!detail?.active;
-    // Sculpt mode announces itself without a mode; Armature mode names its own.
-    this.cavityOffered = this.sculpting && (detail?.mode ?? 'sculpt') === 'sculpt';
-    // Entering sculpt changes a pile of viewer state (ground, shading,
-    // shadows, AO) and restores a saved look on top of it, all after this
-    // panel was built - so rebuild rather than trying to re-sync by hand.
-    this.buildBody();
-    this.titleEl.textContent = this.sculpting
-      ? 'Render'
-      : this.viewer.manifest.title || 'Bozzetto';
-    if (this.bylineEl) this.bylineEl.hidden = this.sculpting;
-  };
-
-  /**
-   * Opened or closed from outside, by id ('settings'): Present mode puts
-   * the panel back as it found it when it leaves.
-   */
-  private readonly onPanelSet = (e: Event): void => {
-    const detail = (e as CustomEvent<{ id?: string; open?: boolean }>).detail;
-    if (detail?.id !== 'settings' || typeof detail.open !== 'boolean') return;
-    if (this.collapsed === !detail.open) return;
-    this.setCollapsed(!detail.open);
-  };
-
-  /** A saved look was applied under us (opening a .bozz file). */
-  private readonly onLookRestored = (): void => {
-    this.buildBody();
-  };
-
-  /**
-   * The AO model the viewer is on: GTAO when it is enabled; else, in
-   * sculpt mode, the cavity when that has a strength; else off. Sculpt
-   * mode sets both before a look is read (it starts on the cavity), and
-   * a pick in the list writes both, so they always agree. Outside sculpt
-   * mode the cavity draws nothing and is not a model at all.
-   */
-  private aoModeOfLook(): string {
-    if (this.viewer.aoAvailable() && this.viewer.getAOState().enabled) return 'gtao';
-    return this.cavityOffered && this.viewer.getSculptAO().strength > 0 ? 'cavity' : 'off';
-  }
-
-  /** One HSV picker style across the app (owner call): these replace the
-   *  browser's RGB boxes for the background, the stage surface and each
-   *  light. Reused across rebuilds like the albedo one - disposing while
-   *  the popover is up closes it under the pointer. */
-  private bgPicker?: ColorPickerHandle;
-  private stagePicker?: ColorPickerHandle;
-  private readonly lightPickers = new Map<LightId, ColorPickerHandle>();
-  /** Output-grade select (Camera section). */
-  private toneSelect?: HTMLSelectElement;
-  private lightControls?: HTMLDivElement;
-  private presetSelect?: HTMLSelectElement;
-
-  constructor(
-    private readonly viewer: Viewer,
-    options: PanelOptions = {},
-  ) {
-    this.openedLook = options.openedLook ?? viewer.getLook();
-
-    // panel--render names it for the stylesheet: Present mode keeps this
-    // panel and hides the rest.
-    this.root = div('panel panel--render');
-    // Its name, whatever the heading says (the viewer's title, in the viewer).
-    this.root.dataset.panel = 'Render';
-    document.body.appendChild(this.root);
-
-    // Edge handle: always visible, doubles as the collapse/expand toggle so the
-    // panel can slide fully off the side and still be pulled back in. When
-    // collapsed it shows the panel's name (a larger, labelled touch target).
-    // A tap, not a click: the tab sits on the screen's edge, where a hand
-    // rests, and a slow tap there must not become iOS's long press (onTap).
-    this.collapseBtn = document.createElement('button');
-    this.collapseBtn.type = 'button';
-    onTap(this.collapseBtn, () => {
-      this.toggleCollapsed();
-      this.onToggle?.(this.collapsed);
-    });
-    this.collapseBtn.className = 'panel__handle';
-    this.handleArrow = document.createElement('span');
-    this.handleArrow.className = 'handle__arrow';
-    const handleLabel = document.createElement('span');
-    handleLabel.className = 'handle__label';
-    handleLabel.textContent = 'Render'; // one name across viewer, sculpt and editor
-    this.collapseBtn.replaceChildren(handleLabel, this.handleArrow);
-    this.root.appendChild(this.collapseBtn);
-
-    const header = div('panel__header');
-    const title = document.createElement('span');
-    this.titleEl = title;
-    title.className = 'panel__title';
-    // The viewer header doubles as the project's title bar; sculpt mode
-    // swaps it for the panel's own name, since the synthetic sculpt
-    // manifest is titled "Sculpt" and would sit right above the Sculpt
-    // palette (onSculptMode below).
-    title.textContent = options.shell ? 'Render' : viewer.manifest.title || 'Bozzetto';
-    // Closing lives in the title bar; the open panel hides its edge handle.
-    const closeBtn = button('›', () => {
-      this.setCollapsed(true);
-      this.onToggle?.(true);
-    });
-    closeBtn.className = 'panel__close';
-    // Four panels can be on screen at once; name this one for screen readers.
-    closeBtn.setAttribute('aria-label', 'Hide render panel');
-    if (options.author && !options.shell) {
-      // The title and, under it, who made it: a member's work from the
-      // Community. Hidden while sculpting, when the title is the panel's.
-      const heading = div('panel__heading');
-      const by = document.createElement('a');
-      by.className = 'panel__byline';
-      by.href = `/?u=${encodeURIComponent(options.author)}`;
-      by.textContent = `by @${options.author}`;
-      this.bylineEl = by;
-      heading.append(title, by);
-      header.append(heading, closeBtn);
-    } else {
-      header.append(title, closeBtn);
-    }
-    this.root.appendChild(header);
-
-    this.bodyEl = div('panel__body');
-    this.root.appendChild(this.bodyEl);
-
-    // Starts collapsed (slid out) for a minimal default.
-    this.collapsed = true;
-    this.applyCollapsed();
-
-    window.addEventListener('bozzetto:sculptmode', this.onSculptMode);
-    window.addEventListener('bozzetto:look-restored', this.onLookRestored);
-    window.addEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
-    window.addEventListener('bozzetto:panel-close-all', this.onCloseAll);
-    window.addEventListener('bozzetto:panel-set', this.onPanelSet);
-
-    this.buildBody();
-  }
-
-  /**
-   * Build every section from the viewer's live state. Controls read their
-   * value once, here, so anything that changes the look wholesale - entering
-   * sculpt mode, opening a scene file - rebuilds instead of hand-syncing a
-   * couple of the widgets and leaving the rest showing stale numbers.
-   */
-  private buildBody(): void {
-    this.bodyEl.replaceChildren();
-    // Material is the Material tab's, in every place; Render never holds it.
-    // The same four sections everywhere, in this order.
-    this.buildLighting(this.bodyEl);
-    this.buildCamera(this.bodyEl);
-    this.buildEnvironment(this.bodyEl);
-    this.buildAOSection(this.bodyEl);
-    if (devMode()) this.buildDeveloper(this.bodyEl);
-    this.rebuildLightControls();
-    this.refreshControls();
-  }
-
-  /**
-   * Slide the panel in/out from its docked edge. Routed through
-   * setCollapsed so opening always announces on 'bozzetto:panel-open' -
-   * going straight to applyCollapsed made mutual collapse one-way, and the
-   * sculpt palette could sit open underneath this panel.
-   */
-  toggleCollapsed(): boolean {
-    this.setCollapsed(!this.collapsed);
-    return this.collapsed;
-  }
-
-  setCollapsed(collapsed: boolean): void {
-    const wasOpen = !this.collapsed;
-    this.collapsed = collapsed;
-    this.applyCollapsed();
-    // Right-edge panels coordinate: opening one collapses the others
-    // (the sculpt panel listens for this and reciprocates). The open event
-    // carries this panel's top so tabs stacked below it can duck out of the
-    // way - the sculpt tabs out-z-index this panel and would float over its
-    // open body; the close event brings them back.
-    if (!collapsed) {
-      // Whatever changed while the panel was tucked away (hotkeys, API
-      // calls, a look restore) is on screen the moment it opens.
-      this.refreshControls();
-      window.dispatchEvent(
-        new CustomEvent('bozzetto:panel-open', {
-          detail: { id: 'settings', side: 'right', top: this.root.getBoundingClientRect().top },
-        }),
-      );
-    } else if (wasOpen) {
-      // The pickers' popovers are body-mounted; without this they'd float
-      // on after their swatches slid off-screen with the panel.
-      this.bgPicker?.close();
-      this.stagePicker?.close();
-      for (const p of this.lightPickers.values()) p.close();
-      window.dispatchEvent(
-        new CustomEvent('bozzetto:panel-close', { detail: { id: 'settings', side: 'right' } }),
-      );
-    }
-  }
-
-  isCollapsed(): boolean {
-    return this.collapsed;
-  }
-
-  private applyCollapsed(): void {
-    this.root.classList.toggle('panel--collapsed', this.collapsed);
-    // Arrow shows travel direction: out (›) when open, in (‹) when collapsed.
-    this.handleArrow.textContent = this.collapsed ? '‹' : '›';
-  }
-
-  /**
-   * Ambient occlusion. GTAO is the viewer's screen-space pass, and the AO
-   * everywhere; Cavity is the cheap depth SSAO of sculpt mode's own
-   * composite, which keeps creases readable on flat-shaded facets without
-   * gridding, and is offered there alone - anywhere else it draws nothing.
-   * Sculpt mode starts on Cavity, everything else on whatever the project
-   * or the look saved, GTAO at its defaults when it saved nothing.
-   *
-   * Building the section shows the model the viewer is on and changes
-   * nothing; only a pick in the list writes. It used to apply its own
-   * starting model on every build, and that model was Cavity, so the
-   * viewer, the editors' previews, the single-file exports and Armature
-   * mode all lost their AO whatever had been saved.
-   */
-  private buildAOSection(body: HTMLElement): void {
-    const sec = section(body, 'Ambient occlusion');
-    const hasGtao = this.viewer.aoAvailable();
-    const hasCavity = this.cavityOffered;
-
-    const gtaoRows = div('ao-rows');
-    const cavityRows = div('ao-rows');
-    const show = (mode: string): void => {
-      gtaoRows.hidden = mode !== 'gtao';
-      cavityRows.hidden = mode !== 'cavity';
-    };
-
-    const apply = (mode: string): void => {
-      if (hasGtao) this.viewer.setAO({ enabled: mode === 'gtao' });
-      // Cavity has no enable flag of its own; zero strength is "off", so the
-      // last real strength is remembered to switch back to. Outside sculpt
-      // mode it is zeroed too, which keeps a saved look saying which model
-      // was picked (see Viewer.applyLook).
-      const live = this.viewer.getSculptAO().strength;
-      if (live > 0) this.cavityStrength = live;
-      this.viewer.setSculptAO({ strength: mode === 'cavity' ? this.cavityStrength : 0 });
-      show(mode);
-    };
-
-    const options: [string, string][] = [['off', 'Off']];
-    if (hasCavity) options.push(['cavity', 'Cavity (SSAO)']);
-    if (hasGtao) options.push(['gtao', 'GTAO']);
-    const modeSel = selectEl(options, this.aoModeOfLook());
-    modeSel.addEventListener('change', () => apply(modeSel.value));
-    sec.appendChild(labelRow('Model', modeSel));
-
-    if (hasGtao) {
-      const ao = this.viewer.getAOState();
-      // Strength is an exponent on the GTAO term (Viewer): 0 none, 1 the
-      // term, 2 its square - deeper, never clipped to black.
-      gtaoRows.appendChild(
-        compactRange('Strength', 0, AO_STRENGTH_MAX, 0.05, ao.intensity, (v) => this.viewer.setAO({ intensity: v }), {
-          limits: AMOUNT,
-        }),
-      );
-      // A length in centimetres in a scene on real units, the same on a
-      // head and on a whole figure (owner report: as a share of the
-      // subject, the least it went on a body was an eye across), with its
-      // unit printed beside it. A look from before that opens at the
-      // length its share comes to, which may lie past the travel. Without
-      // real units it is the share of the subject's radius it always was.
-      // Above zero either way, or nothing occludes at all.
-      const radius = this.viewer.getAORadius();
-      if (radius.unit) {
-        const row = numberedRange(
-          'Radius',
-          AO_RADIUS_CM_MIN,
-          AO_RADIUS_CM_MAX,
-          0.1,
-          Math.round(radius.value * 100) / 100,
-          (v) => {
-            this.viewer.setAO({ radiusCm: v });
-            return sliderText(row.input, v);
-          },
-          { limits: { min: 0.01 }, unit: ' cm' },
-        );
-        gtaoRows.appendChild(row.row);
-      } else {
-        gtaoRows.appendChild(
-          compactRange('Radius', AO_RADIUS_MIN, AO_RADIUS_MAX, 0.01, ao.radius, (v) => this.viewer.setAO({ radius: v }), {
-            limits: { min: 0.01 },
-          }),
-        );
-      }
-      sec.appendChild(gtaoRows);
-    }
-
-    if (hasCavity) {
-      const cav = this.viewer.getSculptAO();
-      // While another model is on the cavity's strength is zero; the panel
-      // keeps the last real one to come back to.
-      if (cav.strength > 0) this.cavityStrength = cav.strength;
-      cavityRows.appendChild(
-        compactRange(
-          'Strength',
-          0,
-          CAVITY_STRENGTH_MAX,
-          0.05,
-          this.cavityStrength,
-          (v) => {
-            this.cavityStrength = v;
-            this.viewer.setSculptAO({ strength: v });
-          },
-          { limits: AMOUNT },
-        ),
-      );
-      cavityRows.appendChild(
-        compactRange(
-          'Radius',
-          CAVITY_RADIUS_MIN,
-          CAVITY_RADIUS_MAX,
-          1,
-          cav.radius,
-          (v) => this.viewer.setSculptAO({ radius: v }),
-          { limits: { min: 1 }, unit: ' px' },
-        ),
-      );
-      sec.appendChild(cavityRows);
-    }
-
-    show(modeSel.value);
-  }
-
-  /** Re-sync controls that hotkeys can change (material mode, matcap, shading…). */
-  refreshControls(): void {
-    window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
-    if (this.groundSelect) this.groundSelect.value = this.viewer.getGround();
-    if (this.toneSelect) this.toneSelect.value = this.viewer.getToneMapping();
-    this.syncEnvRows?.(); // ground can move under us (the G key cycles it)
-    if (this.dofCheckbox) {
-      const dofOn = this.viewer.getDoFState().enabled;
-      this.dofCheckbox.checked = dofOn;
-      if (this.dofRows) this.dofRows.hidden = !dofOn;
-    }
-    if (this.shadowsCheckbox) {
-      this.shadowsCheckbox.checked = this.viewer.lighting.getShadowsMaster();
-    }
-    // The light rows read their values when built, and hold L moves the
-    // key light under them: shown, they are built again from the rig.
-    if (this.lightControls?.isConnected) this.rebuildLightControls();
-  }
-
-  dispose(): void {
-    this.bgPicker?.dispose();
-    this.stagePicker?.dispose();
-    for (const p of this.lightPickers.values()) p.dispose();
-    this.lightPickers.clear();
-    window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
-    window.removeEventListener('bozzetto:look-restored', this.onLookRestored);
-    window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
-    window.removeEventListener('bozzetto:panel-close-all', this.onCloseAll);
-    window.removeEventListener('bozzetto:panel-set', this.onPanelSet);
-    this.viewer.onFrame = null;
-    this.viewer.onPlayStateChange = null;
-    this.root.remove();
-  }
-
-  // --- lighting ---------------------------------------------------------
-
-  private buildLighting(body: HTMLElement): void {
-    const lighting = section(body, 'Lighting');
-
-    // Back to the look the scene or project opened with. Sculpt keeps its look
-    // between sessions, so a look set up badly (or saved mid-experiment) would
-    // otherwise restore for ever: there the panel only asks, and the mode owns
-    // the defaults and the stored record. Anywhere else the panel has the
-    // look it opened with and puts it back (a visitor's change is never saved).
-    const reset = button('Reset look', () => this.resetLook());
-    reset.className = 'btn btn--small panel__reset';
-    lighting.appendChild(reset);
-
-    // Preset switch (viewer + editor): Three-point <-> Raking.
-    const presetSelect = document.createElement('select');
-    for (const preset of this.viewer.lighting.presets()) {
-      const opt = document.createElement('option');
-      opt.value = preset.id;
-      opt.textContent = preset.label;
-      presetSelect.appendChild(opt);
-    }
-    // Said as the lights are: a rig that matches no preset is Custom, and
-    // one with the fill and the rim off is not "Three-point".
-    const custom = document.createElement('option');
-    custom.value = CUSTOM_PRESET;
-    custom.textContent = 'Custom';
-    custom.hidden = true;
-    presetSelect.appendChild(custom);
-    this.presetSelect = presetSelect;
-    this.syncPreset();
-    presetSelect.addEventListener('change', () => {
-      if (presetSelect.value === CUSTOM_PRESET) return;
-      this.viewer.lighting.applyPreset(presetSelect.value);
-      this.rebuildLightControls();
-    });
-    lighting.appendChild(labelRow('Preset', presetSelect));
-
-    // Master shadow switch (also shift+s in sculpt mode). Per-light shadow
-    // config lives in the editor rig; this gates all of it at once.
-    const shadows = checkbox('Shadows', this.viewer.lighting.getShadowsMaster(), (on) =>
-      this.viewer.lighting.setShadowsMaster(on),
-    );
-    this.shadowsCheckbox = shadows.querySelector('input')!;
-    lighting.appendChild(shadows);
-
-    // The full per-light rig, the same in every place.
-    this.lightControls = div('light-controls');
-    lighting.appendChild(this.lightControls);
-
-    lighting.appendChild(
-      labelled('Rotate rig', () => {
-        const out = document.createElement('span');
-        out.className = 'readout';
-        const start = this.viewer.lighting.getRigRotation();
-        const show = (v: number): void => {
-          out.textContent = `${formatSliderNumber(v, 1)}°`;
-        };
-        show(start);
-        const turn = (v: number): void => {
-          this.viewer.setRigRotation(v); // rotates the directional rig + HDRI
-          show(v);
-        };
-        const r = range(0, 360, 1, start, turn);
-        r.dataset.unit = '°';
-        typedSlider(r, { apply: turn, limits: DEGREES }, start);
-        const wrap = div('range-wrap');
-        wrap.append(r, out);
-        return wrap;
-      }),
-    );
-  }
-
-  /** Reset look: Sculpt and Armature answer for themselves; elsewhere the look it opened with comes back, the view as it is. */
-  private resetLook(): void {
-    if (this.sculpting) {
-      window.dispatchEvent(new CustomEvent('bozzetto:look-reset'));
-      return;
-    }
-    const look = this.openedLook;
-    // The camera's place is the visitor's view, not the look: it stays.
-    void this.viewer
-      .applyLook({ ...look, camera: { ...look.camera, position: [], target: [] } })
-      .then(() => window.dispatchEvent(new CustomEvent('bozzetto:look-restored')));
-  }
-
-  /** The Preset select shows the preset the lights are at, or Custom. */
-  private syncPreset(): void {
-    const sel = this.presetSelect;
-    if (!sel) return;
-    const id = this.viewer.lighting.activePreset();
-    const custom = [...sel.options].find((o) => o.value === CUSTOM_PRESET);
-    if (custom) custom.hidden = id !== null;
-    sel.value = id ?? CUSTOM_PRESET;
-  }
-
-  private rebuildLightControls(): void {
-    this.syncPreset();
-    if (!this.lightControls) return;
-    this.lightControls.replaceChildren();
-    for (const light of this.viewer.lighting.state()) {
-      const box = div('light');
-      const head = div('light__head');
-      head.appendChild(
-        checkbox(light.label, light.enabled, (on) => {
-          this.viewer.lighting.setEnabled(light.id, on);
-          // A disabled light's settings drive nothing; fold them away and
-          // rebuild on re-enable so the rows come back with live values.
-          this.rebuildLightControls();
-        }),
-      );
-      box.appendChild(head);
-
-      if (!light.enabled) {
-        // The folded rows take the light's colour popover with them if it
-        // was up (the popover is body-mounted and would outlive its row).
-        this.lightPickers.get(light.id)?.close();
-      } else {
-        box.appendChild(
-          compactRange(
-            'Intensity',
-            0,
-            LIGHT_INTENSITY_MAX,
-            0.1,
-            light.intensity,
-            (v) => {
-                this.viewer.lighting.setIntensity(light.id, v);
-                this.syncPreset();
-              },
-            { limits: AMOUNT },
-          ),
-        );
-        box.appendChild(
-          compactRange('Azimuth', -180, 180, 1, light.azimuth, (v) => this.setAngle(light.id, 'az', v), {
-            limits: { min: -180, wrap: 360 },
-            unit: '°',
-          }),
-        );
-        box.appendChild(
-          // Past straight up the light would come over the top and face
-          // the other way, which is an azimuth change, not an elevation.
-          compactRange('Elevation', -20, 90, 1, light.elevation, (v) => this.setAngle(light.id, 'el', v), {
-            limits: { min: -90, max: 90 },
-            unit: '°',
-          }),
-        );
-
-        let picker = this.lightPickers.get(light.id);
-        if (!picker) {
-          const id = light.id;
-          const setColor = (hex: string): void => {
-            this.viewer.lighting.setColor(id, hex);
-            this.syncPreset();
-          };
-          picker = colorPicker(light.color, setColor);
-          // Drag the swatch onto the view to light with a colour off the frame.
-          installSwatchPick(picker, this.viewer, setColor);
-          this.lightPickers.set(id, picker);
-        } else if (!picker.isOpen()) {
-          picker.set(light.color);
-        }
-        box.appendChild(labelRow('Colour', picker.root));
-
-        if (light.canShadow) {
-          box.appendChild(
-            checkbox('Casts shadow', light.castShadow, (on) => {
-              this.viewer.lighting.setShadow(light.id, on);
-              this.rebuildLightControls();
-            }),
-          );
-          if (light.castShadow) {
-            box.appendChild(
-              compactRange(
-                'Softness',
-                0,
-                16,
-                0.5,
-                light.softness,
-                (v) => this.viewer.lighting.setSoftness(light.id, v),
-                { limits: AMOUNT },
-              ),
-            );
-          }
-        }
-      }
-
-      this.lightControls.appendChild(box);
-    }
-  }
-
-  private setAngle(id: LightId, which: 'az' | 'el', value: number): void {
-    const current = this.viewer.lighting.state().find((l) => l.id === id);
-    if (!current) return;
-    const az = which === 'az' ? value : current.azimuth;
-    const el = which === 'el' ? value : current.elevation;
-    this.viewer.lighting.setAngles(id, az, el);
-    this.syncPreset();
-  }
-
-  // --- environment (editor only) ----------------------------------------
-
-  private buildEnvironment(body: HTMLElement): void {
-    const env = this.viewer.environment;
-    const state = env.getState();
-    const stage = this.viewer.getStageState();
-    const sec = section(body, 'Environment');
-
-    const select = document.createElement('select');
-    const none = document.createElement('option');
-    none.value = '';
-    none.textContent = 'None';
-    select.appendChild(none);
-    for (const e of env.list()) {
-      const opt = document.createElement('option');
-      opt.value = e.id;
-      opt.textContent = e.label;
-      select.appendChild(opt);
-    }
-    select.value = state.id ?? '';
-    select.addEventListener('change', () => void env.setEnvironment(select.value || null));
-    sec.appendChild(labelRow('HDRI', select));
-
-    // All the HDRI knobs live together, right under the picker, and only
-    // while an HDRI is loaded - intensity, rotation, blur and the plate's
-    // brightness have nothing to act on under "None".
-    const hdriRows = div('env-rows');
-    hdriRows.appendChild(
-      compactRange('Intensity', 0, HDRI_INTENSITY_MAX, 0.01, state.intensity, (v) => env.setIntensity(v), {
-        limits: AMOUNT,
-      }),
-    );
-    hdriRows.appendChild(
-      compactRange('Rotation', 0, 360, 1, state.rotation, (v) => env.setOffset(v), { limits: DEGREES, unit: '°' }),
-    );
-    hdriRows.appendChild(
-      compactRange('Bg blur', 0, 1, 0.02, state.blur, (v) => env.setBackgroundBlur(v), { limits: FRACTION }),
-    );
-    // The plate shown as the background, apart from the light it gives:
-    // 1 is the map as it is, whatever the Intensity above.
-    hdriRows.appendChild(
-      compactRange('Bg brightness', 0, BG_BRIGHTNESS_MAX, 0.01, state.bgBrightness, (v) => env.setBackgroundBrightness(v), {
-        limits: AMOUNT,
-      }),
-    );
-    sec.appendChild(hdriRows);
-
-    const bg = document.createElement('select');
-    for (const [value, label] of [
-      ['theme', 'Theme'],
-      ['color', 'Solid colour'],
-      ['hdri', 'HDRI'],
-    ] as const) {
-      const opt = document.createElement('option');
-      opt.value = value;
-      opt.textContent = label;
-      bg.appendChild(opt);
-    }
-    bg.value = state.background;
-    bg.addEventListener('change', () =>
-      env.setBackgroundMode(bg.value as 'theme' | 'color' | 'hdri'),
-    );
-    sec.appendChild(labelRow('Background', bg));
-
-    if (!this.bgPicker) {
-      const setBg = (hex: string): void => env.setBackgroundColor(hex);
-      this.bgPicker = colorPicker(state.bgColor, setBg);
-      // The same drag-to-pick as the lights' and the paint brush's swatches.
-      installSwatchPick(this.bgPicker, this.viewer, setBg);
-    } else if (!this.bgPicker.isOpen()) {
-      this.bgPicker.set(state.bgColor);
-    }
-    const bgColorRow = labelRow('Bg colour', this.bgPicker.root);
-    sec.appendChild(bgColorRow);
-
-    // Stage: a single ground style (contact shadow, fading floor, or pedestal),
-    // each with its own albedo where relevant.
-    const ground = document.createElement('select');
-    // Where the mode holds the floor (Armature), there is no pedestal to
-    // offer: it would move the ground the figure stands on.
-    const floorHeld = this.viewer.lockedFloor() !== null;
-    for (const [value, label] of [
-      ['off', 'None'],
-      ['shadow', 'Shadow'],
-      ['floor', 'Floor'],
-      ['pedestal', 'Pedestal'],
-    ] as const) {
-      if (floorHeld && value === 'pedestal') continue;
-      const opt = document.createElement('option');
-      opt.value = value;
-      opt.textContent = label;
-      ground.appendChild(opt);
-    }
-    ground.value = this.viewer.getGround();
-    ground.addEventListener('change', () => this.viewer.setGround(ground.value as GroundMode));
-    this.groundSelect = ground;
-    sec.appendChild(labelRow('Ground', ground));
-
-    // Floor/pedestal share one PBR surface (they're mutually exclusive);
-    // shadow and none have no surface to style, so the rows fold away.
-    const surfaceRows = div('env-rows');
-    if (!this.stagePicker) {
-      this.stagePicker = colorPicker(stage.color, (hex) => this.viewer.setStageColor(hex));
-    } else if (!this.stagePicker.isOpen()) {
-      this.stagePicker.set(stage.color);
-    }
-    surfaceRows.appendChild(labelRow('Surface albedo', this.stagePicker.root));
-
-    surfaceRows.appendChild(
-      compactRange('Surface roughness', 0, 1, 0.01, stage.roughness, (v) => this.viewer.setStageRoughness(v), {
-        limits: FRACTION,
-      }),
-    );
-    surfaceRows.appendChild(
-      compactRange('Surface metalness', 0, 1, 0.01, stage.metalness, (v) => this.viewer.setStageMetalness(v), {
-        limits: FRACTION,
-      }),
-    );
-    const pedestalRow = compactRange(
-      'Pedestal width',
-      0.5,
-      2,
-      0.05,
-      stage.pedestalScale,
-      (v) => this.viewer.setPedestalScale(v),
-      { limits: { min: 0.1 } },
-    );
-    if (!floorHeld) surfaceRows.appendChild(pedestalRow);
-    sec.appendChild(surfaceRows);
-    // A project on real units stands on a fixed floor at 0 (owner
-    // decision), which this raises or lowers, in centimetres; saved with
-    // the look as the presentation's floorOffset. Sculpt and Armature keep
-    // theirs in their own panels (Scene, Armature), so it is the viewer's
-    // and the editor's alone here.
-    const floorRow = compactRange(
-      'Floor offset',
-      -100,
-      100,
-      0.5,
-      this.viewer.getFloorOffset(),
-      (cm) => this.viewer.setFloorOffset(cm),
-      { unit: ' cm', limits: { min: -FLOOR_OFFSET_LIMIT, max: FLOOR_OFFSET_LIMIT } },
-    );
-    floorRow.classList.add('panel__floor-offset');
-    if (floorHeld && !this.sculpting) sec.appendChild(floorRow);
-
-    // Conditional rows in one place, re-run by every select that changes
-    // them and by refreshControls (the G key cycles ground externally).
-    const sync = (): void => {
-      hdriRows.hidden = !select.value;
-      bgColorRow.hidden = bg.value !== 'color';
-      surfaceRows.hidden = ground.value !== 'floor' && ground.value !== 'pedestal';
-      pedestalRow.hidden = ground.value !== 'pedestal';
-      floorRow.hidden = ground.value === 'off';
-    };
-    select.addEventListener('change', sync);
-    bg.addEventListener('change', sync);
-    ground.addEventListener('change', sync);
-    this.syncEnvRows = sync;
-    sync();
-  }
-
-  // --- camera (lens: editor only) ---------------------------------------
-
-  private buildCamera(body: HTMLElement): void {
-    const sec = section(body, 'Camera');
-    const lens = steppedSlider('Lens', LENS_STEPS, this.viewer.getFocalLength(), (mm) => `${mm}mm`, (mm) =>
-      this.viewer.setFocalLength(mm),
-    );
-    sec.appendChild(lens);
-    // Output grade (owner call): the film curve is a choice now, not a
-    // constant. Rides the saved look; matcap mode always renders ungraded
-    // regardless (the fidelity contract), so this steers the lit modes.
-    const tone = selectEl(
-      [
-        ['none', 'None (linear)'],
-        ['neutral', 'Neutral'],
-        ['agx', 'AgX'],
-        ['cinematic', 'Cinematic (ACES)'],
-      ],
-      this.viewer.getToneMapping(),
-    );
-    tone.addEventListener('change', () =>
-      this.viewer.setToneMapping(tone.value as ToneMappingId),
-    );
-    this.toneSelect = tone;
-    const toneRow = labelRow('Tone mapping', tone);
-    sec.appendChild(toneRow);
-    // The camera's own rows first, then depth of field.
-    this.buildDoF(sec);
-  }
-
-  /**
-   * Depth of field, the last rows of the Camera section — shown in the viewer too, not just the editor. Aperture sets
-   * the blur; Focus scrubs the plane across the subject depth. A double-click
-   * (double-tap on touch) in the viewport locks focus onto a point (tap-to-focus);
-   * the Focus slider releases that lock.
-   */
-  private buildDoF(sec: HTMLElement): boolean {
-    if (!this.viewer.dofAvailable()) return false;
-    const dof = this.viewer.getDoFState();
-    // Aperture and Focus act on nothing while the effect is off, so they
-    // fold away with the checkbox (the same rule as lights, ground, HDRI).
-    const rows = div('dof-rows');
-    rows.hidden = !dof.enabled;
-    this.dofRows = rows;
-    const toggle = checkbox('Depth of field', dof.enabled, (on) => {
-      this.viewer.setDoF({ enabled: on });
-      rows.hidden = !on;
-    });
-    this.dofCheckbox = toggle.querySelector('input')!;
-    sec.appendChild(toggle);
-    rows.appendChild(
-      steppedSlider('Aperture', F_STOPS, dof.fStop, (f) => `f/${f}`, (f) =>
-        this.viewer.setDoF({ fStop: f }),
-      ),
-    );
-    rows.appendChild(
-      // A typed focus may sit in front of the subject (below 0) or behind
-      // it (past 1). Moving the slider lets go of a tap-to-focus lock, so
-      // the first press of a double-click had let go of it before the field
-      // opened; it is put back for the field, which then keeps it on Esc.
-      compactRange('Focus', 0, 1, 0.02, dof.focus, (v) => this.viewer.setDoF({ focus: v }), {
-        hold: () => {
-          const lock = this.viewer.getDoFState().focusPoint;
-          return () => {
-            if (lock) this.viewer.setDoF({ focusPoint: lock });
-          };
-        },
-      }),
-    );
-    sec.appendChild(rows);
-    return true;
-  }
-
-  // --- developer overlay (?dev) -----------------------------------------
-
-  private buildDeveloper(body: HTMLElement): void {
-    const lighting = this.viewer.lighting;
-    const dev = section(body, 'Developer');
-
-    dev.appendChild(
-      compactRange('Bias', -0.003, 0.001, 0.0001, lighting.getBias(), (v) => lighting.setBias(v)),
-    );
-    dev.appendChild(
-      compactRange('Normal bias', 0, 0.1, 0.005, lighting.getNormalBias(), (v) => lighting.setNormalBias(v), {
-        limits: AMOUNT,
-      }),
-    );
-
-    const quality = document.createElement('select');
-    for (const q of ['auto', 'high', 'medium', 'low']) {
-      const opt = document.createElement('option');
-      opt.value = q;
-      opt.textContent = q;
-      quality.appendChild(opt);
-    }
-    quality.value = new URLSearchParams(location.search).get('q') ?? 'auto';
-    quality.addEventListener('change', () => {
-      const params = new URLSearchParams(location.search);
-      if (quality.value === 'auto') params.delete('q');
-      else params.set('q', quality.value);
-      location.search = params.toString();
-    });
-    dev.appendChild(labelRow('Quality', quality));
-
-    if (this.viewer.aoAvailable()) {
-      dev.appendChild(
-        checkbox('AO', this.viewer.getAOState().enabled, (on) => this.viewer.setAO({ enabled: on })),
-      );
-    }
-  }
-}
-
-function devMode(): boolean {
-  return new URLSearchParams(location.search).has('dev');
-}
-
 /** Typed-value limits shared by the Render panel's sliders. */
-const AMOUNT: Limits = { min: 0 }; // an intensity, a strength, a softness: no less than none
-const FRACTION: Limits = { min: 0, max: 1 }; // an opacity, a roughness, a metalness, a blur
-const DEGREES: Limits = { min: 0, wrap: 360 }; // a turn, wrapped
+export const AMOUNT: Limits = { min: 0 }; // an intensity, a strength, a softness: no less than none
+export const FRACTION: Limits = { min: 0, max: 1 }; // an opacity, a roughness, a metalness, a blur
+export const DEGREES: Limits = { min: 0, wrap: 360 }; // a turn, wrapped
 
-/** The Preset select's value for lights that match no preset. */
-const CUSTOM_PRESET = 'custom';
-
-/**
- * Slider travel for the light and HDRI intensities (owner call: most of the
- * old 0..8 and 0..3 went unused at the top). A value past either is still
- * reached by typing it, and a look saved with one still renders as it was.
- * The HDRI's 0..2 is on its own scale (Environment's ENV_INTENSITY_SCALE),
- * the renderer's 0..0.4; the plate's brightness runs 0..2 around its 1.
- */
-const LIGHT_INTENSITY_MAX = 5;
-const HDRI_INTENSITY_MAX = 2;
-const BG_BRIGHTNESS_MAX = 2;
-
-/**
- * Ambient occlusion's travel. GTAO's strength runs to 2, all of it usable
- * now that it deepens rather than clips (see DEFAULT_AO in Viewer). Its
- * radius runs 1 mm to 10 cm in a scene on real units, and 0.05 to 1 of
- * the subject's radius in one without. The
- * cavity's taps past about 12 px stamp offset copies of an edge onto the
- * surface behind it (a ghost of the ear on the cheek, measured on the
- * realistic head), so its travel ends there; a wider one can be typed.
- */
-const AO_STRENGTH_MAX = 2;
-const AO_RADIUS_MIN = 0.05;
-const AO_RADIUS_MAX = 1;
-const AO_RADIUS_CM_MIN = 0.1;
-const AO_RADIUS_CM_MAX = 10;
-const CAVITY_STRENGTH_MAX = 2;
-const CAVITY_RADIUS_MIN = 2;
-const CAVITY_RADIUS_MAX = 12;
-
-/** Lens slider stops, in 35mm-equivalent mm (wide normal through short tele). */
-const LENS_STEPS: number[] = [35, 50, 55, 80, 105, 135];
-
-/** Aperture slider stops, in f-stops (whole stops; lower is shallower). */
-const F_STOPS: number[] = [1.4, 2, 2.8, 4, 5.6, 8, 11, 16];
-
-/** Index of the entry in `steps` nearest to `value`. */
-function nearestIndex(steps: number[], value: number): number {
-  let best = 0;
-  for (let i = 1; i < steps.length; i++) {
-    if (Math.abs(steps[i] - value) < Math.abs(steps[best] - value)) best = i;
-  }
-  return best;
-}
-
-/** A slider that snaps to `steps`, with a formatted readout (lens, aperture). */
-function steppedSlider(
-  label: string,
-  steps: number[],
-  current: number,
-  format: (v: number) => string,
-  onPick: (v: number) => void,
-): HTMLElement {
-  const idx = nearestIndex(steps, current);
-  return labelled(label, () => {
-    const out = document.createElement('span');
-    out.className = 'readout';
-    out.textContent = format(steps[idx]);
-    const r = range(0, steps.length - 1, 1, idx, (i) => {
-      onPick(steps[i]);
-      out.textContent = format(steps[i]);
-    });
-    const wrap = div('range-wrap');
-    wrap.append(r, out);
-    return wrap;
-  });
-}
+/** The cavity's travel: its taps past about 12 px stamp offset copies of an edge onto the surface behind it, so the slider ends there; a wider one can be typed. */
+export const CAVITY_STRENGTH_MAX = 2;
+export const CAVITY_RADIUS_MIN = 2;
+export const CAVITY_RADIUS_MAX = 12;
 
 // --- tiny DOM helpers ----------------------------------------------------
 
-function button(label: string, onClick: () => void): HTMLButtonElement {
+export function button(label: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
   b.textContent = label;
@@ -1032,7 +44,7 @@ export function section(parent: HTMLElement, heading: string): HTMLDivElement {
   return s;
 }
 
-function range(
+export function range(
   min: number,
   max: number,
   step: number,
@@ -1146,7 +158,7 @@ export function numberedRange(
   return sliderRow(label, min, max, step, value, onInput, opts, true);
 }
 
-function labelled(label: string, build: () => HTMLElement): HTMLLabelElement {
+export function labelled(label: string, build: () => HTMLElement): HTMLLabelElement {
   return labelRow(label, build());
 }
 
@@ -1189,6 +201,10 @@ export class MaterialControls {
   private mcPicker?: MatcapPickerHandle;
   private presenting = false;
   private readonly sculpting: boolean;
+  private readonly cavity: boolean;
+  private cavityHost?: HTMLDivElement;
+  /** The cavity strength to come back to after it was switched off (zero is its "off"). */
+  private cavityStrength: number = DEFAULT_CAVITY.strength;
 
   /**
    * Sculpt's Present mode is up: the section offers the Sculpt colours /
@@ -1208,9 +224,10 @@ export class MaterialControls {
    */
   constructor(
     private readonly viewer: Viewer,
-    opts: { sculpting: boolean; heading?: string },
+    opts: { sculpting: boolean; heading?: string; cavity?: boolean },
   ) {
     this.sculpting = opts.sculpting;
+    this.cavity = !!opts.cavity;
     this.root = div('section');
     const h = document.createElement('h3');
     h.textContent = opts.heading ?? 'Material';
@@ -1266,6 +283,48 @@ export class MaterialControls {
         { limits: FRACTION },
       ),
     );
+
+    // Cavity: Sculpt's own form shading (the depth SSAO of its composite),
+    // which keeps creases readable on flat-shaded facets. Switching it on
+    // turns GTAO off, as the two would darken the same creases twice.
+    if (this.cavity) {
+      this.cavityHost = div('cavity-rows');
+      material.appendChild(this.cavityHost);
+      this.rebuildCavity();
+    }
+  }
+
+  private rebuildCavity(): void {
+    const host = this.cavityHost;
+    if (!host) return;
+    host.replaceChildren();
+    const cav = this.viewer.getSculptAO();
+    if (cav.strength > 0) this.cavityStrength = cav.strength;
+    const on = cav.strength > 0;
+    const sw = checkbox('Cavity', on, (v) => {
+      if (v) {
+        if (this.viewer.aoAvailable()) this.viewer.setAO({ enabled: false });
+        this.viewer.setSculptAO({ strength: this.cavityStrength });
+      } else {
+        this.viewer.setSculptAO({ strength: 0 });
+      }
+      this.rebuildCavity();
+    });
+    sw.dataset.role = 'cavity';
+    host.appendChild(sw);
+    if (!on) return;
+    host.appendChild(
+      compactRange('Strength', 0, CAVITY_STRENGTH_MAX, 0.05, this.cavityStrength, (v) => {
+        this.cavityStrength = v;
+        this.viewer.setSculptAO({ strength: v });
+      }, { limits: AMOUNT }),
+    );
+    host.appendChild(
+      compactRange('Radius', CAVITY_RADIUS_MIN, CAVITY_RADIUS_MAX, 1, cav.radius, (v) => this.viewer.setSculptAO({ radius: v }), {
+        limits: { min: 1 },
+        unit: ' px',
+      }),
+    );
   }
 
   /** Re-sync controls that hotkeys can change (material mode, matcap, shading, wireframe). */
@@ -1275,6 +334,8 @@ export class MaterialControls {
     this.rebuildOptions();
     this.smoothCheckbox.checked = !this.viewer.materials.getMaterialState().flatShading;
     this.wireframeCheckbox.checked = this.viewer.isWireframe();
+    // The Render tab may have switched it off, or GTAO on, since.
+    if (this.cavityHost && !this.cavityHost.contains(document.activeElement)) this.rebuildCavity();
   }
 
   /** The popovers are body-mounted: closing the panel takes them along. */

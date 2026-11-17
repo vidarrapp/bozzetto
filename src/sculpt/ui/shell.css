@@ -1119,7 +1119,7 @@ body.bz-shell .update-notice--beside-panel {
    brush ring, and the Scene, Model and Tool panels with
    their tabs (display, so their tabs leave no gap in the row). Material
    stays as a right-hand tab (its Surface section goes, its Display stays);
-   Render and Output remain beside it as right-hand tabs. The Output tab and panel exist in
+   Output remains beside it as a right-hand tab, and Lighting, Camera and Render stand at the left. The Output tab and panel exist in
    Present only. */
 body.presenting .sculpt-toolbar__brushes,
 body.presenting .sculpt-sliders,
@@ -1131,11 +1131,16 @@ body.presenting .sculpt-cursor {
   opacity: 0;
 }
 
-body.bz-shell.presenting .panel:not(.panel--render):not(.panel--output):not(.panel--material) {
+body.bz-shell.presenting .panel:not(.panel--lighting):not(.panel--camera):not(.panel--render):not(.panel--output):not(.panel--material) {
   visibility: hidden !important;
 }
 
-body.bz-shell.presenting .panel:not(.panel--render):not(.panel--output):not(.panel--material) > .panel__handle {
+body.bz-shell.presenting .panel:not(.panel--lighting):not(.panel--camera):not(.panel--render):not(.panel--output):not(.panel--material) > .panel__handle {
+  display: none;
+}
+
+/* Lighting, Camera and Render are Present's tabs at the left, and Lighting the public viewer's at the right; Sculpt builds them for its Present. */
+body.bz-shell:not(.presenting):not(.bz-frames):not(.bz-viewer) :is(.panel--lighting, .panel--camera, .panel--render) {
   display: none;
 }
 
@@ -2224,4 +2229,64 @@ body.bz-shell .panel--layers {
 
 .layers-foot {
   border-top: 1px solid var(--bz-line);
+}
+
+/* --- The Lighting tab's rig library (ui/lookPanels.ts) ------------------- */
+body.bz-shell .rig-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+body.bz-shell .rig-actions__btn.is-on {
+  background: var(--bz-control-hover);
+  color: var(--bz-text);
+}
+
+body.bz-shell .rig-manage {
+  margin-top: 8px;
+  border-top: 1px solid var(--bz-line);
+}
+
+body.bz-shell .rig-manage__none {
+  margin: 8px 0;
+  color: var(--bz-text-2);
+  font: 400 12px/16px var(--bz-font);
+}
+
+body.bz-shell .rig-manage__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--bz-line);
+}
+
+body.bz-shell .rig-manage__name {
+  flex: 1 0 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 13px/18px var(--bz-font);
+}
+
+@media (pointer: coarse) {
+  body.bz-shell .rig-actions__btn,
+  body.bz-shell .rig-manage__btn {
+    min-height: 44px;
+  }
+}
+
+/* Reset look at the foot of the Render tab, under a line. */
+body.bz-shell .panel__foot {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--bz-line);
+}
+
+body.bz-shell .panel__foot .panel__reset {
+  margin-bottom: 0;
 }

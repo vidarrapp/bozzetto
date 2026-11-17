@@ -19,7 +19,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { startAccountsServer } from './lib.mjs';
-import { renderShape, shapeChecks } from './renderMatch.mjs';
+import { sectionsOf } from './lookTabs.mjs';
 import { checkShape, readMenus } from './menuShape.mjs';
 
 const OWNER = 'owner@example.com';
@@ -253,7 +253,7 @@ export const suites = {
         old: getComputedStyle(document.querySelector('body > .topbar') ?? document.body).display,
       }));
       t.ok(JSON.stringify(strip.menus) === JSON.stringify(['File', 'Edit', 'View', 'Help']), `the strip has File, Edit, View and Help (${strip.menus})`);
-      checkShape(t, 'Present workspace', await readMenus(p, 'Present workspace'), { names: 'File,Edit,View,Help', edit: 'Preferences…', view: 'Shadows|Frames panel|Project panel|Material panel|Render panel|Output panel|Hide interface|Armature|Sculpt|Present' });
+      checkShape(t, 'Present workspace', await readMenus(p, 'Present workspace'), { names: 'File,Edit,View,Help', edit: 'Preferences…', view: 'Shadows|Lighting panel|Camera panel|Render panel|Frames panel|Project panel|Material panel|Output panel|Hide interface|Armature|Sculpt|Present' });
       t.ok(
         strip.steps.map((s) => s.text).join() === 'Armature,Sculpt,Present' && strip.steps[2].current === 'step',
         `the path reads Armature, Sculpt, Present with Present current (${JSON.stringify(strip.steps.map((s) => [s.text, s.current]))})`,
@@ -269,18 +269,18 @@ export const suites = {
       await until(p, () => /Forms/.test(document.querySelector('.bz-readout')?.textContent ?? ''), null, 15_000);
       r = await readout(p);
       t.ok(/Stage\s+Forms/.test(r.text), `and follows the playhead to the next stage (${r.text})`);
-      // Tabs: Project and Output stand open; Render is a tab away.
+      // Tabs: Project stands open at the right; Output, Material and Frames are tabs away, Lighting, Camera and Render at the left.
       const tabs = await p.evaluate(() => {
         const open = (s) => !document.querySelector(s)?.classList.contains('panel--collapsed');
         return {
           project: open('.panel--project'),
           output: open('.panel--output'),
           render: open('.panel--render'),
-          names: [...document.querySelectorAll('.panel > .panel__handle')].filter((h) => h.getClientRects().length).map((h) => h.querySelector('.handle__label').textContent),
+          names: [...document.querySelectorAll('.panel > .panel__handle')].filter((h) => h.getClientRects().length).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left).map((h) => h.querySelector('.handle__label').textContent),
         };
       });
-      t.ok(tabs.project && tabs.output && !tabs.render, `Project (left) and Output (right) are open, Render is closed (${JSON.stringify(tabs)})`);
-      t.ok(tabs.names.sort().join() === 'Frames,Material,Output,Project,Render', `the tabs are Frames, Project at the left and Material, Render, Output at the right (${tabs.names})`);
+      t.ok(tabs.project && !tabs.output && !tabs.render, `Project is open at the right, Output and Render are closed (${JSON.stringify(tabs)})`);
+      t.ok(tabs.names.join() === 'Lighting,Camera,Render,Frames,Project,Material,Output', `the tabs are Lighting, Camera, Render at the left and Frames, Project, Material, Output at the right (${tabs.names})`);
 
       // Hide the interface and back, by the strip's button.
       await p.click('.bz-strip__hide');
@@ -292,11 +292,10 @@ export const suites = {
       // View menu: the panels and Hide interface.
       await p.click('.bz-menuname:has-text("View")');
       const view = await p.evaluate(() => [...document.querySelectorAll('.file-menu--view:not([hidden]) .file-menu__item')].map((i) => i.textContent.replace(/\s+/g, ' ').trim()));
-      t.ok(['Frames panel', 'Project panel', 'Render panel', 'Output panel', 'Hide interface'].every((w) => view.some((v) => v.startsWith(w))), `View has the four panels and Hide interface (${JSON.stringify(view)})`);
+      t.ok(['Lighting panel', 'Camera panel', 'Render panel', 'Frames panel', 'Project panel', 'Material panel', 'Output panel', 'Hide interface'].every((w) => view.some((v) => v.startsWith(w))), `View has the seven panels and Hide interface (${JSON.stringify(view)})`);
       await p.keyboard.press('Escape');
       // Hiding put the panels away (Tab's rule everywhere): the tabs bring them back.
       await p.click('.panel--project > .panel__handle');
-      await p.click('.panel--output > .panel__handle');
       await settle(p, 300);
 
       // --- Project: the stages --------------------------------------------------------------
@@ -347,20 +346,15 @@ export const suites = {
       const fpsNow = await p.evaluate(() => window.__bozzetto.timeline.fps);
       t.ok(fpsNow === 12, `frames a second plays at once (${fpsNow})`);
 
-      // --- Render: the look -------------------------------------------------------------------
-      await p.click('.panel--render > .panel__handle');
+      // --- Lighting, Camera, Render: the look ---------------------------------------------------
+      await p.click('.panel--lighting > .panel__handle');
       await settle(p, 500);
-      const render = await p.evaluate(() => ({
-        output: document.querySelector('.panel--output').classList.contains('panel--collapsed'),
-        heading: document.querySelector('.panel--render .panel__title')?.textContent,
-        sections: [...document.querySelectorAll('.panel--render .section > h3')].map((h) => h.textContent),
-      }));
-      t.ok(render.output && render.heading === 'Render', `the Render tab opens in Output's place (${render.heading})`);
-      shapeChecks(t, await renderShape(p), 'The Present workspace');
+      t.ok((await sectionsOf(p, 'panel--lighting')).join() === 'Rig,Lights,Environment light', `the Lighting tab opens at the left (${await sectionsOf(p, 'panel--lighting')})`);
+      t.ok(await p.evaluate(() => !document.querySelector('.panel--project').classList.contains('panel--collapsed')), 'and Project stays open at the right');
       const lightBefore = await p.evaluate(() => JSON.stringify(window.__bozzetto.lighting.serialize()));
       // The key light's intensity, by its slider.
       const moved = await p.evaluate(() => {
-        const row = [...document.querySelectorAll('.panel--render label.compact')].find((l) => l.firstElementChild?.textContent === 'Intensity');
+        const row = [...document.querySelectorAll('.panel--lighting label.compact')].find((l) => l.firstElementChild?.textContent === 'Intensity');
         const input = row?.querySelector('input[type=range]');
         if (!input) return false;
         input.value = String(Number(input.value) + 0.7);
@@ -370,7 +364,12 @@ export const suites = {
       });
       await settle(p, 500);
       const lightAfter = await p.evaluate(() => JSON.stringify(window.__bozzetto.lighting.serialize()));
-      t.ok(moved && lightAfter !== lightBefore, 'a light slider in the Render tab changes the look');
+      t.ok(moved && lightAfter !== lightBefore, 'a light slider in the Lighting tab changes the look');
+      await p.click('.panel--camera > .panel__handle');
+      t.ok((await sectionsOf(p, 'panel--camera')).join() === 'Camera', 'the Camera tab has Camera');
+      await p.click('.panel--render > .panel__handle');
+      t.ok((await sectionsOf(p, 'panel--render')).join() === 'Tone,Ambient occlusion,Background and ground', `the Render tab has Tone, Ambient occlusion, Background and ground (${await sectionsOf(p, 'panel--render')})`);
+      await p.click('.panel--render > .panel__handle');
 
       // --- Output ------------------------------------------------------------------------------------
       await p.click('.panel--output > .panel__handle');
@@ -510,7 +509,7 @@ export const suites = {
       const detail = after.stages?.find((s) => s.name === 'Detail');
       t.ok(after.title === 'Demo timelapse 2' && after.visibility === 'private' && after.config.fps === 12, `the server has the settings (${after.title}, ${after.visibility}, ${after.config?.fps} fps)`);
       t.ok(detail?.frame === 6 && detail?.desc === 'Surface work' && after.stages.length === 3, `and the new stage (${JSON.stringify(after.stages)})`);
-      t.ok(JSON.stringify(after.lighting) === lightAfter, 'and the look the Render tab set, as the viewer has it');
+      t.ok(JSON.stringify(after.lighting) === lightAfter, 'and the look the Lighting tab set, as the viewer has it');
       // Nothing changes by itself while it stands.
       await settle(p, 2500);
       r = await readout(p);
@@ -760,7 +759,7 @@ export const suites = {
       s = await p.evaluate(() => ({
         count: document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent,
         drop: !document.querySelector('.panel--frames .bz-drop')?.hidden,
-        right: !!document.querySelector('.panel--render, .panel--output'),
+        right: !!document.querySelector('.panel--lighting, .panel--output'),
         empty: document.querySelector('.bz-empty')?.textContent ?? '',
       }));
       t.ok(s.count === '0' && s.drop && !s.right && /Drop frames/.test(s.empty), `Yes clears them: the empty tab comes back, with the drop box and no view (${JSON.stringify(s)})`);
@@ -799,7 +798,7 @@ export const suites = {
           frames: open('.panel--frames'),
           project: open('.panel--project'),
           output: open('.panel--output'),
-          render: !!document.querySelector('.panel--render'),
+          render: !!document.querySelector('.panel--lighting'),
           rows: document.querySelectorAll('.panel--frames .bz-frame, .panel--frames .bz-frames').length,
           count: document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent,
           drop: !document.querySelector('.panel--frames .bz-drop')?.hidden,
@@ -866,7 +865,7 @@ export const suites = {
     await page.click('.panel--frames .bz-trash');
     await page.waitForSelector('.bz-ask-yes', { timeout: 5000 });
     await page.click('.bz-ask-yes');
-    await page.waitForFunction(() => !window.__bozzetto && !document.querySelector('.panel--render'), null, { timeout: 30_000 });
+    await page.waitForFunction(() => !window.__bozzetto && !document.querySelector('.panel--lighting'), null, { timeout: 30_000 });
     s = await state();
     t.ok(s.count === '0' && s.drop && !s.order && /Drop frames/.test(s.empty), `Clear, once asked, is the starting state again (${JSON.stringify({ count: s.count, drop: s.drop })})`);
     t.ok(errors.length === 0, `no page errors (${errors.join(' | ')})`);

@@ -800,6 +800,15 @@ const emptySpot = (page) =>
  * a press aimed at a slider before it ends lands off the screen.
  */
 const openPanel = async (page, title) => {
+  // The look is Present's (Lighting, Camera, Render at the left): a test that names the old
+  // Render panel gets Sculpt's Present and the Lighting tab, which holds the lights.
+  if (title === 'Render') {
+    await page.evaluate(() => {
+      const sculpt = window.__sculpt;
+      if (sculpt && !sculpt.present?.isActive()) sculpt.present.enter();
+    });
+    title = 'Lighting';
+  }
   const found = await page.evaluate((name) => {
     if (!document.getElementById('e2e-no-slide')) {
       const style = document.createElement('style');
@@ -831,8 +840,11 @@ const openPanel = async (page, title) => {
  */
 const sliderRow = (page, panel, label, nth = 0) =>
   page.evaluate(
-    ([name, caption, k]) => {
+    ([name0, caption, k]) => {
+      // The look's rows are in Lighting or Camera; the panel is opened if another is up.
+      const name = name0 === 'Render' ? (['Focus', 'Aperture', 'Lens'].includes(caption) ? 'Camera' : 'Lighting') : name0;
       const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === name);
+      if (name0 === 'Render' && p?.classList.contains('panel--collapsed')) p.querySelector('.panel__handle').click();
       const row = p && [...p.querySelectorAll('label.compact')].filter((r) => r.firstElementChild?.textContent === caption)[k];
       if (!row) return null;
       row.scrollIntoView({ block: 'center' });
@@ -5883,7 +5895,7 @@ export const suites = {
     await typeValue(page, '4');
     t.eq((await keyLight(page)).intensity, 4, 'and Enter applies what was typed');
     const viaKey = await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Lighting');
       const input = [...p.querySelectorAll('label.compact')].find((r) => r.firstElementChild?.textContent === 'Intensity').querySelector('input');
       input.focus();
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));

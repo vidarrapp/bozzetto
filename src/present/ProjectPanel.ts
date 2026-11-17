@@ -63,7 +63,7 @@ export class ProjectPanel extends SidePanel {
   private bound: Stage | null = null;
 
   constructor(values: ProjectValues, hooks: ProjectHooks) {
-    super({ id: 'project', title: 'Project', side: 'left', variant: 'panel--project', collapsed: true });
+    super({ id: 'project', title: 'Project', side: 'right', variant: 'panel--project', collapsed: true });
     this.values = { ...values, stages: values.stages.map((s) => ({ ...s })) };
     this.hooks = hooks;
     this.setHeading(values.title);

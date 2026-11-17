@@ -474,6 +474,14 @@ export class InputShell {
   /** Shift held = smoothing (temp tool); the cursor previews it in blue. */
   private shiftHeld = false;
   private lKeyHeld = false;
+  /**
+   * View > Move light: the next drag on the view moves the key light, as
+   * holding L does, then lets go. It rides on lKeyHeld for the press and
+   * the move; what it adds is that only the drag counts (a touch has no
+   * hover) and that its end disarms.
+   */
+  private lightArmed = false;
+  private lightPointer = -1;
   private strokeReduceTimer = 0;
   private lastOrbitTime = 0;
   private lastOrbitDir = 0;
@@ -1703,6 +1711,7 @@ export class InputShell {
    * navigate: holding the key is the deliberate part.
    */
   private heldKeyPress(e: PointerEvent): void {
+    if (this.lightArmed && this.lightPointer === -1) this.lightPointer = e.pointerId;
     if (this.adjust && this.adjustPointer === -1 && (e.pointerType !== 'mouse' || e.button === 0)) {
       this.adjustPointer = e.pointerId;
       this.adjustLastX = e.clientX;
@@ -1766,6 +1775,8 @@ export class InputShell {
     // on its vertical axis alone, so the light could never come from above
     // or below.
     if (this.lKeyHeld) {
+      // Armed from the menu, only the pointer that is down moves it.
+      if (this.lightArmed && this.lightPointer !== e.pointerId) return;
       this.hooks.moveKeyLight(
         (e.clientX - prevAbsX) * KEY_DRAG_DEG_PER_PX,
         -(e.clientY - prevAbsY) * KEY_DRAG_DEG_PER_PX,
@@ -1926,6 +1937,12 @@ export class InputShell {
     if (this.handingToOrbit) return;
     const s = this.session;
     if (e.pointerType === 'touch') this.touchesDown.delete(e.pointerId);
+    // The armed light drag is over with its press: one drag, then it lets go.
+    if (this.lightArmed && this.lightPointer === e.pointerId) {
+      this.armLight(false);
+      e.stopPropagation();
+      return;
+    }
     if (this.measureDrag?.pointerId === e.pointerId) {
       this.measureDrag = null;
       this.measureTool.end();
@@ -2380,6 +2397,13 @@ export class InputShell {
     if ((e.target as Element | null)?.closest?.('.curve-editor__plot') && !e.ctrlKey && !e.metaKey && e.key !== 'Tab') return;
     const s = this.session;
 
+    // Esc lets go of an armed Move light.
+    if (this.lightArmed && e.key === 'Escape') {
+      this.armLight(false);
+      e.preventDefault();
+      return;
+    }
+
     // Keep Firefox from opening the menu bar on the negative modifier.
     if (e.key === 'Alt') {
       e.preventDefault();
@@ -2614,7 +2638,7 @@ export class InputShell {
     const held = keymap.holdActionForKeyUp(e, 'sculpt');
     if (held?.id === 'brush.size' && this.adjust === 'radius') this.endAdjust();
     if (held?.id === 'brush.strength' && this.adjust === 'intensity') this.endAdjust();
-    if (held?.id === 'light.move') this.lKeyHeld = false;
+    if (held?.id === 'light.move' && !this.lightArmed) this.lKeyHeld = false;
   };
 
   /** One wheel tick of brush size: ~6 percent, at least 2px, clamped. */
@@ -2658,6 +2682,18 @@ export class InputShell {
     if (was === 'intensity') this.showStrength();
   }
 
+  /** View > Move light: arm or disarm the next drag as a move of the key light. */
+  armLight(on: boolean): void {
+    this.lightArmed = on;
+    this.lightPointer = -1;
+    this.lKeyHeld = on;
+    this.cursor.hide();
+  }
+
+  isLightArmed(): boolean {
+    return this.lightArmed;
+  }
+
   /** Window lost focus: every held-key mode ends, since no keyup will come. */
   private readonly onWindowBlur = (): void => {
     if (this.adjust) this.endAdjust();
@@ -2670,6 +2706,7 @@ export class InputShell {
     this.cancelLoopDrag();
     this.resetFingers();
     this.lKeyHeld = false;
+    this.lightArmed = false;
     if (this.shiftHeld) {
       this.shiftHeld = false;
       this.syncCursorBrush();

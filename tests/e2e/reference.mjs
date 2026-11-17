@@ -197,12 +197,12 @@ export const suites = {
   async refBoard(page, base, t) {
     await openForInput(page, base);
 
-    // The tab: after Tool, before Render, on the right.
+    // The tab: after Tool and Material, the last on the right.
     const tabs = await page.evaluate(() => {
       const x = (cls) => document.querySelector(`.panel--${cls} > .panel__handle`)?.getBoundingClientRect().left ?? null;
-      return { tool: x('sculpt'), ref: x('reference'), render: x('render') };
+      return { tool: x('sculpt'), material: x('material'), ref: x('reference') };
     });
-    t.ok(tabs.ref !== null && tabs.tool < tabs.ref && tabs.ref < tabs.render, `the Reference tab stands after Tool and before Render (${JSON.stringify(tabs)})`);
+    t.ok(tabs.ref !== null && tabs.tool < tabs.material && tabs.material < tabs.ref, `the Reference tab stands after Tool and Material (${JSON.stringify(tabs)})`);
     t.eq(await page.evaluate(() => document.querySelector('.panel--reference .panel__handle').textContent.trim()), 'Reference', 'the tab says Reference');
 
     // The View menu has the panel and the switch; the Edit menu has Paste picture.

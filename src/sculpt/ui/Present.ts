@@ -1,7 +1,6 @@
 import { div, labelRow, onTap, selectEl } from '../../ui/dom';
 import { numberedRange, section } from '../../ui/Panel';
 import { SidePanel } from './SidePanel';
-import { panelIsOpen } from './panelMemory';
 import { SHELL_LAYOUT_EVENT } from './shellLayout';
 import { deviceStore } from '../../ui/deviceStorage';
 
@@ -17,8 +16,8 @@ import { deviceStore } from '../../ui/deviceStorage';
  * do not answer (InputShell.presenting), while orbit, pan and zoom do,
  * fingers included, by the iPad's finger rules. The strip stays, with the
  * path showing Present, and Publish at its right (Present only); the notices
- * stay. Two panels remain, as the right-hand tabs: Render (everything on the
- * look) and Output (below). Nothing about the scene changes by going in or
+ * stay. Material and Output (below) stand at the right, and Lighting, Camera
+ * and Render (everything on the look) at the left. Nothing about the scene changes by going in or
  * out, and the autosave carries on. Leaving puts the interface back as it
  * was: which panels were open, the tool, the gizmo or the Select tool, the
  * mask tint, Tab's hidden state.
@@ -78,7 +77,7 @@ const SPEED_KEY = 'bozzetto-present-speed';
 /** A stalled frame never flings the turn. */
 const MAX_STEP_S = 0.1;
 
-/** The Output panel: the right-hand tab beside Render, in Present only. */
+/** The Output panel: the right-hand tab beside Material, in Present only. */
 class OutputPanel extends SidePanel {
   constructor() {
     super({ id: 'output', title: 'Output', side: 'right', variant: 'panel--output', collapsed: true });
@@ -259,8 +258,8 @@ export class PresentMode {
     this.restore = this.host.enter();
     this.active = true;
     this.bar.hidden = false;
-    // Render stays up if it was; otherwise the Output tab opens.
-    if (!panelIsOpen('settings')) this.output.setCollapsed(false);
+    // The Output tab opens; Lighting, Camera and Render wait at the left.
+    this.output.setCollapsed(false);
     this.onChange?.(true);
     window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
     return true;

@@ -12,7 +12,8 @@
 
 import { deviceStore } from '../../ui/deviceStorage';
 
-/** The panels' ids by side, as they announce themselves ('settings' is the Render panel). */
+/** The panels' ids by side, as they announce themselves . */
+// Lighting, Camera and Render are Present's and are not remembered.
 const SIDES: Record<string, 'left' | 'right'> = {
   scene: 'left',
   model: 'left',
@@ -21,7 +22,6 @@ const SIDES: Record<string, 'left' | 'right'> = {
   material: 'right',
   reference: 'right',
   sculpt: 'right',
-  settings: 'right',
 };
 
 const key = (mode: string): string => `bz.panels.${mode}`;
@@ -101,7 +101,10 @@ const ROOT: Record<string, string> = {
   reference: '.panel--reference',
   sculpt: '.panel--sculpt',
   armature: '.panel--armature',
-  settings: '.panel--render',
+  lighting: '.panel--lighting',
+  camera: '.panel--camera',
+  render: '.panel--render',
+  frames: '.panel--frames',
   // The owner's Present of a published project (present/): its two own tabs.
   project: '.panel--project',
   output: '.panel--output',

@@ -73,7 +73,7 @@ export async function mountPublicViewer(
   onStatus?: (msg: string) => void,
   opts: { author?: string; origin?: Origin } = {},
 ): Promise<{ viewer: Viewer; frame: ViewerFrame }> {
-  const parts = await mountViewerParts(viewport, manifest, source, onStatus, { author: opts.author, shell: true, frame: true });
+  const parts = await mountViewerParts(viewport, manifest, source, onStatus, { author: opts.author, shell: true, frame: true, look: { owner: 'viewer', side: 'right', tabs: ['lighting'], rigLibrary: false } });
   const { viewer, panel, transport } = parts;
   // How the model is drawn (mode, matcap, shading, wireframe) is the Material tab's at the right, with Render, as in Present; Render at the right never holds it.
   new MaterialPanel(viewer, { sculpting: false });
@@ -118,7 +118,7 @@ export async function mountPublicViewer(
   };
   const file = new TopMenu('File', fileItems(), 'file-menu--file', strip.menus, true);
   new TopMenu('Edit', editMenuItems({ mode: 'view' }), 'file-menu--edit', strip.menus, true);
-  const refresh = (): void => panel.refreshControls();
+  const refresh = (): void => panel?.refreshControls();
   new TopMenu(
     'View',
     viewMenuItems({
@@ -139,10 +139,12 @@ export async function mountPublicViewer(
           refresh();
         },
       },
+      // Material, then Lighting: the order of the tabs at the right.
       panels: [
         ['material', 'Material'],
-        ['settings', 'Render'],
+        ['lighting', 'Lighting'],
       ],
+      panelsInOrder: true,
       hideInterface: () => chrome.set(true),
     }),
     'file-menu--view',
