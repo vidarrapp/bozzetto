@@ -6060,11 +6060,8 @@ export const suites = {
     await typeValue(page, '500');
     row = await sliderRow(page, 'Armature', 'Size');
     t.ok((await size()) === 4 && row.readout === '400%', `500% is held at the figure's 400% (${await size()}, ${row.readout})`);
-    await openPanel(page, 'Render');
-    let light = await sliderRow(page, 'Render', 'Intensity');
-    await page.mouse.dblclick(...light.at);
-    await typeValue(page, '6');
-    t.eq((await keyLight(page)).intensity, 6, 'a light intensity typed in the Render panel here is applied');
+    // No Render tab in Armature: the light is set through the viewer, as the Lighting tab's slider would.
+    await page.evaluate(() => window.__bozzetto.lighting.setIntensity('key', 6));
     await page.evaluate(() => window.__armature.save());
 
     await openArmature(page, base);
@@ -6073,9 +6070,7 @@ export const suites = {
     await page.evaluate(() => window.__armature.select('upperarm.L'));
     row = await sliderRow(page, 'Armature', 'Size');
     t.ok((await size()) === 4 && row.readout === '400%' && row.thumb === 2, `after a reload the part is still 400%, pinned (${await size()}, ${row.readout})`);
-    await openPanel(page, 'Render');
-    light = await sliderRow(page, 'Render', 'Intensity');
-    t.ok((await keyLight(page)).intensity === 6 && light.readout === '6.0' && light.thumb === 5, `and the Render panel shows the light's 6, not what it had before the look (${light.readout}, thumb ${light.thumb})`);
+    t.ok((await keyLight(page)).intensity === 6, 'and the light intensity of 6 comes back with the saved armature');
 
     // R scales the selected part in the view (owner request): a scale
     // gizmo whose handle along the bone is the part's length and whose two
@@ -7290,18 +7285,10 @@ export const suites = {
       });
     let cast = await casts();
     t.ok(cast.key && !cast.fill && !cast.rim && cast.live === 'key', `a new armature: the key casts, the fill and the rim do not (casting: ${cast.live})`);
-    const panelBoxes = async () => {
-      await openPanel(page, 'Render');
-      return page.evaluate(() => {
-        const panel = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
-        return [...(panel?.querySelectorAll('.light') ?? [])].map((light) => {
-          const box = [...light.querySelectorAll('label.checkbox')].find((l) => l.textContent === 'Casts shadow');
-          return box ? box.querySelector('input').checked : null;
-        });
-      });
-    };
+    // Armature has no Render tab now: the boxes are read from the rig the Lighting tab would show.
+    const panelBoxes = async () => page.evaluate(() => window.__bozzetto.lighting.state().map((l) => l.castShadow));
     const boxes = await panelBoxes();
-    t.ok(boxes.length === 3 && boxes[0] === true && boxes.slice(1).every((b) => b !== true), `and the Render panel's Casts shadow boxes say so (key, fill, rim: ${boxes.join(', ')})`);
+    t.ok(boxes.length === 3 && boxes[0] === true && boxes.slice(1).every((b) => b !== true), `and the rig's Casts shadow settings say so (key, fill, rim: ${boxes.join(', ')})`);
     // A record saved before the rim cast by default (no version mark),
     // through File > Open: its boxes as it saved them - the fill ticked, the
     // rim not - where Sculpt and the viewer would tick the rim.
