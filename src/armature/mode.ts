@@ -2486,6 +2486,46 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     },
     /** Where a world point falls on the page, in CSS pixels; null behind the camera. */
     onScreen: (x: number, y: number, z: number) => toPage(new Vector3(x, y, z)),
+    /**
+     * A page point over the canvas where the figure's surface in view is `bone`'s part, for the tests: one of
+     * the part's own vertices, as posed, whose ray from the camera meets that part first; null if none is in
+     * view. It reads the figure with bounds of its own and puts the mesh's stored ones back, so what a press
+     * reads is left as it was.
+     */
+    partSpot: (bone: string): [number, number] | null => {
+      const mesh = armature.mesh;
+      // The typings say a skinned mesh always has its bounds; null is how three is told to work them out again.
+      const bounds = mesh as unknown as { boundingSphere: Sphere | null; boundingBox: Box3 | null };
+      const keep = { sphere: bounds.boundingSphere, box: bounds.boundingBox };
+      bounds.boundingSphere = null;
+      bounds.boundingBox = null;
+      try {
+        mesh.updateMatrixWorld(true);
+        const count = mesh.geometry.getAttribute('position').count;
+        const v = new Vector3();
+        const ndc = new Vector2();
+        const rc = new Raycaster();
+        const r = canvas.getBoundingClientRect();
+        let tried = 0;
+        const step = Math.max(1, Math.floor(count / 3000));
+        for (let i = 0; i < count && tried < 40; i += step) {
+          if (armature.boneAt({ face: { a: i } } as unknown as Parameters<typeof armature.boneAt>[0]) !== bone) continue;
+          mesh.getVertexPosition(i, v);
+          v.applyMatrix4(mesh.matrixWorld);
+          const p = toPage(v);
+          if (!p || document.elementFromPoint(p[0], p[1]) !== canvas) continue;
+          tried++;
+          ndc.set(((p[0] - r.left) / r.width) * 2 - 1, -((p[1] - r.top) / r.height) * 2 + 1);
+          rc.setFromCamera(ndc, viewer.camera);
+          const hit = rc.intersectObject(mesh, false)[0];
+          if (hit && armature.boneAt(hit) === bone) return p;
+        }
+        return null;
+      } finally {
+        bounds.boundingSphere = keep.sphere;
+        bounds.boundingBox = keep.box;
+      }
+    },
     /** What the last press on the figure took: 'ik:<chain>', 'aim:<chain>', 'root', a bone, or null. */
     picked: () => picked,
     select,
