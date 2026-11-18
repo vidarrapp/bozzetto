@@ -29,9 +29,23 @@ export interface MaterialState {
    * Sculpt mode) shows them - "Sculpt colours", true - or the albedo over
    * the whole of it - "Plain colour", false. Absent from looks saved
    * before the choice existed, which mean the model's own colours.
+   * Written alongside `colourSource`: true for Albedo and paint and for Paint
+   * only, false for Albedo only, so a build from before the third choice reads
+   * a look sensibly (it has two: the paint, or the albedo alone).
    */
   vertexColors?: boolean;
+  /**
+   * What an object in Sculpt shows: the albedo times the paint ('both', the
+   * default), the albedo alone ('albedo') or the paint alone ('paint', as
+   * under a white albedo, with the albedo unchanged). A look without it takes
+   * it from `vertexColors` (true is 'both', false is 'albedo').
+   */
+  colourSource?: ColourSource;
 }
+
+/** What a sculpt shows: albedo times paint, the albedo alone, the paint alone. */
+export type ColourSource = 'both' | 'albedo' | 'paint';
+export const isColourSource = (v: unknown): v is ColourSource => v === 'both' || v === 'albedo' || v === 'paint';
 
 interface MatcapConfig {
   id: string;
@@ -131,7 +145,7 @@ export class Materials {
    * The look's Plain colour: a painted model shows the albedo instead of
    * its paint. Never while sculpting, where the paint is the work.
    */
-  private plainColor = false;
+  private source: ColourSource = 'both';
   /** Read roughness/metalness from materialsPBR.x/.y - sculpt only: a
       published model has a colour attribute but no materialsPBR, and a
       shader reading a missing attribute is not an error you get to see. */
@@ -219,20 +233,31 @@ export class Materials {
     this.rebuildSculptColor();
   }
 
-  /** Plain colour (true) or the model's own paint (false); see MaterialState.vertexColors. */
-  setPlainColor(plain: boolean): void {
-    if (plain === this.plainColor) return;
-    this.plainColor = plain;
+  /**
+   * What a sculpt shows (see MaterialState.colourSource): which of the two
+   * factors, the albedo and the paint, the shader uses. Nothing is rewritten.
+   * A published model has two choices, its colours or its albedo alone
+   * ('albedo'); 'paint' is its colours too.
+   */
+  setColourSource(source: ColourSource): void {
+    if (source === this.source) return;
+    this.source = source;
     this.rebuildSculptColor();
   }
 
-  /**
-   * Whether the Lit colour reads the `color` attribute: always while
-   * sculpting, and for a painted model unless the look says Plain colour.
-   */
+  getColourSource(): ColourSource {
+    return this.source;
+  }
+
+  /** Plain colour (true) or the model's own paint (false): the viewer's two choices. */
+  setPlainColor(plain: boolean): void {
+    this.setColourSource(plain ? 'albedo' : 'both');
+  }
+
+  /** Whether the Lit colour reads the `color` attribute (the albedo alone does not). */
   private readsVertexColor(): boolean {
-    if (this.sculptVertexColor) return !(this.presenting && this.plainColor);
-    return this.modelVertexColor && !this.plainColor;
+    if (this.sculptVertexColor) return this.source !== 'albedo';
+    return this.modelVertexColor && this.source !== 'albedo';
   }
 
   private rebuildSculptColor(): void {
@@ -275,7 +300,7 @@ export class Materials {
       if (id === 'lit') {
         if (this.sculptVertexColor) {
           const albedo = userData('albedo', 'color') as unknown as Vec3Node;
-          node = this.readsVertexColor() ? albedo.mul(attribute('color', 'vec3')) : albedo;
+          node = this.source === 'paint' ? attribute('color', 'vec3') : this.readsVertexColor() ? albedo.mul(attribute('color', 'vec3')) : albedo;
         } else if (this.readsVertexColor()) {
           node = attribute('color', 'vec3');
         }
@@ -430,7 +455,8 @@ export class Materials {
       metalness: lit.metalness,
       flatShading: this.flatShading,
       matcapIndex: this.matcapIndex,
-      vertexColors: !this.plainColor,
+      vertexColors: this.source !== 'albedo',
+      colourSource: this.source,
     };
   }
 
@@ -443,7 +469,9 @@ export class Materials {
     if (finite(state.metalness)) this.setMetalness(Math.min(1, Math.max(0, state.metalness)));
     if (typeof state.matcapIndex === 'number') this.setMatcapIndex(state.matcapIndex);
     if (typeof state.flatShading === 'boolean') this.setFlatShading(state.flatShading);
-    if (typeof state.vertexColors === 'boolean') this.setPlainColor(!state.vertexColors);
+    // The third choice where the look has it; an older look has the boolean alone.
+    if (isColourSource(state.colourSource)) this.setColourSource(state.colourSource);
+    else if (typeof state.vertexColors === 'boolean') this.setPlainColor(!state.vertexColors);
   }
 
   dispose(): void {

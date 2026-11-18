@@ -16,6 +16,8 @@ export interface MaterialPanelOptions {
   sculpting: boolean;
   /** Plain Sculpt: the Display section has the Cavity switch (Armature and Present have no cavity). */
   cavity?: boolean;
+  /** Sculpt: the Display section has the Colour choice (albedo and paint, albedo only, paint only) after Mode. */
+  colour?: boolean;
   /**
    * Sculpt only: whether there is an active object. Gives the panel its
    * Surface section, the active object's own values; without it the panel
@@ -67,7 +69,7 @@ export class MaterialPanel extends SidePanel {
     this.hasObject = opts.surface?.hasObject ?? null;
     this.materialName = opts.surface?.materialName ?? null;
     if (opts.surface) this.buildSurface(this.body);
-    this.display = new MaterialControls(viewer, { sculpting: opts.sculpting, heading: 'Display', cavity: opts.cavity });
+    this.display = new MaterialControls(viewer, { sculpting: opts.sculpting, heading: 'Display', cavity: opts.cavity, colour: opts.colour });
     this.body.appendChild(this.display.root);
     this.display.rebuild();
     window.addEventListener('bozzetto:present', this.onPresent);

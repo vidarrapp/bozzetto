@@ -1,4 +1,5 @@
 import { div } from '../../ui/dom';
+import { dynamicNote } from './dynamicNote';
 import { LayerBar, LayerControls, LayerList, type LayerRowData } from '../../ui/layerList';
 import { displayRows, resolveDrop } from '../../ui/layerTree';
 import { askWindow } from '../../ui/askWindow';
@@ -39,8 +40,7 @@ export class LayersPanel extends SidePanel {
     this.sculptEl = div('layers-sculpt');
     this.body.append(this.sculptEl);
 
-    this.note = div('layers-note');
-    this.note.hidden = true;
+    this.note = dynamicNote(session, 'Layers need dynamic topology off.', () => this.onEdit?.());
     this.sculptEl.append(this.note);
 
     // The weight of the ACTIVE layer or group, as Photoshop has its opacity at the top of the panel.
@@ -220,7 +220,6 @@ export class LayersPanel extends SidePanel {
     this.controls.set(active ? active.weight : null, null);
     const dynamic = !!mesh?.isDynamic;
     this.note.hidden = !dynamic;
-    this.note.textContent = dynamic ? 'Layers need dynamic topology off.' : '';
     this.bar.set({ mask: !!active && !dynamic, group: !!mesh && !dynamic, layer: !!mesh && !dynamic, delete: !!active });
   }
 }

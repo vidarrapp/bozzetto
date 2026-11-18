@@ -784,10 +784,20 @@ step and Shift+B come out. The page's address has `paint=1` while it is up
   items are the workspace's own.
 - **Colour.** Nothing to switch on: paint shows in Sculpt, Paint and Present
   from Sculpt whatever the look says, so entering Paint neither changes
-  Colour nor says anything. Colour (Present from Sculpt, Render panel) is
-  **Albedo and paint** (the albedo times the paint) or **Albedo only**; over a
-  published model with colours it stays Sculpt colours (the model's own
-  colours) or Plain colour (its albedo).
+  Colour nor says anything. Colour is one control, in the Material tab's
+  Display section after Mode, in Sculpt, Paint and Present from Sculpt (and not
+  in the Render tab): **Albedo and paint** (the albedo times the paint, the
+  default), **Albedo only** or **Paint only** (the paint as picked, as under a
+  white albedo; the object's albedo is not changed). It chooses which factor
+  the shader uses and rewrites nothing. It is stored in the look as
+  `colourSource` ('both', 'albedo', 'paint') beside `vertexColors`, which is
+  true for the first and last and false for Albedo only, so a look from
+  before opens right (false is Albedo only, true Albedo and paint) and a
+  build from before reads a new one sensibly. A publish writes what is seen:
+  the product, the paint alone for Paint only, and for Albedo only the product
+  with the look saying Plain colour. Over a published model with colours the
+  viewer keeps its two choices, Sculpt colours (the model's own colours) and
+  Plain colour (its albedo).
 - **Paint layers** use `ui/layerList.ts` with a reorder handle (a 44px grip at
   the row's left, `touch-action: none`, a line shows the drop place), a blend
   mode select (`ui/blendModes.ts`, 27 modes in Photoshop's six groups, a
@@ -801,6 +811,18 @@ step and Shift+B come out. The page's address has `paint=1` while it is up
   bottom is paintable. A stroke on a layer that is hidden or
   at 0% does not start and says why; Erase with Base picked says to pick a
   layer (Base is opaque).
+- **Dynamic topology.** An object with it on has no paint layers (the Layers
+  tab says "Paint layers need dynamic topology off." with a plain button,
+  Turn off dynamic topology; Sculpt's Layers tab has the same with "Layers need
+  dynamic topology off."). It can be painted without layers, the vendor's own
+  way, in white or the paint blended with white under the brush (new
+  triangles never get the albedo, which is not in the colours). On entering
+  Paint with an active object that has it on, and when the active object
+  changes to one in Paint, a notice (statusToast, about 8 s, not blocking) says
+  `Paint layers need dynamic topology off for "Sphere".` with a Turn off
+  button, once for each object a visit to the page; nothing holds up the
+  switch. Turn off is the Model panel's switch for that object: one undo step,
+  the shape and colours stay, the surface is triangles.
 - **The albedo multiplies the paint.** The shown colour is the object's
   material albedo times its paint, in linear space, per object and always.
   Base is white and opaque until painted, so an unpainted object is its
