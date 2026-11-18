@@ -1,7 +1,14 @@
 # Plan: the tool library, the dock, and tools built from nodes
 
 Status: design for Vidar, 2026-11-17, with his answers of the same day worked in
-(section 11). Nothing is built. It replaces the drafts
+(section 11). Nothing is built.
+
+**Superseded in part, 2026-11-18.** The dock and the library are now planned in
+`docs/plans/asset-library.md`: one Asset library window with tabs for Tools,
+Materials, Lighting and HDRIs, with the Community to browse. The node-based
+brushes (sections 4 to 9 here, and steps 2 to 4) wait for the 1.0 release,
+which is being built on Rust in parallel; this document stays as the record
+of that design and of how today's tools map onto it. It replaces the drafts
 in `docs/plans/drafts/tool-nodes/` as the plan to build from; the drafts stay
 as the detailed record (how each tool works today, three full designs, two
 reviews). Section 12 lists what is taken from which draft.
