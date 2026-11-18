@@ -1,8 +1,7 @@
-import { PANEL_CLOSE_ALL_EVENT } from '../ui/ChromeToggle';
-
 /**
- * Small tools for suspending Armature mode (mode.ts): taking its pieces of
- * the page out of sight and out of hearing without disposing them.
+ * Small tools for putting pieces of the page away without disposing them
+ * (a workspace suspended, the shell asleep): out of sight, and a way to
+ * find what a stretch of code put on the page.
  */
 
 /**
@@ -45,34 +44,4 @@ export class Hidden {
   isHidden(): boolean {
     return this.held.size > 0;
   }
-}
-
-/**
- * A side panel's own listeners on the window (the one-panel-per-side
- * protocol, a panel opened by id, the Tab key's close-all), taken off and
- * put back. A panel that is out of sight must not open, close or collapse
- * another one when some other workspace's panels, which may carry the same
- * ids, speak on the same events. SidePanel keeps its handlers to itself, so
- * they are found by name; a name that is gone is reported, and the test of
- * suspending (armatureSuspend) fails with it.
- */
-const PANEL_EVENTS: Array<[type: string, handler: string]> = [
-  ['bozzetto:panel-open', 'onOtherPanelOpen'],
-  ['bozzetto:panel-set', 'onPanelSet'],
-  [PANEL_CLOSE_ALL_EVENT, 'onCloseAll'],
-];
-
-export function panelListeners(panel: object): { start(): void; stop(): void } {
-  const handlers = PANEL_EVENTS.flatMap(([type, name]) => {
-    const fn = (panel as Record<string, unknown>)[name];
-    if (typeof fn !== 'function') {
-      console.warn(`armature: a panel has no ${name}; suspending cannot silence it`);
-      return [];
-    }
-    return [[type, fn as EventListener] as const];
-  });
-  return {
-    start: () => handlers.forEach(([type, fn]) => window.addEventListener(type, fn)),
-    stop: () => handlers.forEach(([type, fn]) => window.removeEventListener(type, fn)),
-  };
 }

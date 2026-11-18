@@ -40,45 +40,33 @@ import { AuthExpiredError, checkSignIn, roleOf, type Role } from '../admin/api';
 import { suspensionText } from '../net/account';
 import { isProjectId } from '../net/ids';
 import { takeOpen } from '../ui/openToken';
-import { beforeLeaving } from '../ui/leaving';
 import { SculptToolbar } from './ui/SculptToolbar';
 import { MeasureOverlay } from './ui/MeasureOverlay';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
 import { ScaleBanner, sceneSubjects } from './ui/SetScale';
-import { pageChrome } from '../ui/ChromeToggle';
 import { InputDebug } from './ui/InputDebug';
 import { perfLog } from '../viewer/perfLog';
 import { settings } from '../ui/settings';
 import { forcedByUrl } from '../ui/diagnostics';
 import { PublishWindow } from './ui/PublishWindow';
 import { FileMenu } from './ui/FileMenu';
-import { TopMenu, type MenuItem } from './ui/TopMenu';
 import { SHELL_LAYOUT_EVENT } from './ui/shellLayout';
 import * as blendModule from '../paint/blend';
 import { projectSource } from './bridge/projectSource';
 import type { ProjectSource } from './bridge/paintTools';
-import { helpMenuItems } from '../help/menu';
-import { TitleStrip, type PathStep, type Workspace } from './ui/TitleStrip';
-import { mountAccountHandle } from '../ui/account/menu';
 import { askWindow } from '../ui/askWindow';
-import { keyFor, viewMenuItems } from './ui/viewMenu';
-import { editMenuItems } from './ui/menuShape';
-import { WorkspacePanels } from './ui/panelMemory';
 import './ui/shell.css';
-import { DetailsOverlay, makeSculptDetails } from './ui/DetailsOverlay';
+import { Studio } from '../studio/Studio';
+import { sculptWorkspaces } from './workspaces';
+import type { MaterialPanel } from '../ui/MaterialPanel';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
 import { LayersPanel } from './ui/LayersPanel';
-import { MaterialPanel } from '../ui/MaterialPanel';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { LookPanels } from '../ui/lookPanels';
 import { SculptPanel } from './ui/SculptPanel';
-import { ReferenceBoard, fromFileReferences, toFileReferences } from '../reference/board';
-import { ReferencePanel } from '../reference/ReferencePanel';
-import { ReferenceView } from '../reference/ReferenceView';
-import { installIntake, pasteFromClipboard } from '../reference/intake';
-import { ArrangeButton } from '../reference/ArrangeButton';
+import { fromFileReferences, toFileReferences } from '../reference/board';
 import { imageName, stillRatio } from '../viewer/capture/still';
 import { PresentMode, type TurntableRequest } from './ui/Present';
 import { recordTurntable } from '../viewer/capture/turntable';
@@ -626,9 +614,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let scenePanel: ScenePanel | null = null;
   let publishWindow: PublishWindow | null = null;
   let fileMenu: FileMenu | null = null;
-  let editMenu: TopMenu | null = null;
-  let viewMenu: TopMenu | null = null;
-  let helpMenu: TopMenu | null = null;
   let sculptPanel: SculptPanel | null = null;
   let sliders: BrushSliders | null = null;
   // Present mode (ui/Present): the frame tick turns its turntable, so it is
@@ -636,15 +621,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let present: PresentMode | null = null;
   // The Paint workspace (enterPaint / leavePaint, below): a workspace of this page as Present is.
   let paintOn = false;
-  /** Which panels each workspace had open (Sculpt, Paint, Present): built with the panels, below. */
-  let wsPanels: WorkspacePanels | null = null;
   /** Where Present goes when it ends, where it is not back to the workspace it began in (a key to another one). */
   let presentLeavesTo: 'sculpt' | 'paint' | null = null;
-  let goWorkspaceNow: (to: Workspace) => boolean = () => false;
   // In Paint, an object with dynamic topology on gets a notice (once a visit to the page) offering to turn it off: set below.
   let suggestStatic: () => void = () => undefined;
+  // The controller tells the shell the workspace it is in (set once the workspaces are registered).
+  let paintPath: () => void = () => undefined;
   let projectPrefetch: (() => void) | null = null;
-  let viewItems: () => MenuItem[] = () => [];
   const extras = new Map<
     SculptMesh,
     { sync: GeometrySync; handle: ReturnType<Viewer['addSculptExtra']> }
@@ -819,39 +802,32 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The title strip: the menus, the readout of the project and the active
   // object (name, live triangle count, level), Publish and the hide button.
   // Its readout is what the stats corner at the top left of the view was.
-  const strip = new TitleStrip();
-  mountAccountHandle(strip);
-  // The file actions come later in the mount; the readout asks through this.
-  let fileActionsRef: FileActions | null = null;
+  // The page's shell (studio/Studio.ts): the strip with the path and the readout, the four
+  // menus, the edge column, the details overlay, the Material and Reference panels with the
+  // page's one reference board. The three workspaces of this page are registered with it at
+  // the end of the mount (sculptWorkspaces).
+  const studio = new Studio(viewer, {
+    referenceScope: 'sculpt',
+    material: {
+      sculpting: true,
+      cavity: true,
+      colour: true,
+      surface: {
+        hasObject: () => !!session.getMesh(),
+        // The assigned material's name; "Several" over a selection that mixes them. Assigning is the Scene panel's.
+        materialName: () => {
+          const picked = session.getSelectedMeshes();
+          const names = new Set((picked.length ? picked : [session.getMesh()]).filter((m) => !!m).map((m) => library.materialFor(m!).name));
+          return names.size > 1 ? 'Several' : (names.values().next().value ?? '');
+        },
+      },
+    },
+  });
+  const strip = studio.strip;
+  materialPanel = studio.material;
   // Whether the scene is as last saved to its project: the autosave's count (set once it exists).
   let syncedNow: () => boolean = () => false;
   let goArmature: () => Promise<void> = async () => undefined;
-  // The details overlay at the top left of the view: the object's numbers, as plain text.
-  const details = new DetailsOverlay();
-  const readSculptDetails = makeSculptDetails(session, () => paintOn);
-  const paintDetails = (): void => {
-    if (details.isOn() && !presenting) details.set(readSculptDetails());
-  };
-  const readout = makeReadout(strip, {
-    projectName: () => fileActionsRef?.sceneName || openedName,
-    edited: () => !!fileActionsRef && fileActionsRef.hasWork(),
-    state: () => (fileActionsRef ? sceneStateWord({ linked: !!fileActionsRef.link, synced: syncedNow() }) : null),
-    onRefresh: () => {
-      modelPanel?.refreshHeading();
-      paintDetails();
-    },
-    frame: () => {
-      if (!presenting) return null;
-      // The pixels Save image writes: the window at its still ratio, as the buffer is cut.
-      const { w, h } = viewer.viewportSize();
-      const ratio = stillRatio(viewer);
-      return { w: Math.floor(w * ratio), h: Math.floor(h * ratio) };
-    },
-    lens: () => (presenting ? viewer.getFocalLength() : null),
-  });
-  refreshReadout = readout.refresh;
-  // Switched on after being off: the lines are read afresh at once.
-  const offDetailsSetting = settings.onChange(paintDetails);
 
   // The opt-in hardware input log, for bugs that only exist on a real
   // tablet: Preferences > Diagnostics, or ?inputdebug=1 for the page. It is
@@ -862,7 +838,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Tab clears the interface for focused work; the toggle owns the ways back.
   // The page's one toggle, the viewer's (mountViewer): Sculpt adds its
   // toolbar button to it rather than a second veil of its own.
-  const chrome = pageChrome();
+  const chrome = studio.chrome;
 
   const cursor = new BrushCursor(container);
   // The surface ring is projected SVG: crisp at any DPI on any backend. The
@@ -1250,7 +1226,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     orbitY: (deltaDeg) => turntable(deltaDeg),
     dolly: (factor, at) => viewer.dolly(factor, at),
     toggleChrome: () => chrome.handleTab(),
-    goWorkspace: (to) => void goWorkspaceNow(to),
+    goWorkspace: (to) => void studio.go(to),
     togglePlay: () => present?.toggleTurning(),
     extractMasked: () => session.extractMasked(modelPanel?.getExtractThickness() ?? (session.getUnits() ? 0.5 : 1)),
     toggleMaskTint: () => {
@@ -1401,7 +1377,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       viewer.materials.setPresenting(true);
     });
     // The panels Present had open last time (what Sculpt or Paint had is put away, and comes back).
-    wsPanels?.go('present');
+    studio.panels?.go('present');
     window.dispatchEvent(new CustomEvent('bozzetto:present', { detail: { active: true } }));
     return () => {
       document.body.classList.remove('presenting');
@@ -1411,7 +1387,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       });
       // The workspace it began in has its own panels back (or the one a key is going to): before the
       // look panels hear Present end and shut themselves, which would be written down as the person's doing.
-      wsPanels?.go(presentLeavesTo ?? (paintOn ? 'paint' : 'sculpt'));
+      studio.panels?.go(presentLeavesTo ?? (paintOn ? 'paint' : 'sculpt'));
       window.dispatchEvent(new CustomEvent('bozzetto:present', { detail: { active: false } }));
       input.presenting = false;
       presenting = false;
@@ -1456,16 +1432,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   session.measure.onPersist = () => persist.markDirty();
   measureOverlay = new MeasureOverlay(viewer, session, input.measureTool, () => input.isMeasuring());
-  strip.onToggleChrome = () => chrome.toggle();
-  chrome.onChange = (hidden) => {
-    strip.setChromeHidden(hidden);
-  };
-  sliders = new BrushSliders(input, {
-    undo: () => session.undo(),
-    redo: () => session.redo(),
-    canUndo: () => session.canUndo(),
-    canRedo: () => session.canRedo(),
-  }, {
+  chrome.onChange = studio.chromeChanged;
+  sliders = new BrushSliders(input, studio.edge, {
     isSolo: () => session.isSolo(),
     canSolo: () => !!session.getMesh(),
     toggle: () => setSolo(!session.isSolo()),
@@ -1588,9 +1556,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const hasWork = (): boolean => !sceneOnDisk || session.getStateManager().getCurrentState() !== cleanState;
   // The reference pictures: on this device only, never part of the scene that
   // is saved to the library or published (reference/board.ts).
-  const referenceBoard = new ReferenceBoard('sculpt');
-  let referencePanel: ReferencePanel | null = null;
-  let referenceView: ReferenceView | null = null;
+  const referenceBoard = studio.reference.board;
+  const referencePanel = studio.reference.panel;
+  const referenceView = studio.reference.view;
   // One implementation of File, behind the web menu and the console
   // handle alike.
   const fileActions = new FileActions(session, {
@@ -1626,7 +1594,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       persist.markDirty(false);
       // The pictures are kept under the project's id too, so reopening it here brings them back.
       referenceBoard.bindProject(link?.id ?? null);
-      referencePanel?.setLinked(() => !!link);
+      referencePanel.setLinked(() => !!link);
     },
     references: () => toFileReferences(referenceBoard),
     adoptReferences: (refs) => {
@@ -1642,7 +1610,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     syncPoint: () => persist.editCount(),
     onSynced: (at) => persist.markSynced(at),
   });
-  fileActionsRef = fileActions;
   strip.onRename = (name) => fileActions.rename(name);
   // A scene always has a name: the project's, the one it was kept under,
   // the autosave's, or today's study.
@@ -1716,7 +1683,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     toolbar.setWorkspace(true);
     layersPanel?.setPaint(true);
     // Paint's own panels (the Model tab is not Paint's: it is put away until Sculpt is back) and its own tool.
-    wsPanels?.go('paint');
+    studio.panels?.go('paint');
     input.selectBrush(paintToolLast);
     sculptPanel?.refreshBrush();
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true, mode: 'paint' } }));
@@ -1759,7 +1726,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // The tool Sculpt had (never one of Paint's: they are not Sculpt's to carry back).
     const sculptTool = was && was.tool !== Enums.Tools.PAINT && !(was.tool >= Enums.Tools.PAINT_ERASE) ? was.tool : Enums.Tools.BRUSH;
     input.selectBrush(sculptTool);
-    wsPanels?.go('sculpt');
+    studio.panels?.go('sculpt');
     if (was?.select) input.enterSelect();
     else if (was?.gizmo) enterTransform(was.gizmo);
     sculptPanel?.refreshBrush();
@@ -1768,189 +1735,30 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     paintPath();
     window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
   };
-  const whereNow = (): Workspace => (present?.isActive() ? 'present' : paintOn ? 'paint' : 'sculpt');
+  const whereNow = (): 'sculpt' | 'paint' | 'present' => (present?.isActive() ? 'present' : paintOn ? 'paint' : 'sculpt');
   /**
-   * From any workspace to any other in one step, by the path, the View menu or
-   * Shift+1 to 4. Nothing is asked: it is refused only mid-stroke or mid-drag
-   * (the one thing that cannot be left half done). Leaving Present is as it
-   * always was (the turntable stopped, a clip being saved cancelled), landing on
-   * the workspace asked for with its own panels and tool.
+   * Present's way out, to the workspace asked for: the turntable stopped, a clip being
+   * saved cancelled, and the panels of the workspace it lands on back (Present's restore
+   * reads `presentLeavesTo`). The shell's switch (Studio.go) asks for it through Present's
+   * `leave`.
    */
-  const goWorkspace = (to: Workspace): boolean => {
-    if (to === whereNow()) return false;
-    if (to === 'armature') {
-      void goArmature();
-      return true;
+  const leavePresent = (to: 'sculpt' | 'paint'): void => {
+    if (!present?.isActive()) return;
+    presentLeavesTo = to;
+    try {
+      present.leave();
+    } finally {
+      presentLeavesTo = null;
     }
-    if (input.isStroking() || gizmo.isDragging()) return false;
-    if (to === 'present') return !!present?.enter();
-    if (present?.isActive()) {
-      presentLeavesTo = to;
-      try {
-        present.leave();
-      } finally {
-        presentLeavesTo = null;
-      }
-    }
-    if (to === 'paint') enterPaint();
-    else leavePaint();
-    return true;
   };
-  goWorkspaceNow = goWorkspace;
-  // The workspace path as the strip and the View menu both read it: Sculpt, Paint,
-  // or Present while presenting, is where you are.
-  const workspaceNow = (): { current: Workspace; steps: Partial<Record<Workspace, PathStep>> } => ({
-    current: whereNow(),
-    steps: {
-      armature: { action: () => void goWorkspace('armature') },
-      sculpt: { action: () => void goWorkspace('sculpt') },
-      paint: { action: () => void goWorkspace('paint') },
-      present: { action: () => void goWorkspace('present') },
-    },
+  // File's rows are the File menu's own (the shell reads them from the workspace in front).
+  fileMenu = new FileMenu(fileActions, studio.menus.file, {
+    close: () => leaveForGallery(),
+    publish: () => publishWindow?.toggle(),
+    canPublish: () => !!publishWindow?.isAvailable(),
+    hasReferences: () => referenceBoard.list().length > 0,
   });
-  // The title strip's menus: File, Edit, View and Help, in that order.
-  {
-    fileMenu = new FileMenu(fileActions, strip.menus, {
-      close: () => leaveForGallery(),
-      publish: () => publishWindow?.toggle(),
-      canPublish: () => !!publishWindow?.isAvailable(),
-      hasReferences: () => referenceBoard.list().length > 0,
-    });
-    // What used to be the Scene panel's buttons (owner call: only Create
-    // stays there), each on the whole selection as before.
-    const acts = (): boolean => !!scenePanel?.hasTargets();
-    editMenu = new TopMenu(
-      'Edit',
-      editMenuItems({
-        mode: 'sculpt',
-        history: [
-          { label: 'Undo', key: keyFor('edit.undo'), action: () => session.undo() },
-          { label: 'Redo', key: keyFor('edit.redo'), action: () => session.redo() },
-        ],
-        own: [
-          { label: 'Duplicate', enabled: acts, action: () => scenePanel?.duplicateSelected() },
-          { label: 'Delete', key: keyFor('scene.delete'), enabled: acts, action: () => scenePanel?.deleteSelected() },
-          {
-            label: 'Merge',
-            key: keyFor('scene.merge'),
-            enabled: () => !!scenePanel?.canMerge(),
-            action: () => scenePanel?.mergeSelected(),
-          },
-          // Mirror: a copy across a world axis; the hotkey takes the brush's
-          // symmetry axis.
-          {
-            label: 'Mirror',
-            key: keyFor('scene.mirror'),
-            enabled: acts,
-            choices: () =>
-              (['x', 'y', 'z'] as const).map((axis) => ({
-                label: axis.toUpperCase(),
-                title: `Mirror the selected objects across ${axis.toUpperCase()}`,
-                action: () => scenePanel?.mirrorActive(axis),
-              })),
-          },
-          // Radial copies: a ring around the brush's symmetry axis, which the
-          // Tool panel can change between opens.
-          {
-            label: () => `Radial copies around ${session.getSymmetryAxis().toUpperCase()}`,
-            enabled: acts,
-            choices: () =>
-              [3, 4, 5, 6, 8, 12].map((count) => ({
-                label: `\u00d7${count}`,
-                title: `${count} copies around ${session.getSymmetryAxis().toUpperCase()}`,
-                action: () => scenePanel?.radialActive(count),
-              })),
-          },
-          { separator: true },
-          // Poly groups into objects (owner call, 2026-11-01), on the active
-          // object; greyed out where there is nothing to split.
-          {
-            label: 'Split groups into objects',
-            enabled: () => session.splittableGroups() >= 2,
-            action: () => scenePanel?.splitActive('groups'),
-          },
-          {
-            label: 'Split hidden into object',
-            enabled: () => {
-              const s = session.hiddenSplit();
-              return s.hidden > 0 && s.shown > 0;
-            },
-            action: () => scenePanel?.splitActive('hidden'),
-          },
-          {
-            label: 'Delete hidden',
-            enabled: () => {
-              const s = session.hiddenSplit();
-              return s.hidden > 0 && s.shown > 0;
-            },
-            action: () => scenePanel?.splitActive('delete-hidden'),
-          },
-          { separator: true },
-          { label: 'Paste picture', hint: 'Adds the clipboard\'s picture to the Reference panel', action: () => void pasteFromClipboard(referenceBoard) },
-        ],
-      }),
-      'file-menu--edit',
-      strip.menus,
-      true,
-    );
-    // View: framing, the viewport's switches, the panels, Hide interface
-    // and Present: each the command its hotkey runs.
-    viewItems = (): MenuItem[] =>
-      viewMenuItems({
-        frameSelected: frameModel,
-        frameAll,
-        wireframe: {
-          get: () => viewer.isWireframe(),
-          toggle: () => {
-            viewer.toggleWireframe();
-            window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
-          },
-        },
-        shadows: {
-          get: () => lighting.getShadowsMaster(),
-          toggle: () => {
-            lighting.setShadowsMaster(!lighting.getShadowsMaster());
-            window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
-          },
-        },
-        groupColors: { get: () => session.groups.isShowing(), toggle: () => setGroupColors(!session.groups.isShowing()) },
-        referenceShow: { get: () => referenceView?.isShown() ?? true, toggle: () => referenceView?.setShown(!referenceView.isShown()) },
-        referenceArrange: { get: () => referenceBoard.isArranging(), toggle: () => referenceBoard.setArranging(!referenceBoard.isArranging()), key: true },
-        toolKeys: true,
-        details: true,
-        panels: present?.isActive()
-          ? [
-              ['lighting', 'Lighting'],
-              ['camera', 'Camera'],
-              ['render', 'Render'],
-              ['material', 'Material'],
-              ['output', 'Output'],
-            ]
-          : paintOn
-          ? [
-              ['scene', 'Scene'],
-              ['layers', 'Layers'],
-              ['sculpt', 'Tool'],
-              ['material', 'Material'],
-              ['reference', 'Reference'],
-            ]
-          : [
-              ['scene', 'Scene'],
-              ['model', 'Model'],
-              ['layers', 'Layers'],
-              ['sculpt', 'Tool'],
-              ['material', 'Material'],
-              ['reference', 'Reference'],
-            ],
-        moveLight: { get: () => input.isLightArmed(), toggle: () => input.armLight(!input.isLightArmed()) },
-        hideInterface: () => chrome.set(true),
-        workspace: workspaceNow,
-        workspaceKeys: true,
-      });
-    viewMenu = new TopMenu('View', viewItems(), 'file-menu--view', strip.menus, true);
-    // Help beside them: the topics, the hotkey guide, and who made what.
-    helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help', strip.menus, true);
-  }
+  fileMenu.onItemsChange = () => studio.refreshMenus();
   // Publish, at the right of the strip. The button stays hidden until the
   // role probe below has found a sign-in.
   publishWindow = new PublishWindow(strip.publishHost);
@@ -2034,25 +1842,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       // Not worth failing the tick over.
     }
   };
-  referencePanel = new ReferencePanel(referenceBoard);
   referencePanel.setLinked(() => !!fileActions.link);
-  referenceView = new ReferenceView(referenceBoard, viewer);
-  const referenceArrange = new ArrangeButton(referenceBoard);
-  const edgeColumn = document.querySelector<HTMLElement>('.bz-edge');
-  if (edgeColumn) referenceArrange.mount(edgeColumn);
-  referencePanel.setPlacer((id, x, y) => referenceView?.placeAt(id, x, y) ?? false);
+  // Arrange stands in the edge column just under Solo, which the rail has built by now.
+  studio.reference.arrange.mount(studio.edge.el);
   // Project paints the pictures in the view onto the model (bridge/projectSource.ts).
   {
     const source = projectSource(referenceView);
     (session.getSculptManager().getTool(Enums.Tools.PROJECT) as unknown as { source: ProjectSource | null }).source = source;
     projectPrefetch = () => source.prefetch();
   }
-  const offIntake = installIntake(referenceBoard, () => !!referencePanel?.isOpen(), (items, x, y) => {
-    // Dropped on the view: each picture stands where it fell, side by side if there were several.
-    let n = 0;
-    for (const item of items) if (referenceView?.placeAt(item.id, x + n * 24, y + n * 24)) n++;
-    return n > 0;
-  });
   modelPanel = new ModelPanel(session, viewer);
   layersPanel = new LayersPanel(session);
   // A layer edit (a stroke recorded, a weight, an undo) redraws the list and goes to the autosave.
@@ -2076,16 +1874,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   session.layers.onRefuse = (_mesh, why) => {
     failNotice(why.kind === 'group' ? 'Pick a layer to work on.' : `The layer "${why.name}" is hidden or at 0%. Show the layer to sculpt on it.`);
   };
-  materialPanel = new MaterialPanel(viewer, { sculpting: true, cavity: true, colour: true, surface: {
-      hasObject: () => !!session.getMesh(),
-      // The assigned material's name; "Several" over a selection that mixes them. Assigning is the Scene panel's.
-      materialName: () => {
-        const picked = session.getSelectedMeshes();
-        const names = new Set((picked.length ? picked : [session.getMesh()]).filter((m) => !!m).map((m) => library.materialFor(m!).name));
-        return names.size > 1 ? 'Several' : (names.values().next().value ?? '');
-      },
-    },
-  });
   // Lighting, Camera and Render are Present's tabs: built here, shown only while presenting (shell.css).
   const lookPanels = new LookPanels(viewer, { owner: 'sculpt', side: 'left', tabs: ['lighting', 'camera', 'render'], rigLibrary: true });
   modelPanel.onGroupColors = (on) => setGroupColors(on);
@@ -2109,7 +1897,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   modelPanel.setMergeEnabled(scenePanel.canMerge());
   // Which panel was open on each side last time, open again; kept from here on.
   // Sculpt, Paint and Present each keep their own; the page opens in Sculpt.
-  wsPanels = new WorkspacePanels('sculpt');
+  studio.beginPanels('sculpt');
   // New, Open, a restore and Set scale can each move the scene between
   // real units and the old scale: the floor, the panels' units and the
   // Set scale offer follow.
@@ -2423,9 +2211,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     scenePanel,
     publishWindow,
     fileMenu,
-    editMenu,
-    viewMenu,
-    helpMenu,
+    studio, // the page's shell: strip, menus, edge column, details, workspaces
+    editMenu: studio.menus.edit,
+    viewMenu: studio.menus.view,
+    helpMenu: studio.menus.help,
     fileActions,
     reference: { board: referenceBoard, view: referenceView, panel: referencePanel },
     sculptPanel,
@@ -2492,14 +2281,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     });
   };
   // Signing in again and reloading onto an update leave the page and come
-  // back to it (ui/leaving): the scene goes as it goes to the gallery,
-  // written and pictured first, and the autosave brings it back, link and
-  // unsent copy included. A scene the store does not hold as it stands is
-  // said before the page goes.
-  const offLeaving = beforeLeaving(async () => {
+  // back to it (the shell's guard, ui/leaving, asks the workspace in front): the scene goes as
+  // it goes to the gallery, written and pictured first, and the autosave brings it back, link
+  // and unsent copy included. A scene the store does not hold as it stands is said before the
+  // page goes.
+  const flushForLeaving = async (): Promise<boolean> => {
     await Promise.all([snapshot(), storeLook()]);
     return persist.settle();
-  });
+  };
 
   /**
    * The Armature step of the workspace path. Nothing in a sculpt records an
@@ -2527,21 +2316,54 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     await Promise.all([snapshot(), persist.flush(), storeLook()]);
     window.location.href = '/?armature=1&scene=1';
   };
-  // The workspace path: Sculpt, or Present while presenting, lit; Publish
-  // shows in Present only.
-  const paintPath = (): void => {
-    const inPresent = !!present?.isActive();
-    const way = workspaceNow();
-    strip.setWorkspace(way.current, way.steps);
-    // The View menu's panel list is the workspace's own (Present has Lighting, Camera and Render).
-    viewMenu?.setItems(viewItems());
-    publishWindow?.setInPresent(inPresent);
-    refreshReadout();
-  };
-  if (present) present.onChange = paintPath;
-  paintPath();
+  // Sculpt, Paint and Present are the page's three workspaces; the shell does the switching,
+  // the menus (the View menu's panel list is the workspace's own), the path and the readout.
+  for (const ws of sculptWorkspaces({
+    studio,
+    viewer,
+    session,
+    input,
+    gizmo,
+    present: present!,
+    scenePanel: scenePanel!,
+    modelPanel: modelPanel!,
+    layersPanel: layersPanel!,
+    sculptPanel: sculptPanel!,
+    fileMenu: fileMenu!,
+    publishWindow: publishWindow!,
+    readout: {
+      projectName: () => fileActions.sceneName || openedName,
+      hasWork: () => fileActions.hasWork(),
+      state: () => sceneStateWord({ linked: !!fileActions.link, synced: syncedNow() }),
+      frame: () => {
+        if (!presenting) return null;
+        // The pixels Save image writes: the window at its still ratio, as the buffer is cut.
+        const { w, h } = viewer.viewportSize();
+        const ratio = stillRatio(viewer);
+        return { w: Math.floor(w * ratio), h: Math.floor(h * ratio) };
+      },
+      lens: () => (presenting ? viewer.getFocalLength() : null),
+    },
+    isPaint: () => paintOn,
+    frameModel,
+    frameAll,
+    setGroupColors,
+    enterPaint: () => void enterPaint(),
+    leavePaint: () => leavePaint(),
+    leavePresent,
+    goArmature: () => goArmature(),
+    flush: flushForLeaving,
+    hideInterface: () => chrome.set(true),
+  })) {
+    studio.register(ws);
+  }
+  // The controller says when it moved by itself (a test's call, an address): the shell follows.
+  paintPath = () => studio.follow(whereNow());
+  refreshReadout = () => studio.repaint();
+  present!.onChange = paintPath;
+  studio.start('sculpt');
   // /?sculpt=1&paint=1 reopens in Paint, as the address Paint keeps while it is up.
-  if (new URLSearchParams(window.location.search).get('paint') === '1') enterPaint();
+  if (new URLSearchParams(window.location.search).get('paint') === '1') studio.go('paint');
 
   // The hotkey guide (H) swaps to the sculpt table while the mode is active.
   window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));
@@ -2556,7 +2378,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     document.removeEventListener('change', onLookInput, true);
     document.removeEventListener('visibilitychange', onLookHide);
     document.removeEventListener('visibilitychange', onReturn);
-    offLeaving();
     window.removeEventListener('pagehide', onLookHide);
     delete (window as unknown as { __sculpt?: object }).__sculpt;
     perfLog.triangles = null; // the session is going; the log keeps its entries
@@ -2567,12 +2388,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     present = null;
     session.onLevelChange = null;
     levelToast.dispose();
-    wsPanels?.dispose();
-    wsPanels = null;
-    readout.dispose();
-    offDetailsSetting();
-    details.dispose();
-    strip.dispose();
+    studio.dispose();
     gizmo.dispose();
     // Solo belongs to this visit, not to the scene: every object gets its
     // own eye back before the last autosave lets go.
@@ -2587,20 +2403,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.paint.onFirstUse = null;
     input.paintMode = false;
     document.body.classList.remove('paint-ws');
-    materialPanel?.dispose();
     lookPanels.dispose();
     scenePanel?.dispose();
-    offIntake();
-    referenceArrange.dispose();
-    referenceView?.dispose();
-    referencePanel?.dispose();
-    referenceBoard.dispose();
     scaleBanner.dispose();
     publishWindow?.dispose();
     fileMenu?.dispose();
-    editMenu?.dispose();
-    viewMenu?.dispose();
-    helpMenu?.dispose();
     for (const [, e] of extras) {
       viewer.removeSculptExtra(e.handle);
       e.sync.dispose();
@@ -2663,49 +2470,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.exitSculpt();
     sync.dispose();
     session.dispose();
-  };
-}
-
-/**
- * The title strip's readout: the scene's name and where its work is kept
- * (the object's numbers are the details overlay's). Polled, cheap, written
- * only where it changed; `refresh` also runs on the events that move it.
- * `onRefresh` keeps the panels' headings and the details overlay in step.
- */
-function makeReadout(
-  strip: TitleStrip,
-  from: {
-    projectName: () => string | null | undefined;
-    edited: () => boolean;
-    /** Where the work is kept, as a word after the name (ui/sceneState). */
-    state: () => string | null;
-    onRefresh: () => void;
-    /** Present: the viewport's size, instead of the object's numbers. */
-    frame: () => { w: number; h: number } | null;
-    /** Present: the lens in mm. */
-    lens: () => number | null;
-  },
-): { refresh(): void; dispose(): void } {
-  const update = (): void => {
-    const name = from.projectName() ?? null;
-    const frame = from.frame();
-    strip.setReadout({
-      name,
-      edited: !!name && from.edited(),
-      state: name ? from.state() : null,
-      // In Present the readout is the project, the image Save image writes and the lens.
-      frame,
-      lens: from.lens(),
-    });
-    from.onRefresh();
-  };
-  update();
-  const timer = window.setInterval(update, 500);
-  return {
-    refresh: update,
-    dispose() {
-      clearInterval(timer);
-    },
   };
 }
 

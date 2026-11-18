@@ -26,7 +26,6 @@ const ROLE_WAIT_MS = 5000;
  * the scene logic underneath is the same whoever asks.
  */
 export class FileMenu {
-  private readonly menu: TopMenu;
   private readonly openInput: HTMLInputElement;
   private readonly importInput: HTMLInputElement;
   private zUp = false;
@@ -48,10 +47,13 @@ export class FileMenu {
    */
   onSignInChange: (() => Promise<unknown> | void) | null = null;
 
+  /** Told when the rows changed (the role became known): the shell reads them again (Studio.refreshMenus). */
+  onItemsChange: (() => void) | null = null;
+
   constructor(
     private readonly actions: FileActions,
-    /** The strip's menu row, where the name goes. */
-    host: HTMLElement,
+    /** The shell's File menu: its name in the strip; the rows are `items()`, read by the shell. */
+    private readonly menu: TopMenu,
     private readonly hooks: {
       /** Close: leave for the gallery (the mode flushes the autosave and its picture first). */
       close: () => void | Promise<void>;
@@ -66,8 +68,8 @@ export class FileMenu {
     // Hidden inputs are how a web page asks for a file.
     this.openInput = fileInput('.bozz', (file) => void this.openFile(file));
     this.importInput = fileInput('.obj', (file) => void this.importFile(file));
-    this.menu = new TopMenu('File', this.items(), 'file-menu--file', host, true);
-    this.menu.pop.append(this.openInput, this.importInput);
+    // They stand outside the list, which the shell rebuilds.
+    document.body.append(this.openInput, this.importInput);
   }
 
   /**
@@ -75,7 +77,7 @@ export class FileMenu {
    * library; a guest has Save file, and with accounts on a way to sign in
    * to the library instead of a second item that only downloads.
    */
-  private items(): MenuItem[] {
+  items(): MenuItem[] {
     // An empty scene (the last object deleted) has nothing to save or export.
     const full = (): boolean => !this.actions.isEmpty();
     return fileMenuItems({
@@ -201,8 +203,7 @@ export class FileMenu {
     this.role = role;
     this.suspension = suspension;
     this.accounts = accounts;
-    this.menu.setItems(this.items());
-    this.menu.pop.append(this.openInput, this.importInput); // the rows were replaced, not these
+    this.onItemsChange?.();
     this.resolveRole(role);
     this.noteOpened();
   }
@@ -360,7 +361,8 @@ export class FileMenu {
   }
 
   dispose(): void {
-    this.menu.dispose();
+    this.openInput.remove();
+    this.importInput.remove();
   }
 }
 

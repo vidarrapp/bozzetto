@@ -53,15 +53,8 @@ interface Need<T = unknown> {
   start?: () => T;
 }
 
-/** The two fields of the viewer that have no accessor: the primary subject's visibility and the box the stage is fitted to. */
-interface ViewerInternals {
-  display: { visible: boolean };
-  subjectBox: Box3;
-}
-
 export function viewerNeeds(viewer: Viewer, hooks: ViewerNeedsHooks): ViewerNeeds {
   const lighting = viewer.lighting;
-  const inside = viewer as unknown as ViewerInternals;
   const casts = (id: 'fill' | 'rim'): boolean => lighting.state().find((l) => l.id === id)?.castShadow ?? true;
   const chrome = pageChrome();
 
@@ -79,7 +72,7 @@ export function viewerNeeds(viewer: Viewer, hooks: ViewerNeedsHooks): ViewerNeed
     // The boot placeholder cube is sent away: the figure is the subject.
     {
       id: 'sculptVisible',
-      read: () => inside.display.visible,
+      read: () => viewer.isSculptVisible(),
       write: (v) => viewer.setSculptVisible(v as boolean),
       want: () => false,
     },
@@ -102,7 +95,7 @@ export function viewerNeeds(viewer: Viewer, hooks: ViewerNeedsHooks): ViewerNeed
     // The stage (ground, shadow, lights, AO) fitted to the figure's box; the mode fits it itself (frame()).
     {
       id: 'subjectFit',
-      read: () => inside.subjectBox.clone(),
+      read: () => viewer.subjectBounds(),
       // Without the camera: the view is the person's, and stays where it is.
       write: (v) => viewer.fitSubject(v as Box3, false),
     },

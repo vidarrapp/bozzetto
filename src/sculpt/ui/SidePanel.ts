@@ -46,6 +46,8 @@ export class SidePanel {
   private readonly side: PanelSide;
   private readonly id: string;
   private collapsed: boolean;
+  /** Silenced (setSuspended): it answers none of the window's panel events. */
+  private suspended = false;
 
   /** Called when this panel collapses or expands (subclasses may react). */
   protected onCollapsedChange: ((collapsed: boolean) => void) | null = null;
@@ -112,6 +114,27 @@ export class SidePanel {
     window.addEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
     window.addEventListener('bozzetto:panel-set', this.onPanelSet);
     window.addEventListener(PANEL_CLOSE_ALL_EVENT, this.onCloseAll);
+  }
+
+  /**
+   * Silence the panel while its workspace is not the one in front: it no
+   * longer opens, closes or collapses when other panels (which may carry
+   * the same ids) speak on the window's panel events, or the Tab key
+   * closes all. Its tab and its own presses still work; whoever silences it
+   * keeps it out of sight. Switched off, it answers as before, in the state
+   * it was left in.
+   */
+  setSuspended(on: boolean): void {
+    if (on === this.suspended) return;
+    this.suspended = on;
+    const call = on ? window.removeEventListener.bind(window) : window.addEventListener.bind(window);
+    call('bozzetto:panel-open', this.onOtherPanelOpen);
+    call('bozzetto:panel-set', this.onPanelSet);
+    call(PANEL_CLOSE_ALL_EVENT, this.onCloseAll);
+  }
+
+  isSuspended(): boolean {
+    return this.suspended;
   }
 
   /** The panel's heading: the object's name in Model, the tool's in Tool. */

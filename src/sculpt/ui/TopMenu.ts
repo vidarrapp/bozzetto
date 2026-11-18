@@ -77,6 +77,8 @@ export class TopMenu {
   private readonly plain: boolean;
   /** Re-reads each item's label and hint, run whenever the menu opens. */
   private readonly painters: Array<() => void> = [];
+  /** Run as the menu opens, before it is drawn: the shell reads the workspace's items again here (Studio). */
+  beforeOpen: (() => void) | null = null;
 
   /**
    * `host` is the row the chip goes in: the left one, beside the gallery
@@ -135,6 +137,7 @@ export class TopMenu {
 
   open(): void {
     if (this.opened) return;
+    this.beforeOpen?.();
     this.opened = true;
     for (const paint of this.painters) paint();
     this.pop.hidden = false;

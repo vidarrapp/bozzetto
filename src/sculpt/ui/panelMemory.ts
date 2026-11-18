@@ -1,7 +1,7 @@
 /**
- * Which panel was open on each side, kept per mode (Armature) and per
- * workspace of the Sculpt page (Sculpt, Paint, Present: WorkspacePanels), so
- * a visit starts as the last one ended.
+ * Which panel was open on each side, kept per workspace (Armature, Sculpt,
+ * Paint, Present: WorkspacePanels, built by the shell), so a visit starts as
+ * the last one ended.
  *
  * The panels announce themselves on 'bozzetto:panel-open' and
  * 'bozzetto:panel-close' ({id, side}); this listens, keeps the latest open
@@ -51,47 +51,6 @@ export function storedPanels(mode: string): string[] {
   return out;
 }
 
-/** Open what `mode` last had open, then keep its record current. Returns the way out. */
-export function rememberPanels(mode: string): () => void {
-  const open: Partial<Record<'left' | 'right', string>> = {};
-  for (const id of storedPanels(mode)) open[SIDES[id]] = id;
-  let applying = true;
-  const save = (): void => {
-    if (applying) return;
-    try {
-      const ids = Object.values(open).filter((id): id is string => !!id);
-      if (ids.length) deviceStore.set(key(mode), JSON.stringify(ids));
-      else deviceStore.remove(key(mode));
-    } catch {
-      // The panels still work; they just start closed next time.
-    }
-  };
-  const onOpen = (e: Event): void => {
-    const d = (e as CustomEvent<{ id?: string; side?: string }>).detail;
-    const side = d?.id ? SIDES[d.id] : undefined;
-    if (!d?.id || !side) return;
-    open[side] = d.id;
-    save();
-  };
-  const onClose = (e: Event): void => {
-    const d = (e as CustomEvent<{ id?: string }>).detail;
-    const side = d?.id ? SIDES[d.id] : undefined;
-    if (!d?.id || !side || open[side] !== d.id) return;
-    delete open[side];
-    save();
-  };
-  window.addEventListener('bozzetto:panel-open', onOpen);
-  window.addEventListener('bozzetto:panel-close', onClose);
-  for (const id of Object.values(open)) {
-    if (id) window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id, open: true } }));
-  }
-  applying = false;
-  return () => {
-    window.removeEventListener('bozzetto:panel-open', onOpen);
-    window.removeEventListener('bozzetto:panel-close', onClose);
-  };
-}
-
 /** Open or close a panel by its id: the View menu's panel items. */
 export function setPanel(id: string, open: boolean): void {
   window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id, open } }));
@@ -123,10 +82,11 @@ export function panelIsOpen(id: string): boolean {
 
 // --- The workspaces of the Sculpt page --------------------------------------------
 
-export type WorkspaceKey = 'sculpt' | 'paint' | 'present';
+export type WorkspaceKey = 'armature' | 'sculpt' | 'paint' | 'present';
 
 /** The panels each workspace has: what a stored list may name for it. */
 const OF: Record<WorkspaceKey, string[]> = {
+  armature: ['armature', 'material', 'reference'],
   sculpt: ['scene', 'model', 'layers', 'sculpt', 'material', 'reference'],
   paint: ['scene', 'layers', 'sculpt', 'material', 'reference'],
   present: ['lighting', 'camera', 'render', 'material', 'output'],
@@ -134,6 +94,7 @@ const OF: Record<WorkspaceKey, string[]> = {
 
 /** What a workspace opens the first time (Sculpt as it always began: nothing). */
 const FIRST_VISIT: Record<WorkspaceKey, string[]> = {
+  armature: [],
   sculpt: [],
   paint: ['layers', 'sculpt'],
   present: ['output'],
@@ -150,20 +111,22 @@ export class WorkspacePanels {
   private current: WorkspaceKey;
   private readonly open: Partial<Record<'left' | 'right', string>> = {};
   private applying = true;
+  /** Not recording: the page is asleep (Studio.sleep). */
+  private paused = false;
   /** What each workspace had when it was left, for a device that keeps nothing. */
   private readonly seen: Partial<Record<WorkspaceKey, string[]>> = {};
 
   private readonly onOpen = (e: Event): void => {
     const d = (e as CustomEvent<{ id?: string }>).detail;
     const side = d?.id ? SIDES[d.id] : undefined;
-    if (this.applying || !d?.id || !side || !OF[this.current].includes(d.id)) return;
+    if (this.applying || this.paused || !d?.id || !side || !OF[this.current].includes(d.id)) return;
     this.open[side] = d.id;
     this.save();
   };
   private readonly onClose = (e: Event): void => {
     const d = (e as CustomEvent<{ id?: string }>).detail;
     const side = d?.id ? SIDES[d.id] : undefined;
-    if (this.applying || !d?.id || !side || this.open[side] !== d.id) return;
+    if (this.applying || this.paused || !d?.id || !side || this.open[side] !== d.id) return;
     delete this.open[side];
     this.save();
   };
@@ -199,6 +162,15 @@ export class WorkspacePanels {
     if (to === this.current) return;
     this.current = to;
     this.apply();
+  }
+
+  /** Stop recording what the panels do (the page is put away); `resume` carries on from the state they have. */
+  pause(): void {
+    this.paused = true;
+  }
+
+  resume(): void {
+    this.paused = false;
   }
 
   dispose(): void {
