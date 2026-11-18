@@ -137,7 +137,7 @@ export const suites = {
     t.ok(/Pencil/.test(g.text) && /tap/i.test(g.text), 'the gestures cover the Pencil and touch');
     await page.keyboard.press('Escape');
 
-    // Esc still leaves Present, and one press with the guide open is spent on the guide.
+    // A short window: the guide scrolls inside itself.
     await page.setViewportSize({ width: 600, height: 400 });
     await page.keyboard.press('h');
     const sc = await page.evaluate(() => {

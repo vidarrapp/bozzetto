@@ -6376,7 +6376,7 @@ export const suites = {
       // Publish's button stands in the strip in Present only (the end of the
       // workspace path); from Sculpt and Armature File > Publish… opens the window.
       const enterPresent = async () => {
-        await owner.keyboard.press('Shift+P');
+        await owner.keyboard.press('Shift+4');
         await owner.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 10_000 });
         // Output opens with Present: closed, so the window's place is as it was beside the chip.
         await owner.evaluate(() => window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'output', open: false } })));
@@ -6613,7 +6613,7 @@ export const suites = {
       await signInContext(guestCtx);
       await web.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
       await web.waitForFunction(() => window.__sculpt.publishWindow.isAvailable(), null, { timeout: 30_000 }).catch(() => {});
-      await web.keyboard.press('Shift+P');
+      await web.keyboard.press('Shift+4');
       await web.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 10_000 });
       s = await publishState(web);
       t.ok(s.chip.shown, 'back in front, signed in meanwhile, the page asks again and the chip appears (in Present)');

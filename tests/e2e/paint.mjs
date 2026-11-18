@@ -3,7 +3,7 @@
 // the object's highest level and Photoshop's blend modes.
 //
 // paintWorkspace: the path Armature > Sculpt > Paint > Present and the View
-//   menu; Shift+B in and out, the address that reopens it; the bar (Select on
+//   menu; Shift+3 in and Shift+2 out, the address that reopens it; the bar (Select on
 //   q, six tools on 1 to 6, no brushes, no Calipers, no Transform, no Negative)
 //   and Sculpt's bar with no paint tool and a free 0; the tabs (Scene, Layers;
 //   no Model, no Render); Present from Paint and back to it; leaving Paint puts
@@ -243,16 +243,16 @@ export const suites = {
       return page.evaluate(() => [...document.querySelectorAll('.file-menu:not([hidden]) .file-menu__item')].map((b) => b.textContent.replace(/\s+/g, ' ').trim()));
     };
     const view0 = await menu();
-    t.ok(view0.some((x) => /^Paint/.test(x) && /Shift \+ B/.test(x)), `View has a Paint item with its key (${view0.filter((x) => /Paint|Present|Sculpt/.test(x)).join(' | ')})`);
+    t.ok(view0.some((x) => /^Paint/.test(x) && /Shift \+ 3/.test(x)), `View has a Paint item with its key (${view0.filter((x) => /Paint|Present|Sculpt/.test(x)).join(' | ')})`);
     t.ok(view0.some((x) => /^Model panel/.test(x)) && !view0.some((x) => /^Render panel/.test(x)), 'and, in Sculpt, the Model panel and no Render panel');
     await page.keyboard.press('Escape');
 
     // --- Into Paint ----------------------------------------------------------
     await openPanel(page, 'Tool');
     const had = await page.evaluate(() => ({ tool: !window.__sculpt.sculptPanel.isCollapsed(), model: !window.__sculpt.modelPanel.isCollapsed() }));
-    await press(page, 'Shift+B');
+    await press(page, 'Shift+3');
     const p1 = await shell(page);
-    t.ok(p1.paint && p1.path === 'Armature > Sculpt > Paint* > Present', `Shift+B enters Paint and the path lights Paint (${p1.path})`);
+    t.ok(p1.paint && p1.path === 'Armature > Sculpt > Paint* > Present', `Shift+3 enters Paint and the path lights Paint (${p1.path})`);
     t.ok(await page.evaluate(() => window.__sculpt.paintWorkspace.isOn()), 'the workspace says it is on');
     t.eq(p1.bar.join(' '), 'q:Select 1:Paint 2:Erase 3:Blur 4:Fill 5:Pick 6:Project', "Paint's bar: Select on q, then the six tools on 1 to 6");
     t.eq(p1.active.join(), 'Paint', 'Paint is the tool in hand');
@@ -305,32 +305,32 @@ export const suites = {
     await page.screenshot({ path: `${SHOTS}/paint-empty-1180.png` });
 
     // --- Present from Paint, and back ---------------------------------------
-    await press(page, 'Shift+P');
+    await press(page, 'Shift+4');
     const pr = await shell(page);
-    t.ok(pr.presenting && pr.path === 'Armature > Sculpt > Paint > Present*', `Shift+P presents from Paint (${pr.path})`);
+    t.ok(pr.presenting && pr.path === 'Armature > Sculpt > Paint > Present*', `Shift+4 presents from Paint (${pr.path})`);
     t.ok(pr.tabs.render, 'the Render tab is there in Present, entered from Paint');
-    await press(page, 'Shift+P');
+    await press(page, 'Shift+3');
     const back = await shell(page);
     t.ok(!back.presenting && back.paint && back.path === 'Armature > Sculpt > Paint* > Present', `leaving Present returns to Paint (${back.path})`);
     t.eq(back.bar.join(' '), p1.bar.join(' '), "and Paint's bar is as it was");
     t.ok(!back.tabs.render && !back.tabs.model, 'Render and Model are put away again');
     // The path from Present to Sculpt.
-    await press(page, 'Shift+P');
+    await press(page, 'Shift+4');
     await page.evaluate(() => [...document.querySelectorAll('.bz-ws__step')].find((b) => b.textContent === 'Sculpt').click());
     await page.waitForTimeout(150);
     const toSculpt = await shell(page);
     t.ok(!toSculpt.presenting && !toSculpt.paint && toSculpt.path.startsWith('Armature > Sculpt*'), `the path's Sculpt step leaves Present and Paint at once (${toSculpt.path})`);
     // Present from Sculpt returns to Sculpt, and its path reaches Paint.
-    await press(page, 'Shift+P');
+    await press(page, 'Shift+4');
     await page.evaluate(() => [...document.querySelectorAll('.bz-ws__step')].find((b) => b.textContent === 'Paint').click());
     await page.waitForTimeout(150);
     const toPaint = await shell(page);
     t.ok(!toPaint.presenting && toPaint.paint, `the path's Paint step goes from Present to Paint (${toPaint.path})`);
 
     // --- Out of Paint: Sculpt as it was --------------------------------------
-    await press(page, 'Shift+B');
+    await press(page, 'Shift+2');
     const out = await shell(page);
-    t.ok(!out.paint && out.path.startsWith('Armature > Sculpt*'), `Shift+B again leaves Paint (${out.path})`);
+    t.ok(!out.paint && out.path.startsWith('Armature > Sculpt*'), `Shift+2 leaves Paint (${out.path})`);
     t.eq(out.tool, clay, 'the tool Sculpt had comes back');
     t.ok(out.bar.length === s0.bar.length && out.negative && out.tabs.model && out.tabs.render === s0.tabs.render, "Sculpt's bar, Negative and tabs come back");
     t.ok(!/paint=1/.test(out.address), 'and the address forgets Paint');
@@ -341,14 +341,14 @@ export const suites = {
 
     // --- Nothing to switch on: Colour is left as it is, and no notice ----------
     await page.evaluate(() => window.__sculpt.viewer.materials.setPlainColor(true));
-    await press(page, 'Shift+B');
+    await press(page, 'Shift+3');
     const colour = await page.evaluate(() => ({
       state: window.__sculpt.viewer.materials.getMaterialState().vertexColors,
       toasts: [...document.querySelectorAll('.sculpt-status, .status-toast, [class*="toast"]')].map((e) => e.textContent).join('|'),
     }));
     t.eq(colour.state, false, 'entering Paint leaves Colour as the look had it (paint shows in Paint whatever it says)');
     t.ok(!/Sculpt colours|Albedo and paint/.test(colour.toasts), `and says nothing (${colour.toasts.slice(0, 100)})`);
-    await press(page, 'Shift+B');
+    await press(page, 'Shift+2');
     await page.evaluate(() => window.__sculpt.viewer.materials.setPlainColor(false));
 
     // The address reopens it.
@@ -1272,7 +1272,7 @@ export const suites = {
     await page.setViewportSize({ width: 390, height: 844 });
     await openForInput(page, base);
     await page.evaluate(install);
-    await page.keyboard.press('Shift+B');
+    await page.keyboard.press('Shift+3');
     await page.waitForTimeout(200);
     t.ok((await shell(page)).paint, 'Paint opens at phone width');
     await page.evaluate(() => {
@@ -1281,7 +1281,7 @@ export const suites = {
       window.__pt.stroke(window.__pt.T.PAINT, [0.9, 0.2, 0.1], 0, 0, 50, 1);
     });
     t.ok(await openPanel(page, 'Layers'), 'the Layers panel opens');
-    await page.keyboard.press('Shift+B');
+    await page.keyboard.press('Shift+2');
     t.ok(!(await shell(page)).paint, 'and Paint closes again, with no error');
     void devices;
     void screenOf;

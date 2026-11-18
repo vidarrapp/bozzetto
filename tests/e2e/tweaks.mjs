@@ -418,7 +418,7 @@ export const suites = {
     // The paint brush's swatch, on the same implementation: in the Paint workspace's Tool panel.
     await page.evaluate(() => window.__sculpt.present.leave());
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 10_000 });
-    await page.keyboard.press('Shift+B');
+    await page.keyboard.press('Shift+3');
     await page.waitForFunction(() => document.body.classList.contains('paint-ws'), null, { timeout: 10_000 });
     t.ok(await openPanel(page, 'Tool'), 'the Tool panel opens on the Paint brush in the Paint workspace');
     const paintAt = await swatchOf(page, 'Tool', 'Colour');

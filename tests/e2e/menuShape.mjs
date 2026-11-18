@@ -108,7 +108,7 @@ export const suites = {
     const ws = (menus) => Object.fromEntries(menus.View.filter((r) => ['Armature', 'Sculpt', 'Paint', 'Present'].includes(r.label)).map((r) => [r.label, r.disabled]));
     t.eq(JSON.stringify(ws(sculpt)), JSON.stringify({ Armature: false, Sculpt: true, Paint: false, Present: false }), 'Sculpt: the workspace you are in is greyed out');
 
-    await page.keyboard.press('Shift+P');
+    await page.keyboard.press('Shift+4');
     await page.waitForFunction(() => document.querySelector('.bz-ws__step--on')?.textContent?.includes('Present'), null, { timeout: 8000 });
     const present = await readMenus(page, 'Present from Sculpt');
     checkShape(t, 'Present from Sculpt', present, {
