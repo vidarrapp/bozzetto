@@ -2478,6 +2478,8 @@ export class InputShell {
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     // A modal (Preferences, its key capture) owns every key while it is up.
     if (document.body.classList.contains('has-modal')) return;
+    // A tool lifted off the tool bar (the dock's drag) owns the keys: Esc puts it back, the digits wait.
+    if (toolBars.lifted) return;
     if (isTextEntryTarget(e)) return;
     // A focused checkbox/slider/select keeps its PLAIN keys (space toggles,
     // arrows slide), but modifier chords stay hotkeys: after clicking a

@@ -172,6 +172,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **Arrange the tool bar.** Press and hold a tool, with the Pencil or a finger (with a mouse, press and drag), and drag it along the bar to a new place. The others make room and the number keys follow the order. Sculpt and Paint each keep their own order on the device, and **View**, then **Reset tool bar**, puts it back.
+
 ### v0.7.8
 
 - **Tool settings kept with the scene.** Move's Falloff, Crease's Pinch, and Polish's Plane lock and Build-up used to go back to their defaults when a scene was opened again. They are now saved with it.

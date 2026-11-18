@@ -571,8 +571,31 @@ Tool, with Material before it.
   Preferences all read the place. Select, Transform and Calipers have no
   place and keep Q, T and C. A key rebound before places existed
   (`tool.crease`, `paint.erase` and the like) carries over to the place
-  that tool holds on the default bar. The order is not yet something a
-  person changes.
+  that tool holds on the default bar.
+- **The dock: the order is the person's.** A long press on a brush's tile
+  (600 ms, Pencil or finger, the same timing as Carve's latch; the events'
+  own timestamps decide) lifts it; a mouse also lifts it by pressing and
+  moving 4px. Select, Transform and Calipers cannot be lifted. A press that
+  moves more than 8px before the long press is a slip: neither a tap nor a
+  lift. The lifted tile is a ghost a little larger than the tile (centred on
+  the Pencil or the mouse, 48px above a finger) with the tool's name above
+  it; its place stays as a gap, and while anything is lifted every place
+  shows its digit, even with Hotkeys on tools off. Along the bar the others
+  slide aside (transform, 140ms ease-out, none with reduced motion) and
+  their badges show the digit they will have; letting go puts the tool there
+  (no notice; the tool in hand stays in hand). Letting go off the bar (more
+  than 56px above it or 24px past its ends), Esc, a cancelled pointer, the
+  window losing focus or a second pointer going down fly the ghost back and
+  change nothing. A long press that ends without moving drops the tile back
+  and opens nothing yet. Nothing lifts mid-stroke, and the number keys wait
+  while a tool is lifted. Each workspace's order is kept through
+  `deviceStore` as `bozzetto-toolbar` (`{ v: 1, sculpt?, paint? }`, only an
+  order that differs from the default), read at start and made safe (unknown
+  ids and repeats dropped, tools a stored order lacks appended in the default
+  order); with saving off it holds for the visit and one notice says it will
+  not be kept. **View > Reset tool bar** (Sculpt and Paint, greyed while the
+  bar is the default) puts the default order back with a notice that has
+  Undo.
 - **Calipers** (hotkey C) is the last button, after Transform. It is not
   a brush: it measures between two points on the model and edits
   nothing. Its icon is the Uicons ruler until a drawn calipers glyph is

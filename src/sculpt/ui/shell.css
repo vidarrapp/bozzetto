@@ -811,9 +811,101 @@ body.bz-shell .sculpt-toolbar__btn--active .sculpt-toolbar__key {
   color: var(--bz-on-accent);
 }
 
-/* View > Hotkeys on tools. */
-body.bz-shell.bz-no-toolkeys .sculpt-toolbar__brushes .sculpt-toolbar__key {
+/* View > Hotkeys on tools; while a tool is lifted every place shows its digit whatever it says. */
+body.bz-shell.bz-no-toolkeys:not(.bz-dock-lifted) .sculpt-toolbar__brushes .sculpt-toolbar__key {
   display: none;
+}
+
+/* --- the dock: a tool lifted off the bar ----------------------------------
+   The tile stays as a gap, the others slide aside by transform, and a ghost
+   follows the pointer (dockDrag.ts). A press on a tile must not scroll, pop
+   a callout or select text. */
+body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body.bz-shell .sculpt-toolbar__brushes.dock-active .sculpt-toolbar__btn {
+  transition: transform 140ms ease-out;
+}
+
+body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn.dock-gap {
+  visibility: hidden;
+}
+
+/* The names are the ghost's while something is lifted. */
+body.bz-dock-lifted .sculpt-toolbar__btn .bz-tip {
+  display: none !important;
+}
+
+.dock-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 40;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.dock-ghost--home {
+  transition: transform 140ms ease-out;
+}
+
+.dock-ghost__tile {
+  position: absolute;
+  left: -24px;
+  top: -24px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bz-raised);
+  color: var(--bz-text);
+  transform: scale(0.92);
+  transition: transform 120ms ease-out;
+}
+
+.dock-ghost--up .dock-ghost__tile {
+  transform: scale(1);
+}
+
+.dock-ghost--on .dock-ghost__tile {
+  background: var(--bz-orange);
+  color: var(--bz-on-accent);
+}
+
+.dock-ghost__tile .fi {
+  font-size: 24px;
+}
+
+.dock-ghost__tile .sculpt-toolbar__svg {
+  width: 24px;
+  height: 24px;
+}
+
+.dock-ghost__name {
+  position: absolute;
+  left: 0;
+  bottom: 32px;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background: var(--bz-raised);
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.bz-shell .sculpt-toolbar__brushes.dock-active .sculpt-toolbar__btn,
+  .dock-ghost--home,
+  .dock-ghost__tile {
+    transition: none;
+  }
 }
 
 /* The name of a tool, above it while it is hovered or has the keyboard. */

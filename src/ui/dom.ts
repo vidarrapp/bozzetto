@@ -84,8 +84,12 @@ export function releaseFocusForChrome(): void {
  * it the click a touch would synthesise, so the lift on the button is the
  * tap instead. The click still serves the keyboard and assistive tech,
  * and is skipped when it follows a lift that already acted.
+ *
+ * `swallow`, where given, is asked at the lift and at the click: true means
+ * the press was something else (a tile lifted off the tool bar), and neither
+ * acts.
  */
-export function onTap(btn: HTMLElement, action: () => void): void {
+export function onTap(btn: HTMLElement, action: () => void, swallow?: () => boolean): void {
   let pressed = -1;
   let actedAt = -Infinity;
   btn.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
@@ -101,7 +105,7 @@ export function onTap(btn: HTMLElement, action: () => void): void {
   btn.addEventListener('pointerup', (e) => {
     if (e.pointerId !== pressed) return;
     pressed = -1;
-    if (!liftedOn(btn, e)) return;
+    if (!liftedOn(btn, e) || swallow?.()) return;
     actedAt = performance.now();
     action();
   });
@@ -109,6 +113,7 @@ export function onTap(btn: HTMLElement, action: () => void): void {
     // A pointer's own click (detail counts its presses; a key's and a
     // script's click carry 0) after a lift that already acted.
     if (e.detail > 0 && performance.now() - actedAt < TAP_CLICK_MS) return;
+    if (e.detail > 0 && swallow?.()) return;
     action();
   });
 }
@@ -125,6 +130,22 @@ export function liftedOn(btn: HTMLElement, e: PointerEvent): boolean {
 
 /** A pointer click this soon after a lift that acted is that lift's own click. */
 export const TAP_CLICK_MS = 500;
+
+/**
+ * How long a press lasts to be a long press (Pencil or finger): well past
+ * the slowest deliberate tap, and still quick to reach on purpose. The
+ * Negative button latches on it; a tool on the tool bar lifts on it.
+ */
+export const LONG_PRESS_MS = 600;
+
+/**
+ * When an input event happened, by the platform's own clock, so a press
+ * lasts as long as it was held however late a busy page got to its
+ * events. A browser that leaves the stamp out is read at arrival instead.
+ */
+export function eventTime(e: Event): number {
+  return e.timeStamp > 0 ? e.timeStamp : performance.now();
+}
 
 export function div(className: string): HTMLDivElement {
   const d = document.createElement('div');
