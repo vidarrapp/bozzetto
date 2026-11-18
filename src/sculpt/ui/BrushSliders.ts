@@ -151,32 +151,35 @@ export interface SoloHooks {
 const FLASH_MS = 1100;
 
 export class BrushSliders {
-  private readonly root: HTMLDivElement;
+  private readonly root: HTMLElement;
   private readonly fields: HTMLDivElement;
   private readonly vals: { size: HTMLElement; strength: HTMLElement };
   private flashTimer = 0;
   private readonly nubs: { size: HTMLDivElement; strength: HTMLDivElement };
   private readonly hist: HistoryButtons;
+  /** What the rail put in the shell's column, taken out again on dispose. */
+  private readonly mine: HTMLElement[] = [];
   private readonly soloBtn: HTMLButtonElement | null = null;
   private soloState = { on: false, can: false };
   private readonly offKeymap: () => void = () => {};
 
   constructor(
     private readonly input: InputShell,
-    history: HistoryHooks,
+    /** The shell's edge column, with the history buttons at its foot (Studio.edge): the rail stands in it. */
+    edge: { el: HTMLElement; history: HistoryButtons },
     private readonly solo?: SoloHooks,
     /** Negative, the bottom of the column (the tool bar owns its press logic). */
     negative?: HTMLElement,
   ) {
-    this.root = document.createElement('div');
-    this.root.className = 'sculpt-sliders bz-edge';
+    this.root = edge.el;
+    this.root.classList.add('sculpt-sliders');
     this.fields = document.createElement('div');
     this.fields.className = 'bz-edge__fields';
     const size = this.buildSlider('size', 'Brush size');
     const strength = this.buildSlider('strength', 'Brush strength');
     this.nubs = { size: size.nub, strength: strength.nub };
     this.vals = { size: size.val, strength: strength.val };
-    this.hist = new HistoryButtons(history);
+    this.hist = edge.history;
     // Solo, at the head of the rail above both tracks (owner layout call): the
     // view's one toggle a hand on the rail reaches for, Alt+Q's twin on a
     // touch screen. Pressed while solo is on; greyed with nothing active.
@@ -197,7 +200,8 @@ export class BrushSliders {
         this.refreshSolo();
       });
       wrap.appendChild(btn);
-      this.root.append(wrap);
+      this.root.insertBefore(wrap, this.hist.el);
+      this.mine.push(wrap);
       this.soloBtn = btn;
       nameOnLongPress(btn);
       this.titleSolo();
@@ -205,14 +209,14 @@ export class BrushSliders {
     }
     this.fields.append(size.el, strength.el);
     // The fields lead, then Solo (already in the root), then the history
-    // and Negative, which is the foot of the column.
+    // (the shell's) and Negative, which is the foot of the column.
     this.root.prepend(this.fields);
-    this.root.append(this.hist.el);
+    this.mine.push(this.fields);
     if (negative) {
       this.root.append(negative);
+      this.mine.push(negative);
       nameOnLongPress(negative);
     }
-    document.body.appendChild(this.root);
 
     this.input.onBrushChange = () => {
       this.refresh();
@@ -458,9 +462,9 @@ export class BrushSliders {
     window.removeEventListener('bozzetto:panel-open', this.onPanel);
     window.removeEventListener('bozzetto:panel-close', this.onPanel);
     window.removeEventListener('bozzetto:panel-close-all', this.onPanel);
-    this.hist.dispose();
     this.input.onBrushChange = null;
-    this.root.remove();
+    for (const el of this.mine) el.remove();
+    this.root.classList.remove('sculpt-sliders');
   }
 }
 
