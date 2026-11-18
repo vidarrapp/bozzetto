@@ -115,9 +115,11 @@ export class Dock {
 
   /** The pointerdown on a tile that may be lifted. */
   begin(e: PointerEvent, id: string): void {
-    if (e.button !== 0 || !e.isPrimary) return;
+    // Any new press ends the last one's say over taps, whether or not the dock takes this one.
     this.swallowing = false;
-    if (this.press || this.lift) return;
+    if (e.button !== 0 || !e.isPrimary) return;
+    // A tile still flying to its place holds the others' transforms: the places cannot be read until it lands.
+    if (this.press || this.lift || this.landing) return;
     if (this.host.isStroking()) return;
     this.press = { pointerId: e.pointerId, type: e.pointerType, id, startX: e.clientX, startY: e.clientY, downAt: eventTime(e), timer: window.setTimeout(this.onHeld, LONG_PRESS_MS) };
   }
