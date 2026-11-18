@@ -185,6 +185,9 @@ export const ACTIONS: ActionDef[] = [
   { id: 'ws.sculpt', label: 'Go to Sculpt', group: 'Interface', mode: 'sculpt', chord: 'shift+2' },
   { id: 'ws.paint', label: 'Go to Paint', group: 'Interface', mode: 'sculpt', chord: 'shift+3' },
   { id: 'ws.present', label: 'Go to Present', group: 'Interface', mode: 'sculpt', chord: 'shift+4' },
+  // Save: to the library for whoever saves to one, else the copy on this device at once (owner request, 2026-11-18).
+  { id: 'file.save', label: 'Save', group: 'Interface', mode: 'sculpt', chord: 'ctrl+s' },
+  { id: 'arm.save', label: 'Save', group: 'Interface', mode: 'armature', chord: 'ctrl+s', sameKeyAs: 'file.save' },
   { id: 'ui.help', label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
   { id: 'ui.fps', label: 'Frame meter', group: 'Interface', mode: 'both', chord: 'p' },
   { id: 'ui.preferences', label: 'Preferences (fingers, hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },
@@ -286,6 +289,8 @@ export class Keymap {
         this.emit();
       } else this.save();
     });
+    // The places' words (the guide's and Preferences' "Tool bar, place 3: ...") follow the order of a bar: whoever draws them is told as for a rebind.
+    toolBars.onChange(() => this.emit());
   }
 
   action(id: string): ActionDef | undefined {

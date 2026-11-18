@@ -177,10 +177,24 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 - **Armature in the page.** Armature is a workspace of the Sculpt page: no page change between Armature, Sculpt, Paint and Present, and no question on a switch. It shows the same working view as Sculpt with the floor on, and shares Sculpt's Material and Reference panels and the one reference board. **Remesh to a figure** makes the figure from the posed mannequin without leaving the page; until you do, the mannequin shows in every workspace, listed in the Scene tab, and a stroke on it asks once whether to remesh it.
 
+### v0.7.10
+
+- **A reference behind the model is the right way up.** A picture set to Behind the model was drawn upside down, and moved down when its frame was moved up. It now sits under its frame.
+- **One row of tools on a reference.** Opacity is in the row of icons over the picture. The blend mode moved to the picture's card in the Reference panel.
+- **Tapping a body part in Armature.** After a figure was posed or moved, taps on its hands, arms, feet, neck and head often selected nothing. They select the part again.
+- **Ctrl+S saves.** Signed in, it is Save to library, in Sculpt, Paint, Present and Armature. Signed out, it keeps the copy in this browser straight away instead of within the minute.
+- **A shorter Armature panel.** The two long paragraphs on posing and the handles are gone from the panel. They are in Help.
+- **More flexible joints.** The mannequins' joints turn further, most of all the hips, ankles, shoulders and spine, so a leap or a deep back bend can be posed. The forearm also twists further.
+
+### v0.7.9
+
+- **Arrange the tool bar.** Press and hold a tool, with the Pencil or a finger (with a mouse, press and drag), and drag it along the bar to a new place. The others make room and the number keys follow the order. Sculpt and Paint each keep their own order on the device, and **View**, then **Reset tool bar**, puts it back.
+
 ### v0.7.8
 
 - **Tool settings kept with the scene.** Move's Falloff, Crease's Pinch, and Polish's Plane lock and Build-up used to go back to their defaults when a scene was opened again. They are now saved with it.
 - **Your own tool keys show.** A key you set for a tool in Preferences now shows on its button and in its tip. The number keys belong to the places on the tool bar.
+- **Layers headings.** The Layers panel's heading says Sculpt layers in Sculpt and Paint layers in Paint.
 
 ### v0.7.7
 

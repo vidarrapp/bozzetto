@@ -21,6 +21,8 @@ export const BASICS: Topic[] = [
         'The **edge controls** at the bottom left are, from the bottom, Carve (negative), Undo, Redo and Solo, with the brush size and strength fields above them while the Tool panel is closed. A field names itself (Size, Strength) only while you press it or point at it, and a button shows its name when you point at it or hold it.',
         'The **Scene**, **Model** and **Layers** panels share the left side, and **Tool**, **Material** and **Reference** the right. Each side has a row of tabs at the top and one open panel: a tab opens its panel and closes the other, and the open panel\'s tab closes it.',
       ),
+      h('Arrange the tool bar'),
+      p('**Press and hold** a tool on the tool bar for a moment, with the Pencil or a finger, and it lifts: a larger copy follows you, with the tool\'s name above it, and its place stays open. With a mouse, press and drag. Move along the bar and the others slide aside to make room; let go and the tool stays there. The number keys **1** to **0** follow the order, so the tool in the first place is on **1**, and every place shows its digit while you hold a tool. Let go anywhere else, or press **Esc**, and the tool goes back. Select, Transform and Calipers stay where they are. Sculpt and Paint each keep their own order, and it is kept on this device when saving is on. **View**, then **Reset tool bar**, puts the default order back, with an **Undo**.'),
       h('What is on the screen in the viewer'),
       list(
         'The **title strip** has the same menus as everywhere else, in the same order: **File**, **Edit**, **View** and **Help**, with a **Moderation** menu between **View** and **Help** when you are signed in and there is something in it. **Edit** holds **Preferences…**, and **View** has **Frame all**, **Wireframe**, **Shadows**, **Move light**, the panels and **Hide interface**. At the right are the star, for a member looking at shared work, and the hide button.',
@@ -34,7 +36,7 @@ export const BASICS: Topic[] = [
       h('Typing a value into a slider'),
       p('Every slider shows its value while you drag it. Double-click a slider (double-tap on touch) to type a value instead. Enter or a press anywhere else applies it, and **Esc** keeps what was there. A typed value may go past the end of the slider. It is held only to what the setting can be, so a strength never goes below zero and an angle wraps round.'),
       h('Your work is kept'),
-      p('Sculpt saves your scene in this browser as you work, and a reload brings it back. To keep it safe, use **File**, then **Save file** or **Save to library**. The word after the name in the top bar says where it is kept. See the Files topic.'),
+      p('Sculpt saves your scene in this browser as you work, at most once a minute and at once when you leave, and a reload brings it back. To keep it safe, use **File**, then **Save file** or **Save to library**. **Ctrl+S** saves to the library when you are signed in, and otherwise keeps the copy in this browser straight away. The word after the name in the top bar says where it is kept. See the Files topic.'),
     ],
   },
   {

@@ -1159,6 +1159,13 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
       e.stopPropagation();
       return;
     }
+    // A skinned mesh turns a ray away at its bounding sphere and box before it looks at a triangle, and it
+    // works the sphere out once and keeps it: the figure as it stood at the first press. Posed or moved since,
+    // whatever had left that first ball (a raised hand, the feet of a leap, the head of a figure moved up)
+    // could not be tapped, while the hips and chest near the middle still could. Both are taken afresh for
+    // the press, from the figure as it stands.
+    armature.mesh.computeBoundingSphere();
+    armature.mesh.computeBoundingBox();
     const hit = raycaster.intersectObject(armature.mesh, false)[0];
     picked = hit ? armature.boneAt(hit) : null;
     // Selected when it lifts, if it was a tap; the press goes on to the
@@ -1922,7 +1929,20 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
         },
       ];
     }
-    return [{ label: 'Save to library', hint: libraryHint, action: () => void saveToLibrary() }];
+    return [{ label: 'Save to library', hint: libraryHint, key: keyFor('arm.save'), action: () => void saveToLibrary() }];
+  };
+  /** The Save key (Ctrl+S), as Sculpt's: Save to library for whoever saves to one; for a guest the copy on this device, written at once. */
+  const saveKey = async (): Promise<void> => {
+    if (role !== null && role !== 'guest') {
+      await saveToLibrary();
+      return;
+    }
+    if (!mayStore()) {
+      studio.menus.file.note('Saving on this device is off. File, Save file keeps this work.');
+      return;
+    }
+    await flushSave();
+    studio.menus.file.note('Kept on this device');
   };
   const fileItems = (): MenuItem[] =>
     fileMenuItems({
@@ -2064,7 +2084,16 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
 
   // --- keys ------------------------------------------------------------------------------
   const onKey = (e: KeyboardEvent): void => {
-    if (isTextEntryTarget(e) || document.body.classList.contains('has-modal')) return;
+    if (document.body.classList.contains('has-modal')) return;
+    if (isTextEntryTarget(e)) {
+      // Save is the one key that also works from a text field: the browser's own answer to it is to save the page.
+      if (keymap.actionFor(e, 'armature')?.id === 'arm.save') {
+        e.preventDefault();
+        e.stopPropagation();
+        void saveKey();
+      }
+      return;
+    }
     if (lightArmed && e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.bz-menuname.is-open')) {
       armLight(false);
       e.preventDefault();
@@ -2115,6 +2144,9 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
         // Esc is also the way back from a hidden interface (ui.show); claimed
         // here, it would never reach the toggle's own listener.
         if (isShowKey(e)) studio.chrome.set(false);
+        break;
+      case 'arm.save':
+        void saveKey();
         break;
       case 'arm.undo':
         undo();

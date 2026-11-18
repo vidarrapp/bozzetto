@@ -500,7 +500,8 @@ Tool, with Material before it.
   is a picture to glance at; fitted across the view at Multiply 30% is a film
   to trace on. The place is stored relative to the centre of the view (in
   units of its shorter side), so it survives a resize or a turn of the device.
-- **Blend modes.** The row under a picture has a select in Photoshop's order and
+- **Blend modes.** Each card in the Reference panel has a select beside its
+  thumbnail (owner, 2026-11-18: not in the view), in Photoshop's order and
   groups (`src/ui/blendModes.ts`, shared with the Paint workspace's layers):
   **Behind** first (drawn behind the model by the viewer), then the modes the
   browser can blend live over the 3D view, as an element with
@@ -508,7 +509,9 @@ Tool, with Material before it.
   Lighten, Screen, Color Dodge, Linear Dodge (Add) | Overlay, Soft Light, Hard
   Light | Difference, Exclusion | Hue, Saturation, Color, Luminosity (the
   first is labelled **Behind the model** there). Opacity applies to every mode. Only the topmost Behind picture is drawn behind the
-  model.
+  model, the right way up and under its frame: `Viewer.setBackdrop` takes the
+  frame's place from the top of the view down, which is how `screenUV` runs
+  on both backends (suite `refBehindUp`).
 - **Arranging (unlocked).** Putting a picture in the view turns it on. Every
   picture in the view has a thin outline, four corner marks and a row of
   five icon buttons at its top edge (inside the top edge when there is no
@@ -516,13 +519,13 @@ Tool, with Material before it.
   (ends arranging for all pictures), **Fit** (fill the view, keeping the
   aspect), **Flip** (mirror), **Greyscale**, **Remove from view** (a cross;
   the picture stays on the board). Flip and Greyscale show they are on by an
-  orange icon alone, no filled square. **Under the picture** is one row:
-  the blend select and an **Opacity** slider, 0 to 100 %, built as the app's
-  slider rows are (a press anywhere on the row and a drag scrubs, never
-  moving the picture; a double tap types a value). The row is as wide as the
-  picture, never narrower than 240px, centred under it and kept inside the
-  view: at the bottom edge it sits over the picture's lower edge. Both rows
-  are light marks with the faint shade (no dark box).
+  orange icon alone, no filled square. **Opacity** is in the same row, to the
+  right of the icons (owner, 2026-11-18: one bar of tools): a slider, 0 to
+  100 %, built as the app's slider rows are (a press anywhere on it and a
+  drag scrubs, never moving the picture; a double tap types a value). The
+  whole row is kept inside the view and clear of the bars and panels, even
+  where it is wider than the picture. It is light marks with the faint
+  shade (no dark box).
   A finger, the mouse or the Pencil drags a picture to move it; a pinch or
   the wheel scales it; a corner is dragged to resize it, the opposite corner
   staying. Arranging is not kept: a scene opens locked.
@@ -572,8 +575,31 @@ Tool, with Material before it.
   Preferences all read the place. Select, Transform and Calipers have no
   place and keep Q, T and C. A key rebound before places existed
   (`tool.crease`, `paint.erase` and the like) carries over to the place
-  that tool holds on the default bar. The order is not yet something a
-  person changes.
+  that tool holds on the default bar.
+- **The dock: the order is the person's.** A long press on a brush's tile
+  (600 ms, Pencil or finger, the same timing as Carve's latch; the events'
+  own timestamps decide) lifts it; a mouse also lifts it by pressing and
+  moving 4px. Select, Transform and Calipers cannot be lifted. A press that
+  moves more than 8px before the long press is a slip: neither a tap nor a
+  lift. The lifted tile is a ghost a little larger than the tile (centred on
+  the Pencil or the mouse, 48px above a finger) with the tool's name above
+  it; its place stays as a gap, and while anything is lifted every place
+  shows its digit, even with Hotkeys on tools off. Along the bar the others
+  slide aside (transform, 140ms ease-out, none with reduced motion) and
+  their badges show the digit they will have; letting go puts the tool there
+  (no notice; the tool in hand stays in hand). Letting go off the bar (more
+  than 56px above it or 24px past its ends), Esc, a cancelled pointer, the
+  window losing focus or a second pointer going down fly the ghost back and
+  change nothing. A long press that ends without moving drops the tile back
+  and opens nothing yet. Nothing lifts mid-stroke, and the number keys wait
+  while a tool is lifted. Each workspace's order is kept through
+  `deviceStore` as `bozzetto-toolbar` (`{ v: 1, sculpt?, paint? }`, only an
+  order that differs from the default), read at start and made safe (unknown
+  ids and repeats dropped, tools a stored order lacks appended in the default
+  order); with saving off it holds for the visit and one notice says it will
+  not be kept. **View > Reset tool bar** (Sculpt and Paint, greyed while the
+  bar is the default) puts the default order back with a notice that has
+  Undo.
 - **Calipers** (hotkey C) is the last button, after Transform. It is not
   a brush: it measures between two points on the model and edits
   nothing. Its icon is the Uicons ruler until a drawn calipers glyph is
