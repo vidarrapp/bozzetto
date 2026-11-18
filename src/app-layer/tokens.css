@@ -6,7 +6,8 @@
  */
 :root {
   /* surfaces, darkest to lightest */
-  --bz-strip: #1b1b1b; /* the title strip; a tab that is behind; page ground of the gallery and viewer */
+  --bz-bar: #141414; /* the title strip, a step darker than everything under it (owner, 2026-11-18) */
+  --bz-strip: #1b1b1b; /* a tab that is behind; page ground of the gallery and viewer */
   --bz-viewport: #222222; /* the Sculpt and Armature viewport */
   --bz-panel: #2c2c2c; /* panels and the tool bar */
   --bz-raised: #333333; /* menus, tooltips, windows, notices */

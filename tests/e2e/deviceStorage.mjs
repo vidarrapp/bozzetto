@@ -171,7 +171,7 @@ export const suites = {
         const c = card.getBoundingClientRect();
         return { src: img.getAttribute('src'), h: Math.round(r.height), cx: Math.round(r.left + r.width / 2), above: r.bottom <= c.top, blend: getComputedStyle(img).mixBlendMode, bg: getComputedStyle(document.querySelector('.bz-device')).backgroundColor, loaded: img.complete && img.naturalWidth > 0 };
       });
-      t.ok(logo && logo.src === '/assets/bozzetto-script-ink.svg' && logo.h === 64 && Math.abs(logo.cx - 720) <= 2 && logo.above && logo.blend === 'lighten' && logo.bg === 'rgb(27, 27, 27)' && logo.loaded, `entering Sculpt with no choice: the logotype, 64px, centred above the window, on the strip's ground (${JSON.stringify(logo)})`);
+      t.ok(logo && logo.src === '/assets/bozzetto-logotype.svg' && logo.h === 64 && Math.abs(logo.cx - 720) <= 2 && logo.above && logo.blend === 'lighten' && logo.bg === 'rgb(27, 27, 27)' && logo.loaded, `entering Sculpt with no choice: the logotype, 64px, centred above the window, on the strip's ground (${JSON.stringify(logo)})`);
       t.eq(w.title, 'Keep your work on this device?', 'Sculpt asks first: the title');
       t.ok(
         /saves your work, your settings and an offline copy of the app in this browser/.test(w.text) &&

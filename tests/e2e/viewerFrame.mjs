@@ -23,7 +23,7 @@ const CONTROL = 'rgb(58, 58, 58)';
 const GREY_ICON = 'rgb(179, 179, 179)';
 /** Play's icon: light grey at rest, white while playing. */
 const playIconOk = (play) => play.icon === (play.label === 'Pause' ? WHITE : GREY_ICON);
-const STRIP = 'rgb(27, 27, 27)';
+const STRIP = 'rgb(20, 20, 20)';
 
 const ready = (page) => page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
 

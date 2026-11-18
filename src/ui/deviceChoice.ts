@@ -60,7 +60,7 @@ function openWindow({ first, intro, cancellable = false, signOutNote = false, bl
       overlay.classList.add('bz-device--blank');
       const stack = make('div', 'bz-device__stack');
       const logo = make('img', 'bz-device__logo');
-      logo.src = '/assets/bozzetto-script-ink.svg';
+      logo.src = '/assets/bozzetto-logotype.svg';
       logo.alt = 'Bozzetto';
       stack.append(logo, card);
       overlay.appendChild(stack);
