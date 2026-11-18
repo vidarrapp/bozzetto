@@ -41,6 +41,7 @@ import { suites as loopMask } from './loopMask.mjs';
 import { suites as material } from './material.mjs';
 import { suites as objNumbering } from './objNumbering.mjs';
 import { suites as paint } from './paint.mjs';
+import { suites as paintMath } from './paintMath.mjs';
 import { suites as passkeyCheck } from './passkeyCheck.mjs';
 import { suites as polyGroups } from './polyGroups.mjs';
 import { suites as present } from './present.mjs';
@@ -82,6 +83,7 @@ const suites = {
   ...viewerTools,
   ...passkeyCheck,
   ...paint,
+  ...paintMath,
   ...present,
   ...presentEdges,
   ...objNumbering,

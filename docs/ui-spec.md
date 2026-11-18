@@ -391,7 +391,7 @@ document itself scrolls, and there is no CSS switch to turn that off.
 
 ### Details overlay
 
-- Plain text at the top left of the 3D view in Sculpt and Armature: no box,
+- Plain text at the top left of the 3D view in Sculpt, Paint and Armature: no box,
   no background, only the view's faint soft shade under the letters (no outline), 11 to 13px, Familjen Grotesk for names and labels and Martian
   Mono for numbers; values in the light text colour, names in the second one. One fact a line, only those that
   apply. Sculpt: the active object's name, Tris, Quads (when the mesh has
@@ -399,7 +399,9 @@ document itself scrolls, and there is no CSS switch to turn that off.
   selected" when more than one is), Size height by width by depth in cm
   (real units only), Symmetry X, Y or Z when on, Masked n% when anything is
   masked, Hidden groups n, and Layer (the active layer's name, Base when the
-  base is active) when the object has layers. Armature: the figure's name,
+  base is active) when the object has layers; in Paint the Layer line is the
+  active paint layer (or group), Base when Base is active, when the object has
+  paint layers. Armature: the figure's name,
   Height, Tris, the selected joint or handle, Symmetry when on.
 - It stands under the strip and the tab row. With a left panel open it moves
   to the right of the panel. Tab hides it with the left side of the interface.
@@ -802,7 +804,11 @@ step and Shift+B come out. The page's address has `paint=1` while it is up
   disabled line between groups) and an Opacity slider (0 to 100%). Menu:
   Rename, Duplicate, Merge down, Clear, Delete (red). Base's menu: Clear (back
   to white, one undo step; nothing happens while Base holds no paint) and Flatten
-  all. Base at the bottom is paintable. A stroke on a layer that is hidden or
+  all. Merge down composes the layer, with its own blend mode, opacity and
+  mask, onto the stored colours of the layer below (Base for the lowest
+  layer); the lower layer keeps its own mode, opacity and mask, so the result
+  equals merging two Normal layers and then setting the mode. Base at the
+  bottom is paintable. A stroke on a layer that is hidden or
   at 0% does not start and says why; Erase with Base picked says to pick a
   layer (Base is opaque).
 - **Dynamic topology.** An object with it on has no paint layers (the Layers

@@ -160,6 +160,8 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     getSymmetryNormal(): number[];
     getVerticesProxy(): Float32Array;
     getFacesFromVertices(iVerts: Uint32Array): Uint32Array;
+    /** The faces in the octree cells a ray passes through (local space). */
+    intersectRay(vNear: ArrayLike<number>, eyeDir: ArrayLike<number>): Uint32Array;
     normalizeSize(): void;
     updateGeometry(iFaces?: Uint32Array, iVerts?: Uint32Array): void;
     /** Rebuild rings, edges and render triangles from the faces (no reorder with Mesh.OPTIMIZE off). */
@@ -435,6 +437,8 @@ declare module '@sculpt-vendor/math3d/Geometry' {
   const Geometry: {
     /** Mirrors `point` through the plane (in place) and returns it. */
     mirrorPoint(point: number[], ptPlane: number[], nPlane: number[]): number[];
+    /** The distance along `dir` from `orig` to the triangle, or -1 for a miss (either side of it counts). */
+    intersectionRayTriangle(orig: ArrayLike<number>, dir: ArrayLike<number>, v1: ArrayLike<number>, v2: ArrayLike<number>, v3: ArrayLike<number>, inter?: number[]): number;
   };
   export default Geometry;
 }
