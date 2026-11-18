@@ -5209,7 +5209,7 @@ export const suites = {
       await boot('&project=no-such-scene');
       opened = await bootState(owner);
       t.ok(opened.failed.includes('Could not open that project: the server could not be reached') && !/project=/.test(opened.search), `with no copy to fall back on, it says it could not open it and carries on (${opened.failed.join(' | ')})`);
-      t.ok(opened.toast === 'Restored your last sculpt' && opened.fresh, `on the autosave, which says so with Start fresh ("${opened.toast}"${opened.fresh ? ', Start fresh' : ''})`);
+      t.ok(opened.toast === '' && !opened.fresh, `on the autosave, which comes back without a notice ("${opened.toast}"${opened.fresh ? ', Start fresh' : ''})`);
       fake.opts.offline = false;
 
       t.ok(!errors.length, `no page errors in the owner's context${errors.length ? `: ${errors.join(' | ')}` : ''}`);

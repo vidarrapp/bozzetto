@@ -424,7 +424,7 @@ export const TOOLS: readonly ToolDef[] = [
     kind: 'brush',
     name: 'Paint',
     label: 'Paint (alt: pick colour, shift: blur)',
-    icon: 'fi-ss-palette',
+    icon: 'fi-ss-paint',
     slot: 'paint',
     description: 'Paints colour on the surface',
     help: 'tool-paint',

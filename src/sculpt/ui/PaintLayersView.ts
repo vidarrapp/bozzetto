@@ -115,12 +115,12 @@ export class PaintLayersView {
     );
     this.el.append(this.list.el);
 
-    // Photoshop's order, left to right: mask, fill layer, group, layer, delete.
+    // Left to right (owner, 2026-11-18): new layer, new fill layer, mask, group, delete.
     this.bar = new LayerBar([
-      { id: 'mask', label: 'Add mask from the current mask', icon: 'fi-ss-customize-edit', action: () => this.withActive((m, l) => this.session.paint.maskFromWorking(m, l)) },
-      { id: 'fill', label: 'New fill layer', icon: 'fi-ss-fill', action: () => this.add('fill') },
-      { id: 'group', label: 'New group', icon: 'fi-ss-folder', action: () => this.add('group') },
       { id: 'layer', label: 'New layer', icon: 'fi-ss-layers', action: () => this.add('layer') },
+      { id: 'fill', label: 'New fill layer', icon: 'fi-ss-fill', action: () => this.add('fill') },
+      { id: 'mask', label: 'Add mask from the current mask', icon: 'fi-ss-customize-edit', action: () => this.withActive((m, l) => this.session.paint.maskFromWorking(m, l)) },
+      { id: 'group', label: 'New group', icon: 'fi-ss-folder', action: () => this.add('group') },
       { id: 'delete', label: 'Delete', icon: 'fi-ss-trash', action: () => this.withActive((m, l) => void this.remove(m, l)) },
     ]);
     this.el.append(this.bar.el);

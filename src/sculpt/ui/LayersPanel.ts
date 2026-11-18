@@ -93,11 +93,11 @@ export class LayersPanel extends SidePanel {
     );
     this.sculptEl.append(this.list.el);
 
-    // Photoshop's order, left to right (a sculpt layer has no fill layer): mask, group, layer, delete.
+    // Left to right (owner, 2026-11-18): new layer, mask, group, delete. A sculpt layer has no fill layer.
     this.bar = new LayerBar([
+      { id: 'layer', label: 'New layer', icon: 'fi-ss-layers', action: () => this.add('layer') },
       { id: 'mask', label: 'Add mask from the current mask', icon: 'fi-ss-customize-edit', action: () => this.withActive((m, l) => this.session.layers.maskFromWorking(m, l)) },
       { id: 'group', label: 'New group', icon: 'fi-ss-folder', action: () => this.add('group') },
-      { id: 'layer', label: 'New layer', icon: 'fi-ss-layers', action: () => this.add('layer') },
       { id: 'delete', label: 'Delete', icon: 'fi-ss-trash', action: () => this.withActive((m, l) => void this.remove(m, l)) },
     ]);
     this.sculptEl.append(this.bar.el);

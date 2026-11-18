@@ -770,10 +770,10 @@ not the default ("Multiply 60%", "55%"), the row menu; layers of a group are
 indented and fold away; Base is last with no eye and a menu holding Flatten all.
 **The foot bar** (`LayerBar`): bare icons at the right, each 44 by 32 with the
 panel's hover fill, a name on hover and on a long press (the edge buttons' tip),
-greyed out when they do not apply. Paint: Add mask (`fi-ss-customize-edit`), New
-fill layer (`fi-ss-fill`), New group (`fi-ss-folder`), New layer
-(`fi-ss-layers`), Delete (`fi-ss-trash`); Sculpt has the same without the fill
-layer. One level of groups: Group is greyed out inside a group. A mask is a
+greyed out when they do not apply. Paint, left to right: New layer
+(`fi-ss-layers`), New fill layer (`fi-ss-fill`), Add mask
+(`fi-ss-customize-edit`), New group (`fi-ss-folder`), Delete (`fi-ss-trash`);
+Sculpt has the same without the fill layer. One level of groups: Group is greyed out inside a group. A mask is a
 byte a vertex of the highest level (255 shows the layer, 0 hides it where the
 working mask protected), saved run-length; records are version 2 and old
 records open.
