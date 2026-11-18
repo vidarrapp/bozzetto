@@ -406,6 +406,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let armatureSlot: ArmatureSlot | null = null;
   /** Whether a figure stood in the scene when the mannequin was last shown or hidden for it. */
   let figureWas = false;
+  /** The mannequin goes or comes back when a figure stands in the scene or does not (a remesh, its undo, its redo). */
+  const syncFigure = (): void => {
+    if (armatureSlot?.present() && figureMade() !== figureWas) {
+      figureWas = !figureWas;
+      armatureSlot.figureChanged();
+    }
+  };
   viewer.setShadowSubject(() => {
     shadowBox.makeEmpty();
     for (const mesh of session.getMeshes()) {
@@ -791,6 +798,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       viewer.setSculptMatrix(new Matrix4().fromArray(active.getMatrix()));
     }
     reconcile();
+    syncFigure();
     scenePanel?.refresh();
     sculptPanel?.refreshState();
     modelPanel?.refreshState();
@@ -899,10 +907,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // Present's turntable, before the controls as the coast is.
     present?.tick();
     // A figure made, or its step undone or redone: the mannequin goes or comes back.
-    if (armatureSlot?.present() && figureMade() !== figureWas) {
-      figureWas = !figureWas;
-      armatureSlot.figureChanged();
-    }
+    syncFigure();
   };
   // After the controls and the pivot re-centring, so everything that hangs
   // off the camera uses the camera this frame renders with: the light rig
@@ -2368,6 +2373,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
     applyLook: (look) => applyLookSafely(look),
     remesh: remeshFigure,
+    mannequinAlbedo: () => library.list()[0].albedo,
     figureMade,
     figure: figureSettings,
     leaveForGallery: () => leaveForGallery(),
@@ -2416,6 +2422,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     }
     window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
   };
+  session.onHistoryStep = syncFigure;
   armatureSlot = armatureWorkspace({
     host: armatureHost,
     hold: (on) => holdForArmature(on),

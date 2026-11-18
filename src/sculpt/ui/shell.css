@@ -1137,6 +1137,11 @@ body.armature-ws .sculpt-cursor {
   opacity: 0;
 }
 
+/* Scene, Model, Layers and Tool are Sculpt's and Paint's: their tabs leave no gap in the row. */
+body.bz-shell.armature-ws:not(.presenting) :is(.panel--scene, .panel--model, .panel--layers, .panel--sculpt) {
+  display: none;
+}
+
 /* The scene's armature in the Scene tab: its mark where an object has its eye and padlock, and none of their controls. */
 .outliner__row--armature {
   cursor: default;

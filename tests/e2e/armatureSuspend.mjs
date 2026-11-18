@@ -17,6 +17,9 @@
 // - twenty suspends and resumes leave as many listeners, timers, scene
 //   children and page elements as one;
 // - mount, dispose, mount on one page works.
+// Armature is a workspace of the Sculpt page now (step C): the shell is the page's, so what Armature
+// owns on the page is its own tab and scene things; the viewer "as it was" is Sculpt's working view,
+// and what Armature asks of it on top is the fixed floor, the ground shown and the pose probe.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { openArmature } from './lib.mjs';
 
@@ -81,6 +84,7 @@ const viewerState = (page) =>
       probe: v.interactionProbe ? 'set' : null,
       keyOnlyShadows: v.lighting.keyOnlyShadows,
       lockedFloor: v.lockedFloor(),
+      ground: v.getGround(),
       floorOffset: v.getFloorOffset(),
       sculptVisible: v.display.visible,
       antialias: v.getAntialias(),
@@ -115,7 +119,7 @@ const onPage = (page) =>
       strip: shown('.bz-strip'),
       menus: shown('.bz-menuname'),
       edge: shown('.bz-edge'),
-      history: shown('.armature-hist'),
+      history: shown('.sculpt-hist'),
       details: shown('.bz-details'),
       handles: visibleDeep(scene.getObjectByName('ik-handles')),
       plants: visibleDeep(scene.getObjectByName('plant-marks')),
@@ -179,18 +183,19 @@ async function armatureSuspend(page, base, t) {
 
   // The viewer as it was before Armature took it over: dispose it, read it, mount it again.
   await page.evaluate(() => window.__armature.dispose());
-  t.ok(await page.evaluate(() => !window.__armature && !document.querySelector('.panel--armature, .bz-strip, .bz-details, .bz-edge')), 'disposed, Armature leaves nothing of its own on the page');
+  t.ok(await page.evaluate(() => !window.__armature && !document.querySelector('.panel--armature')), "disposed, Armature leaves nothing of its own on the page (the shell is the page's)");
   const before = await viewerState(page);
   const sceneBefore = await sceneCount(page);
   const pageBefore = await pageCount(page);
-  t.ok(before.tapToFocus === true && before.fastFrames === false && !before.probe && before.keyOnlyShadows === false, `the viewer is its own again after dispose (${JSON.stringify(before)})`);
-  await page.evaluate(() => window.__armatureMount(window.__bozzetto));
+  t.ok(before.ground === 'off' && before.lockedFloor === 0 && before.probe === 'set' && before.keyOnlyShadows === false && before.sculptVisible === true, `the viewer is Sculpt's again after dispose (${JSON.stringify(before)})`);
+  await page.evaluate(() => window.__armatureMount(window.__bozzetto, window.__sculpt.armatureHost));
   await page.waitForFunction(() => !!window.__armature, null, { timeout: 60_000 });
   await page.waitForTimeout(600);
   t.ok((await sceneCount(page)) > sceneBefore, 'mounted again on the same page: its handles and gizmos are in the scene');
-  t.eq(await page.evaluate(() => document.querySelectorAll('.panel--armature, .bz-strip, .bz-details').length), 3, 'and one of each panel, strip and details, not two');
+  t.eq(await page.evaluate(() => document.querySelectorAll('.panel--armature, .bz-strip, .bz-details').length), 3, "and one of each Armature tab, strip and details, not two");
   const mounted = await viewerState(page);
-  t.ok(mounted.tapToFocus === false && mounted.fastFrames === true && mounted.probe === 'set' && mounted.keyOnlyShadows === true && mounted.sculptVisible === false, `mounted, Armature has the viewer as it needs it (${JSON.stringify(mounted)})`);
+  const changed = Object.keys(before).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(mounted[k]));
+  t.ok(mounted.ground === 'floor' && mounted.lockedFloor === 0 && mounted.probe === 'set' && changed.join() === 'ground,subject', `mounted, Armature asks the viewer for the floor and the stage fitted to the figure, and nothing else changes (${JSON.stringify(mounted)}; changed: ${changed.join()})`);
   // The second mount draws and works: a joint turned and undone.
   await page.evaluate(() => {
     window.__armature.turn('upperarm.L', 0, 0, 30);
@@ -244,11 +249,11 @@ async function armatureSuspend(page, base, t) {
   t.ok(!gone.handles && !gone.plants && !gone.gizmos && !gone.highlight, `no handle, plant ring, gizmo or highlight is drawn (${JSON.stringify(gone)})`);
   t.ok(!gone.figure, 'with the default the mannequin is hidden too');
   t.ok((await page.evaluate(() => window.__ledger.listeners())) < listeners, `its listeners are off (${listeners} before, ${await page.evaluate(() => window.__ledger.listeners())} now)`);
-  t.ok((await page.evaluate(() => window.__ledger.intervals())) < intervals, 'and its repaint timer has stopped');
+  t.ok((await page.evaluate(() => window.__ledger.intervals())) <= intervals, 'and no timer of its runs (the shell, built with the page, is asleep and clears its own)');
   await page.screenshot({ path: `${SHOTS}/2-suspended-hidden.png` });
 
   // The viewer is back as it was before Armature.
-  t.eq(JSON.stringify(await viewerState(page)), JSON.stringify(before), 'the viewer is as it was before Armature (floor, shadows, tap to focus, fast frames, probe, subject, visibility)');
+  t.eq(JSON.stringify(await viewerState(page)), JSON.stringify(before), "the viewer is as it was before Armature (floor, ground, shadows, tap to focus, fast frames, probe, subject, visibility): Sculpt's");
 
   // ---- figure shown ---------------------------------------------------------------------
   await page.evaluate(() => window.__armature.suspend({ figure: 'show' }));
@@ -322,12 +327,14 @@ async function armatureSuspend(page, base, t) {
   const back = await onPage(page);
   t.ok(JSON.stringify(back) === JSON.stringify(showing), `all of it is on screen again, as it was (${JSON.stringify(back)})`);
   t.eq(JSON.stringify(await viewerState(page)), JSON.stringify(mounted), 'and the viewer is as Armature has it');
-  t.ok(settingsSuspended.tapToFocus === true, '(it was the viewer\'s own in between)');
+  t.ok(settingsSuspended.ground === 'off', "(it was Sculpt's own in between)");
   // It works: a drag from the ring moves the hand, and Undo puts it back.
   // The tap on the figure while suspended was the viewer's own (tap to focus is its again), and moved the
   // camera in; frame the figure again.
-  await page.evaluate(() => window.__bozzetto.fitSubject(window.__bozzetto.subjectBox.clone(), true));
+  await page.evaluate(() => window.__armature.frame());
   await page.waitForTimeout(300);
+  // The camera came to the figure as posed, and the stage with it: what the twenty cycles must keep.
+  const framed = await viewerState(page);
   await page.screenshot({ path: `${SHOTS}/4-resumed.png` });
   const chain = a.free.replace('ik:', '');
   const ring = await page.evaluate((n) => window.__armature.ballOnScreen(n), a.free);
@@ -381,7 +388,7 @@ async function armatureSuspend(page, base, t) {
   t.eq(JSON.stringify(twenty), JSON.stringify(one), 'twenty suspends and resumes leave the listeners, timers, scene children and page elements as one');
   t.eq((await page.evaluate(() => window.__ledger.adds())) - addsBefore, addsPerCycle * 20, `and each cycle adds the same ${addsPerCycle} listeners, none more`);
   t.eq(await poseOf(page), poseTwenty, 'the pose came through all twenty');
-  t.eq(JSON.stringify(await viewerState(page)), JSON.stringify(mounted), 'and so did the viewer');
+  t.eq(JSON.stringify(await viewerState(page)), JSON.stringify(framed), 'and so did the viewer');
   await page.evaluate(() => window.__armature.suspend({ figure: 'show' }));
   await page.evaluate(() => window.__armature.suspend()); // twice in a row is the same as once
   t.ok(!(await onPage(page)).figure, 'suspend while suspended only changes the figure');
@@ -394,7 +401,7 @@ async function armatureSuspend(page, base, t) {
   t.eq(await sceneCount(page), sceneBefore, 'dispose takes everything of Armature out of the scene');
   t.eq(await pageCount(page), pageBefore, 'and off the page');
   t.eq(JSON.stringify(await viewerState(page)), JSON.stringify(before), 'and the viewer is its own');
-  await page.evaluate(() => window.__armatureMount(window.__bozzetto));
+  await page.evaluate(() => window.__armatureMount(window.__bozzetto, window.__sculpt.armatureHost));
   await page.waitForFunction(() => !!window.__armature, null, { timeout: 60_000 });
   await page.waitForTimeout(400);
   await page.evaluate(() => window.__armature.suspend());

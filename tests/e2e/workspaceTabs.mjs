@@ -327,12 +327,14 @@ export const suites = {
     const tool1 = await page.evaluate(() => window.__sculpt.input.currentToolIndex());
     t.ok(tool1 !== tool0 && (await where(page)) === 'Sculpt', 'the plain digit 2 is still a brush');
 
-    // Shift+1 asks about Armature (that page begins a new figure), as the path's step does.
+    // Shift+1 goes to Armature like the others: nothing asked, and Shift+2 comes back.
     await send(page, { key: '!', code: 'Digit1', shiftKey: true });
-    await page.waitForSelector('.bz-ask', { timeout: 8000 });
-    t.ok(true, 'Shift+1 asks "Make a new armature for this scene?" as the path does');
-    await page.keyboard.press('Escape');
-    await page.waitForFunction(() => !document.querySelector('.bz-ask'), null, { timeout: 5000 });
+    await page.waitForFunction(() => document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent === 'Armature', null, { timeout: 90_000 });
+    t.ok(!(await asking(page)), 'Shift+1 goes to Armature, and asks nothing');
+    await page.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
+    await send(page, { key: '"', code: 'Digit2', shiftKey: true });
+    await page.waitForFunction(() => document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent === 'Sculpt', null, { timeout: 8000 });
+    t.ok(true, 'and Shift+2 comes back to Sculpt from it');
 
     // Not in a text field.
     await page.evaluate(() => {

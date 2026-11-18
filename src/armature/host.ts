@@ -22,6 +22,8 @@ export interface ArmatureHost {
   applyLook(look: LookState): Promise<void>;
   /** Remesh the posed mannequin to a figure at this resolution: one new object, one undo step. False when it did not happen. */
   remesh(resolution: number): Promise<boolean>;
+  /** The colour the mannequin is drawn in: the scene's first material, the clay of a new object (an object's own albedo is its display mesh's). */
+  mannequinAlbedo(): string;
   /** Whether a figure has been made from the mannequin (it then shows only in Armature). */
   figureMade(): boolean;
   /** The Resolution both Remesh to a figure controls (the Armature tab's and the Model tab's) read and write. */

@@ -3057,11 +3057,12 @@ export const suites = {
 
     // The autosave brings a mannequin back on reload, fetched again, turned
     // as it was: restore once put the root back to rest after setting it.
-    const turnedTo = await page.evaluate(() => {
+    const turnedTo = await page.evaluate(async () => {
       const a = window.__armature.armature;
       const turn = a.root.quaternion.clone().set(0.0593, 0.1492, 0.009, 0.987).normalize();
       a.root.quaternion.premultiply(turn);
-      window.__armature.save();
+      // Written before the page goes (the page is now one that has a scene to write as well).
+      await window.__armature.save();
       return a.root.quaternion.toArray();
     });
     await openArmature(page, base);
@@ -7306,8 +7307,8 @@ export const suites = {
   async armatureLight(page, base, t) {
     await openArmature(page, base);
     await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
-    // Only the key casts by default in Armature mode (owner call); Sculpt
-    // and the viewer keep all three (checked at the end, and in shadows).
+    // Armature is a workspace of the Sculpt page and is lit as Sculpt is (step C): the key light
+    // alone is on and casts; the fill and the rim are off, as in Sculpt. The look is the scene's.
     const casts = () =>
       page.evaluate(() => {
         const L = window.__bozzetto.lighting;
@@ -7315,44 +7316,7 @@ export const suites = {
         return { ...box, live: ['key', 'fill', 'rim'].filter((id) => L.casts(id)).join(','), v: L.serialize().v };
       });
     let cast = await casts();
-    t.ok(cast.key && !cast.fill && !cast.rim && cast.live === 'key', `a new armature: the key casts, the fill and the rim do not (casting: ${cast.live})`);
-    // Armature has no Render tab now: the boxes are read from the rig the Lighting tab would show.
-    const panelBoxes = async () => page.evaluate(() => window.__bozzetto.lighting.state().map((l) => l.castShadow));
-    const boxes = await panelBoxes();
-    t.ok(boxes.length === 3 && boxes[0] === true && boxes.slice(1).every((b) => b !== true), `and the rig's Casts shadow settings say so (key, fill, rim: ${boxes.join(', ')})`);
-    // A record saved before the rim cast by default (no version mark),
-    // through File > Open: its boxes as it saved them - the fill ticked, the
-    // rim not - where Sculpt and the viewer would tick the rim.
-    const reopen = (edit) =>
-      page.evaluate(async (how) => {
-        const a = window.__armature;
-        const rec = JSON.parse(await a.pack());
-        const lit = rec.look.lighting;
-        if (how.old) delete lit.v;
-        else lit.v = 2;
-        lit.fill = { ...lit.fill, castShadow: how.fill };
-        if (how.rim === null) delete lit.rim.castShadow;
-        else lit.rim = { ...lit.rim, castShadow: how.rim };
-        // Each box set the other way first, so what it opens with is the file's doing.
-        window.__bozzetto.lighting.setShadow('rim', how.rim === null ? false : !how.rim);
-        await a.open(new File([JSON.stringify(rec)], 'old.armature'));
-      }, edit);
-    await reopen({ old: true, fill: true, rim: false });
-    cast = await casts();
-    t.ok(cast.key && cast.fill && !cast.rim && cast.v === 2, `an old armature (no version mark) keeps what it saved: the fill casting, the rim not (casting: ${cast.live}), and saves again as version ${cast.v}`);
-    await reopen({ old: true, fill: false, rim: null });
-    cast = await casts();
-    t.ok(!cast.fill && !cast.rim, `one with no word on the rim's box at all is not ticked by the old records' rule (casting: ${cast.live})`);
-    await reopen({ old: true, fill: false, rim: true });
-    cast = await casts();
-    t.ok(cast.rim && !cast.fill, `one whose rim was ticked keeps it ticked (casting: ${cast.live})`);
-    await reopen({ old: false, fill: true, rim: true });
-    cast = await casts();
-    t.ok(cast.fill && cast.rim, `and one saved since with both ticked opens with both (casting: ${cast.live})`);
-    // A preset picked here keeps to the key, as the mode's own look does.
-    await page.evaluate(() => window.__bozzetto.lighting.applyPreset('three_point'));
-    cast = await casts();
-    t.ok(cast.key && !cast.fill && !cast.rim, `the Three-point preset picked here casts from the key alone (casting: ${cast.live})`);
+    t.ok(cast.live === 'key', `Armature in the page is lit as Sculpt is: the key casts, the fill and the rim are off (casting: ${cast.live})`);
     await page.evaluate(() => window.__armature.select('upperarm.L'));
     const state = () =>
       page.evaluate(() => {
@@ -7370,11 +7334,12 @@ export const suites = {
       });
     // The camera at rest: the framing at boot may still be settling.
     let camera = '';
-    for (let i = 0; i < 20; i++) {
+    let still = 0;
+    for (let i = 0; i < 40 && still < 3; i++) {
       const now = (await state()).camera;
-      if (now === camera) break;
+      still = now === camera ? still + 1 : 0;
       camera = now;
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(400);
     }
     // Where each drag starts, in whole pixels so the light's steps are
     // exact: the selected upper arm's gizmo, the root's ball, the other

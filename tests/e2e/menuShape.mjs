@@ -22,7 +22,7 @@ export const SCULPT_VIEW = {
 const FILE_RANK = new Map([
   ['New sculpt', 0], ['New armature', 0], ['Open…', 0], ['Open recent', 0],
   ['Rename…', 1], ['Save file', 1], ['Include references', 1], ['Save to library', 1], ['Sign in to save to library', 1], ['Keep on this device', 1], ['Save', 1],
-  ['Import OBJ…', 2], ['Z-up OBJ import', 2], ['Load model…', 2], ['Export OBJ', 2], ['Send to Sculpt', 2], ['New sculpt from this', 2], ['Edit in Present', 2],
+  ['Import OBJ…', 2], ['Z-up OBJ import', 2], ['Load model…', 2], ['Export OBJ', 2], ['Remesh to a figure', 2], ['New sculpt from this', 2], ['Edit in Present', 2],
   ['Publish…', 3],
   ['Close', 4],
 ]);
@@ -132,12 +132,12 @@ export const suites = {
     const armature = await readMenus(page, 'Armature');
     checkShape(t, 'Armature', armature, {
       names: 'File,Edit,View,Help',
-      file: 'New armature|Open…|Open recent|Rename…|Save file|Load model…|Send to Sculpt|Close',
+      file: 'New armature|Open…|Open recent|Rename…|Save file|Load model…|Remesh to a figure|Close',
       view: 'Frame all|Wireframe|Shadows|Details|Move light|References|Arrange references|Armature panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Paint|Present',
       edit: 'Undo|Redo|Paste picture|Preferences…',
     });
     const a = armature.View.filter((r) => ['Armature', 'Sculpt', 'Paint', 'Present'].includes(r.label));
-    t.ok(a[0].disabled && !a[1].disabled && a[2].disabled && a[3].disabled && a[3].hint.length > 0, `Armature: Armature is where you are, Sculpt goes, Paint and Present are greyed out with their reason ("${a[3].hint}")`);
+    t.ok(a[0].disabled && !a[1].disabled && !a[2].disabled && !a[3].disabled, 'Armature: Armature is where you are, and Sculpt, Paint and Present each go (nothing is greyed out)');
     const key = (menus, menu, label) => menus[menu].find((r) => r.label === label)?.key;
     t.ok(/Shift/.test(key(sculpt, 'View', 'Shadows')) && key(sculpt, 'View', 'Shadows') === key(armature, 'View', 'Shadows'), 'Shadows has the same key in Sculpt and Armature');
   },

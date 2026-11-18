@@ -716,7 +716,11 @@ export class SculptSession {
     if (listMoved && this.mesh === active) this.activeChanged();
     this.render();
     this.fireLevelChangeIfMoved(before, t0);
+    this.onHistoryStep?.();
   }
+
+  /** An undo or a redo has been taken, the history at its new place (the page's mannequin follows whether a figure stands in the scene). */
+  onHistoryStep: (() => void) | null = null;
 
   /**
    * Forget all history. Mount calls this once the boot scene is assembled:

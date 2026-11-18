@@ -120,6 +120,8 @@
 - [x] 2026-11-10: Interface spec, a field whose value differs from its default shows its label in bold (proposed), or no mark. Decided 2026-11-17: the label goes bold. To build
 - [x] 2026-11-10: Interface spec, iPad without a keyboard: hold buttons for Smooth, Mask and Carve, or leave touch as it is. Decided 2026-11-11: leave it; hold-to-modify cannot be done in the web app on iPad (it needs a native app), and a page cannot detect a keyboard, so the hints and the hotkey digits are View toggles
 - [x] 2026-11-11: App layer of Gestalt: give Bozzetto its own interface foundations in place of the print and web rules that do not fit an app. Decided 2026-11-11: yes; red for errors and deletes; dark theme only for now (a native iOS app will later have to consider Liquid Glass). Written up in docs/ui-foundations.md
+- [ ] 2026-11-18: Armature in the page, the first figure in a scene nothing was done to: the untouched default sphere makes way for it, in the same undo step (recommended, as Send to Sculpt did); or the sphere stays and the figure is added beside it (blocks: nothing)
+- [ ] 2026-11-18: Armature in the page, before the scene saves its armature (second half of step C): the scene has an armature only once Armature has been entered in a visit, so after a reload Sculpt shows no mannequin until Armature is entered again (recommended, nothing is saved that was not before); or keep a small mark in the device's armature record now (blocks: nothing)
 
 ## Later
 

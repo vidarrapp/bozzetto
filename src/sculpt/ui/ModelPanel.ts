@@ -146,7 +146,6 @@ export class ModelPanel extends SidePanel {
     private readonly viewer: Viewer,
   ) {
     super({ id: 'model', title: 'Model', side: 'left', variant: 'panel--model' });
-    this.buildFigure(this.body);
     this.buildTopology(this.body);
     this.buildRemesh(this.body);
     this.buildQuadRemesh(this.body);
@@ -235,6 +234,7 @@ export class ModelPanel extends SidePanel {
   /** Remesh to a figure: the posed mannequin of the scene's armature into an object of its own. */
   private buildFigure(body: HTMLElement): void {
     const sec = section(body, 'Figure');
+    body.prepend(sec);
     sec.dataset.role = 'figure';
     this.figureSection = sec;
     const res = this.numberedRange(
@@ -261,11 +261,13 @@ export class ModelPanel extends SidePanel {
     const hint = div('sculpt-panel__hint muted');
     hint.textContent = 'The mannequin is posed in the Armature tab. A figure made from it can be sculpted and painted.';
     sec.appendChild(hint);
-    sec.hidden = true;
+    sec.hidden = false;
   }
 
   /** The Figure section shows while the scene has an armature, with the Resolution the Armature tab shares. */
   refreshFigure(): void {
+    // Built the first time the scene has an armature: a panel without one has no Figure rows at all.
+    if (!this.figureSection && this.figure?.shown()) this.buildFigure(this.body);
     if (!this.figureSection) return;
     this.figureSection.hidden = !this.figure?.shown();
     if (this.figure && this.figureInput && Math.abs(sliderValue(this.figureInput) - this.figure.settings.resolution) > 1e-6) {

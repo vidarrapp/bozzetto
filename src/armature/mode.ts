@@ -157,7 +157,7 @@ export type ArmatureMount = (() => void) & {
   /** Whether the figure is drawn while Armature is put away (no figure made yet). */
   showOutside(shown: boolean): void;
   /** The armature's name, as the Scene tab lists it. */
-  name(): string;
+  armatureName(): string;
   /** The camera onto the figure. */
   frame(): void;
   /** What the Figure section of the Armature tab says, read again. */
@@ -346,7 +346,10 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
    * Floor offset raises or lowers it from there. Called on a figure fresh
    * from figureFor, before any pose or placement lands.
    */
-  const holdFloor = (): void => viewer.lockFloor(armature.bounds().min.y);
+  const holdFloor = (): void => {
+    const soles = armature.bounds().min.y;
+    viewer.lockFloor(Math.abs(soles) < 1e-6 ? 0 : soles);
+  };
   holdFloor();
   let restored = false;
   if (saved) {
@@ -363,6 +366,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
   if (!restored) armature.pinFeet();
   if (bootSymmetry !== null) armature.symmetry = bootSymmetry;
   viewer.adoptMesh(armature.mesh);
+  viewer.setSculptAlbedo(armature.mesh, host.mannequinAlbedo());
   // The look is the scene's, one for the page (Sculpt's): an armature opened by itself, as a
   // project, a template or a file, brings the look it was saved under, as opening a scene does;
   // the armature left in progress on this device does not put its own over the scene's.
@@ -371,7 +375,9 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
   /** The camera onto the figure, the view's angle kept. */
   const frame = (): void => {
     const box = armature.bounds();
-    if (!box.isEmpty()) viewer.frameBounds(box);
+    if (box.isEmpty()) return;
+    // The camera comes to the figure, the view's angle kept (and the stage is fitted to it: viewerNeeds' subjectFit).
+    viewer.frameBounds(box);
   };
   frame();
 
@@ -1559,6 +1565,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
       for (const id of pinned) armature.setPinned(id, true);
     }
     viewer.adoptMesh(armature.mesh);
+    viewer.setSculptAlbedo(armature.mesh, host.mannequinAlbedo());
     if (suspended) armature.mesh.visible = figureShown;
     measureSkinPad();
     buildHandles();
@@ -2159,7 +2166,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
    * `leave` does. The shell's (strip, menus, edge column, details, the shared panels) is not
    * Armature's to put away while another workspace is in front, and stays.
    */
-  const suspendOwn = (opts: SuspendOptions = {}): void => {
+  const suspendOwn = (opts: SuspendOptions = {}, quiet = false): void => {
     figureShown = opts.figure === 'show';
     if (suspended) {
       armature.mesh.visible = figureShown;
@@ -2197,11 +2204,11 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     armature.mesh.visible = figureShown;
     hiddenDom.hide(ownedDom.filter((el) => el.isConnected));
     needs.undo();
-    announce('sculpt');
+    if (!quiet) announce('sculpt');
     viewer.invalidate();
   };
   /** Put its own things back as they were left: what the workspace's `enter` does. */
-  const resumeOwn = (): void => {
+  const resumeOwn = (quiet = false): void => {
     if (!suspended) return;
     needs.apply();
     hiddenDom.show();
@@ -2212,7 +2219,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     // The canvas may have a different size than it had; the shaders measure their pixels against it.
     placeViewport();
     syncPlantMarks();
-    announce('armature');
+    if (!quiet) announce('armature');
     viewer.invalidate();
   };
   /**
@@ -2221,12 +2228,12 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
    * shell's `go`, which asks the workspaces' leave and enter and leaves the shell showing.
    */
   const suspend = (opts: SuspendOptions = {}): void => {
-    suspendOwn(opts);
+    suspendOwn(opts, true);
     studio.sleep();
   };
   const resume = (): void => {
     studio.wake();
-    resumeOwn();
+    resumeOwn(true);
   };
   /** The figure was made (or its remesh undone): outside Armature the mannequin goes, or comes back. */
   const showOutside = (shown: boolean): void => {
@@ -2271,6 +2278,8 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     suspend,
     /** Put it all back as it was left. */
     resume,
+    /** The camera onto the figure (tests and the console). */
+    frame,
     isSuspended: () => suspended,
     /** The page's shell (studio/Studio.ts), for the tests and the console. */
     studio,
@@ -2494,7 +2503,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     outside: () => (suspended && figureShown ? armature.mesh : null),
     shadowBox,
     showOutside,
-    name: () => link?.title ?? name,
+    armatureName: () => link?.title ?? name,
     frame,
     figureChanged: () => panel.setFigureMade(host.figureMade()),
   });

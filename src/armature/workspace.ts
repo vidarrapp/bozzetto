@@ -131,7 +131,7 @@ export function armatureWorkspace(page: ArmaturePage): ArmatureSlot {
     present: () => mount !== null,
     ready: () => loading ?? Promise.resolve(),
     mount: () => mount,
-    name: () => mount?.name() ?? 'Armature',
+    name: () => mount?.armatureName() ?? 'Armature',
     mannequin: () => mount?.outside() ?? null,
     shadowBox: (out) => mount?.shadowBox(out) ?? false,
     figureChanged: () => {

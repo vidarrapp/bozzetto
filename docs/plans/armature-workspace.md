@@ -229,6 +229,40 @@ workspace until a figure is made, and Remesh to a figure (the button, in
 Armature and in Sculpt's Model tab, and the question on a first stroke) makes
 it. `?armature=1` opens the page on Armature; the old page is gone.
 
+*First half done (suites `armatureInPage`, `armatureAddress`).* Armature is a workspace of the
+Sculpt page: `src/armature/workspace.ts` is the facade the page registers (the only Armature code
+Sculpt carries from its start; `import('./mode')` and the mannequin files load on the first
+`enter`), `src/armature/host.ts` is what the page hands the mounted workspace, and `/?armature=1`
+opens the page on it (`project=`, `template=` and `scope=` are read by Armature, the page leaves
+them alone; the address follows the workspace). What is built and what the second half can rely on:
+
+- The page holds the figure state: `armature` on the page's handle (`__sculpt.armature`: `present()`
+  once Armature has been loaded this visit, `mannequin()`, `bake()`, `figureChanged()`), and
+  `figureMade()` (a figure made by Remesh stands in the scene: its step is in Sculpt's history, so
+  undoing it brings the mannequin back). It is derived from the history and kept nowhere. Step E
+  replaces it with the figure's own record (which armature and pose made it, whether untouched).
+- Remesh to a figure is `remeshFigure` in `sculpt/mode.ts`: `bakeWorld`, the budget check,
+  `SculptSession.addVoxelised(name, positions, indices, resolution, replacing)` (one undo step; a
+  scene with nothing done to it makes way for it), no hand-off. The hand-off record and
+  `?handoff=1` are gone (`saveHandoff`/`takeHandoff` in `armature/persist.ts` are unused).
+- The armature is still saved in its own device record (`currentArmature`, written by the mounted
+  workspace on leave and by `flushSave`), the scene in its own; nothing about either changed. The
+  mount is the one place that reads and writes the record: `loadArmature()` at the mount, `flushSave`.
+  Moving the armature into the scene's record means giving the mount `ArmatureState` from the scene
+  (host) instead of `loadArmature()`, and having `host.figureMade`/`present` read the scene. The
+  scene should say it has an armature from the start, so the mannequin is drawn after a reload
+  without Armature having been entered (today the page has an armature only once Armature has been
+  loaded in the visit, which is why a reload shows no mannequin until it is entered).
+- The look is the page's: an armature opened as a project, template or file applies its look through
+  `host.applyLook` (the scene's way, with the material hooks quiet); the armature left in progress
+  does not put its own over the scene's. The armature record still writes `look`.
+- `viewerNeeds.ts` shrank to the fixed floor, the ground shown and the pose probe; see
+  `docs/ui-spec.md`, "The four workspaces as tabs". Armature's undo is still its own (the shell asks
+  each workspace for its history).
+- One Material panel (its Surface section and the Colour choice are put away in Armature, through
+  `MaterialPanel.setSurfaceShown`), one Reference panel and board (`adoptKept('armature')` adds the old
+  Armature board's pictures once).
+
 **D. One undo history.**
 
 **E. The figure and its pose (stage 2).** The figure remembers the armature

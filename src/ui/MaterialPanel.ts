@@ -66,6 +66,7 @@ export class MaterialPanel extends SidePanel {
    */
   setSurfaceShown(shown: boolean): void {
     this.surfaceWanted = shown;
+    this.display.setColourOffered(shown);
     this.paintSurface();
   }
 
