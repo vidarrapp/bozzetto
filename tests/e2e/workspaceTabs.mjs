@@ -257,6 +257,39 @@ export const suites = {
     console.log(`  wstabs: builds on switches after the warm-up: ${show(builds)}`);
     const second = Object.entries(builds).filter(([k]) => k.startsWith('2:'));
     t.eq(show(second), '[]', 'in the second round no switch builds a node graph, shader, pipeline or texture');
+    // --- the same round trip under each Colour choice, and with poly group colours -------------
+    const trip = async () => {
+      const before = await counters(page);
+      await go(page, 'Present');
+      await page.waitForTimeout(150);
+      await go(page, 'Sculpt');
+      await page.waitForTimeout(150);
+      return grew(before, await counters(page));
+    };
+    const setSource = (src) => page.evaluate((v) => window.__sculpt.viewer.materials.setColourSource(v), src);
+    const settleFrames = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    for (const src of ['albedo', 'paint', 'both']) {
+      await setSource(src);
+      await settleFrames();
+      await trip(); // the first use of a choice may build
+      t.eq(show(await trip()), '{}', `Sculpt to Present to Sculpt builds nothing under the Colour choice "${src}"`);
+    }
+    for (const src of ['albedo', 'paint', 'both']) {
+      const before = await counters(page);
+      await setSource(src);
+      await settleFrames();
+      await page.waitForTimeout(150);
+      t.eq(show(grew(before, await counters(page))), '{}', `going back to the Colour choice "${src}", already used, builds nothing`);
+      const shown = await page.evaluate(() => window.__sculpt.viewer.materials.getColourSource());
+      t.eq(shown, src, `and it is the choice on show (${src})`);
+    }
+    await page.keyboard.press('Shift+F'); // poly group colours on
+    await settleFrames();
+    t.ok(await page.evaluate(() => window.__sculpt.session.groups.isShowing()), 'poly group colours are on');
+    await trip();
+    t.eq(show(await trip()), '{}', 'Sculpt to Present to Sculpt builds nothing with poly group colours on');
+    await page.keyboard.press('Shift+F');
+    await settleFrames();
     t.ok(!(await asking(page)), 'and nothing was asked in all of them');
     t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   },

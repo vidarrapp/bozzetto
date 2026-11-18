@@ -76,7 +76,7 @@ export const suites = {
     const mat = await sectionsOf(page, 'panel--material');
     t.eq(Object.keys(mat).join(','), 'Surface,Display', 'Material has two sections, Surface and Display');
     t.eq(mat.Surface.join(','), 'Material,Albedo,Roughness,Metalness', 'Surface: the assigned Material, Albedo, Roughness, Metalness');
-    t.eq(mat.Display.join(','), 'Mode,Smooth shading,Wireframe,Wire opacity,Cavity,Strength,Radius', `Display: Mode, Smooth shading, Wireframe, Wire opacity, Cavity with its Strength and Radius (${mat.Display.join(',')})`);
+    t.eq(mat.Display.join(','), 'Mode,Colour,Smooth shading,Wireframe,Wire opacity,Cavity,Strength,Radius', `Display: Mode, Colour, Smooth shading, Wireframe, Wire opacity, Cavity with its Strength and Radius (${mat.Display.join(',')})`);
 
     // Gone from Model: a control is shown once.
     await tab(page, 'panel--model');

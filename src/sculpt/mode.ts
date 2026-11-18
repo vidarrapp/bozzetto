@@ -641,6 +641,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   /** Where Present goes when it ends, where it is not back to the workspace it began in (a key to another one). */
   let presentLeavesTo: 'sculpt' | 'paint' | null = null;
   let goWorkspaceNow: (to: Workspace) => boolean = () => false;
+  // In Paint, an object with dynamic topology on gets a notice (once a visit to the page) offering to turn it off: set below.
+  let suggestStatic: () => void = () => undefined;
   let projectPrefetch: (() => void) | null = null;
   let viewItems: () => MenuItem[] = () => [];
   const extras = new Map<
@@ -800,6 +802,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     syncPanelMaterial();
     if (gizmo.isActive()) gizmo.attach(gizmoTarget());
     refreshReadout();
+    suggestStatic();
   };
   reconcile();
 
@@ -1720,7 +1723,28 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     setPaintAddress(true);
     paintPath();
     window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
+    // The workspace is Paint already; the notice only offers, and never holds the switch.
+    suggestStatic();
     return true;
+  };
+  const askedStatic = new WeakSet<SculptMesh>();
+  suggestStatic = (): void => {
+    const mesh = session.getMesh();
+    if (!paintOn || !mesh || !mesh.isDynamic || askedStatic.has(mesh)) return;
+    askedStatic.add(mesh);
+    const turnOff = document.createElement('button');
+    turnOff.type = 'button';
+    turnOff.textContent = 'Turn off';
+    turnOff.dataset.role = 'turn-off-dynamic';
+    const notice = statusToast('');
+    turnOff.addEventListener('click', () => {
+      // What the Model panel's switch does: one undo step, the shape and colours stay.
+      if (session.getMesh() === mesh && mesh.isDynamic) session.toggleDynamicTopology();
+      document.querySelectorAll('.sculpt-toast').forEach((el) => {
+        if (el.querySelector('[data-role="turn-off-dynamic"]')) el.remove();
+      });
+    });
+    notice.fail(`Paint layers need dynamic topology off for "${session.getMeshName(mesh)}".`, turnOff, 8000);
   };
   const leavePaint = (): void => {
     if (!paintOn || input.isStroking()) return;
@@ -2051,7 +2075,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   session.layers.onRefuse = (_mesh, why) => {
     failNotice(why.kind === 'group' ? 'Pick a layer to work on.' : `The layer "${why.name}" is hidden or at 0%. Show the layer to sculpt on it.`);
   };
-  materialPanel = new MaterialPanel(viewer, { sculpting: true, cavity: true, surface: {
+  materialPanel = new MaterialPanel(viewer, { sculpting: true, cavity: true, colour: true, surface: {
       hasObject: () => !!session.getMesh(),
       // The assigned material's name; "Several" over a selection that mixes them. Assigning is the Scene panel's.
       materialName: () => {
@@ -2178,6 +2202,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // From Present mode a publish is of the presented view: the turntable
   // stops first, so the look and the picture are of one camera, and the
   // look goes with its grade (GallerySave.presentationPatch).
+  const publishAlbedo = (mesh: SculptMesh): [number, number, number] => (viewer.materials.getColourSource() === 'paint' ? [1, 1, 1] : library.albedoLinear(mesh));
   const galleryHooks = {
     thumbnail: () => viewer.captureThumbnail(),
     look: () => {
@@ -2186,7 +2211,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
     presented: () => present?.isActive() ?? false,
     units: () => session.getUnits(),
-    albedoOf: (mesh: SculptMesh) => library.albedoLinear(mesh),
+    // Albedo and paint bake the product, Albedo only as Plain colour always did (the look then says so);
+    // Paint only bakes the paint alone.
+    albedoOf: (mesh: SculptMesh): [number, number, number] => publishAlbedo(mesh),
   };
   /** Who the page is for, by the latest probe; null before its first answer. */
   let role: Role | null = null;
@@ -2413,7 +2440,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     scaleBanner, // Set scale, for a scene from before real units
     worldScale, // the brushes' world sizes
     /** The vertex colours a publish writes (the albedo times the paint, as seen), for the tests. */
-    publishColours: () => mergeSceneArrays(session, true, (m) => library.albedoLinear(m))?.colors ?? null,
+    publishColours: () => mergeSceneArrays(session, true, (m) => publishAlbedo(m))?.colors ?? null,
     /** An object's exact world box, as plain arrays (the units suite measures with it). */
     worldBox: (mesh: SculptMesh) => {
       const b = exactWorldBox(mesh);
