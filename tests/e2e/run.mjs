@@ -1,5 +1,5 @@
 // Browser smoke tests over the test build: smoke.mjs's suites,
-// armatureProjects.mjs's, askWindow.mjs's, sculptLayers.mjs's, detailsOverlay.mjs's, workspaceTabs.mjs's, wireAo.mjs's, latency.mjs's, shadows.mjs's, shadowsGroups.mjs's, hardening.mjs's,
+// armatureProjects.mjs's, armatureSuspend.mjs's, askWindow.mjs's, sculptLayers.mjs's, detailsOverlay.mjs's, workspaceTabs.mjs's, wireAo.mjs's, latency.mjs's, shadows.mjs's, shadowsGroups.mjs's, hardening.mjs's,
 // tweaks.mjs's, units.mjs's, viewerFrame.mjs's, viewerTools.mjs's, passkeyCheck.mjs's, present.mjs's, presentEdges.mjs's,
 // reference.mjs's, deviceStorage.mjs's, objNumbering.mjs's, shell.mjs's, brushCaps.mjs's, clayTabPen.mjs's, channelBox.mjs's,
 // material.mjs's, calipers.mjs's, paint.mjs's, profileCurves.mjs's, tineRake.mjs's, quadRemesh.mjs's, surfaceSmooth.mjs's, strengthCm.mjs's, loopMask.mjs's, polyGroups.mjs's, zoomFocus.mjs's, webgpuHang.mjs's, and accounts.mjs's, community.mjs's, pages.mjs's and framePresent.mjs's (which start the
@@ -18,6 +18,7 @@ import { checks, launch, serve } from './lib.mjs';
 import { suites as accounts } from './accounts.mjs';
 import { suites as armatureControls } from './armatureControls.mjs';
 import { suites as armatureProjects } from './armatureProjects.mjs';
+import { suites as armatureSuspend } from './armatureSuspend.mjs';
 import { suites as askWindow } from './askWindow.mjs';
 import { suites as brushCaps } from './brushCaps.mjs';
 import { suites as calipers } from './calipers.mjs';
@@ -75,6 +76,7 @@ const suites = {
   ...smoke,
   ...armatureControls,
   ...armatureProjects,
+  ...armatureSuspend,
   ...latency,
   ...shadows,
   ...shadowsGroups,
