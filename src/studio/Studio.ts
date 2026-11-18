@@ -372,7 +372,8 @@ export class Studio {
     for (const p of this.front ? [...this.front.panels.left, ...this.front.panels.right] : []) p.setSuspended(false);
     this.panels?.resume();
     this.listen();
-    this.refresh();
+    // The path and the menus are as they were left (nothing rebuilt: the rows carry listeners).
+    this.paint();
   }
 
   isAsleep(): boolean {

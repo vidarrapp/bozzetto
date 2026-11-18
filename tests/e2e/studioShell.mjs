@@ -159,13 +159,15 @@ export const suites = {
     t.ok(!(await page.evaluate(() => window.__armature.studio.go('paint'))), 'a step Armature cannot take is refused, with nothing sent');
 
     // Its keys are its own running, and nobody's put away.
-    t.ok(claimed(await pressSeen(page, 'r', { shift: true })), "running, Shift+R is Armature's (claimed)");
+    t.ok(claimed(await pressSeen(page, 'x')), "running, X is Armature's (claimed)");
+    await page.keyboard.press('x'); // twice is a wash
     await page.evaluate(() => window.__armature.suspend());
     t.ok(await page.evaluate(() => window.__armature.studio.isAsleep()), 'suspended, the shell sleeps with it');
-    t.ok(!claimed(await pressSeen(page, 'r', { shift: true })), 'suspended, Shift+R is not claimed');
+    t.ok(!claimed(await pressSeen(page, 'x')), 'suspended, X is not claimed');
     t.eq(JSON.stringify(await piecesOf(page)), JSON.stringify(arm), 'suspended, the pieces are still one of each (put away, not built again)');
     await page.evaluate(() => window.__armature.resume());
-    t.ok(claimed(await pressSeen(page, 'r', { shift: true })), "resumed, Shift+R is Armature's again");
+    t.ok(claimed(await pressSeen(page, 'x')), "resumed, X is Armature's again");
+    await page.keyboard.press('x');
     t.eq(await page.evaluate(() => window.__armature.studio.isAsleep()), false, 'and the shell is awake');
 
     // Disposed, nothing of the shell stays; mounted again, one of each.
