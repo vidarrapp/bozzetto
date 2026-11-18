@@ -272,7 +272,7 @@ export const suites = {
     await page.waitForTimeout(300);
     t.ok(same(await ui(page), inPresent), 'Esc in Present with nothing open changes nothing');
     await press(page, 'Shift+2');
-    let after = await ui(page);
+    let after = await uiOnce(page, (u) => !u.presenting && u.shown.toolbar && u.shown.rail);
     t.ok(same(after, before), `Shift+2 puts everything back as it was (${show(after)})`);
 
     // The chip in, Esc out; then the gizmo, in its mode, comes back too.
@@ -290,7 +290,7 @@ export const suites = {
     // Leaving takes a few frames on a busy machine (the slide back, the panels coming up).
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(300);
-    after = await ui(page);
+    after = await uiOnce(page, (u) => same(u, gizmoBefore));
     t.ok(same(after, gizmoBefore) && after.gizmo === 'rotate' && !after.shown.output, `Shift+2 leaves, the rotate gizmo back (${show(after)})`);
     await press(page, '3'); // a brush again: Standard clay
 
@@ -370,8 +370,11 @@ export const suites = {
     now = await uiOnce(page, allBack);
     t.ok(allBack(now), `as Tab brings it back (${show(now.shown)})`);
     t.ok(now.shown.hide, `the hide button shows in Present (${show(now.shown)})`);
-    await press(page, 'Tab');
-    await press(page, 'Tab');
+    // Tab closes what is open, then hides the interface: up to two presses.
+    for (let i = 0; i < 3 && !(await ui(page)).chrome; i++) {
+      await press(page, 'Tab');
+      await page.waitForTimeout(500);
+    }
     now = await uiOnce(page, (u) => u.chrome && u.presenting);
     t.ok(now.chrome && now.presenting, 'hidden again');
     await press(page, 'Escape');
