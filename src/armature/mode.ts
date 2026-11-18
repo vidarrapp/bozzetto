@@ -2304,6 +2304,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     /** Put it all back as it was left. */
     resume,
     isSuspended: () => suspended,
+    /** The page's shell (studio/Studio.ts), for the tests and the console. */
+    studio,
     reference: { board: referenceBoard, view: referenceView, panel: referencePanel },
     get armature() {
       return armature;

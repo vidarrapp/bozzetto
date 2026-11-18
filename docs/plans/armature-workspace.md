@@ -109,6 +109,81 @@ Each step ships on its own and leaves the app working.
 panels are built once by the page, and Sculpt plugs into them. Armature is
 still its own page.
 
+*Done (suite `studioShell`).* `src/studio/Studio.ts` is the shell a page builds
+once: `new Studio(viewer, { referenceScope, material })`. It owns the title
+strip with the path and the readout (one `TitleStrip`), the four menus as
+frames (`studio.menus`), the edge column (`studio.edge`: the one `.bz-edge`,
+with Undo and Redo at its foot; Sculpt's brush rail stands in it), the details
+overlay, the chrome toggle's wiring, the leaving guard, the one Material panel
+and the one Reference panel, view and board (`studio.reference`; the board's
+scope is the `referenceScope` option, so merging the boards later is one
+value), and the memory of which panels each workspace had open
+(`studio.panels`, begun by `beginPanels`). What a workspace gives it:
+
+```ts
+interface Workspace {
+  id: 'armature' | 'sculpt' | 'paint' | 'present';
+  keyMode: KeyMode;                          // which keymap rows are its own
+  menus(): { file; edit; view: MenuItem[] }; // read when the shell refreshes and each time a menu opens
+  path(): Partial<Record<WorkspaceId, PathStep>>;  // steps the shell does not host, or overrides of them
+  panels: { left: SidePanel[]; right: SidePanel[] };  // its own, besides Material and Reference
+  readout(): Readout;                        // the strip's readout, written every 500 ms and on repaint()
+  details(): DetailLine[] | null;            // null leaves the overlay as it is (Present)
+  history: { undo; redo; canUndo; canRedo }; // the edge column's buttons
+  mayEnter?(from); mayLeave?(to);            // false refuses (mid-stroke)
+  enter(from); leave(to);                    // show and take the keys; put away
+  beforeLeavingPage(): Promise<boolean> | boolean;   // the shell's guard asks the one in front
+  shown?(); tick?();                         // each repaint of the path; each readout pass
+}
+```
+
+The shell: `register(ws)`, `start(id)`, `go(to)` (asks `mayLeave` and
+`mayEnter`, then `leave` and `enter`, silences with `SidePanel.setSuspended`
+the panels the new front does not have, opens the new front's remembered
+panels; a step to a workspace the shell does not host is the front's own
+`path()` step), `follow(id)` (for a workspace that moved by its own doing:
+the console, an address), `way()` (the path as the strip and the View menu
+read it: a `go` for every hosted workspace, replaced by `path()`), `refresh()`
+and `refreshMenus()`, `repaint()` (the readout and the details only), and
+`sleep()`/`wake()` (the whole shell put away, for a page whose only workspace
+is suspended: Armature's `suspend()` on its own page).
+
+On the Sculpt page, `src/sculpt/workspaces.ts` registers Sculpt, Paint and
+Present, which share the one controller in `mode.ts` as they did. A way into
+Sculpt or Paint does the controller's work (Paint saves what Sculpt had up and
+Sculpt puts Paint away; each stays under Present, which returns to it) and the
+way out of Present is Present's own (`leave(to)`), landing on the workspace
+asked for. The Armature step of the path is the one thing the shell does not
+host: Sculpt's `path()` says it asks, then changes page. On the Armature page
+the shell hosts Armature alone: `enter` is `resume`, `leave` is `suspend` of
+its own things, and `suspend()` (the tests' hook and step B's contract)
+is that plus `studio.sleep()`.
+
+What step C can rely on:
+
+- Register the Armature workspace on the Sculpt page's shell next to the other
+  three (`studio.register`), build the shell once with `referenceScope`
+  `'sculpt'`, and `go('armature')` does the switching: Sculpt's step then
+  needs no `path()` override. The shell never hides itself on a `go`; only
+  `sleep()` does, and it is for a page with nothing else to show. Do not call
+  `suspend()` (it sleeps the shell); call what the workspace's `leave` calls.
+- Each workspace silences and wakes only its own panels (`panels`); the
+  shared Material and Reference panels are never silenced by a `go`, and
+  their options are the page's (`StudioOptions.material`), so Armature's
+  Material panel (`sculpting` only) and Sculpt's (surface, cavity, colour)
+  will have to be one set of options.
+- The edge column is built by the shell; a workspace adds its own buttons to
+  `studio.edge.el` in `enter` and takes them out in `leave`. Sculpt's rail
+  (fields, Solo, Negative) is added once at mount and would need the same.
+- Armature's page keeps its own `watchAdditions` window for what only
+  Armature added (`ownedDom`); the shell's pieces are the shell's.
+- One workspace's `beforeLeavingPage` is asked, the front's; a workspace put
+  away must have written what it keeps in `leave` (Armature's `suspend` does).
+- The keys: each workspace binds its own listeners in `enter` and removes
+  them in `leave` (Armature's `subscriptions`); Sculpt's `InputShell` is one
+  listener for the three workspaces of the page and tells Paint's keys
+  by the controller's own state.
+
 **B. Armature can be put away (nothing visible).** Every listener, timer and
 viewer setting of Armature's goes behind suspend and resume, its teardown gaps
 are closed, and what it keeps in module-wide state moves into the instance.

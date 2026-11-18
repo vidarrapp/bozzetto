@@ -8,6 +8,16 @@ import { openArmature, openSculpt } from './lib.mjs';
 
 const HELP = ['Help topics', 'Hotkeys', 'About and credits'];
 
+/** What Sculpt's File and Edit hold, and its View in each workspace of the page (studioShell.mjs reads them too). */
+export const SCULPT_FILE = 'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
+const VIEW_LOOKS = 'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools';
+const VIEW_WORKSPACES = 'Hide interface|Armature|Sculpt|Paint|Present';
+export const SCULPT_VIEW = {
+  sculpt: `${VIEW_LOOKS}|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|${VIEW_WORKSPACES}`,
+  paint: `${VIEW_LOOKS}|Scene panel|Layers panel|Tool panel|Material panel|Reference panel|${VIEW_WORKSPACES}`,
+  present: `${VIEW_LOOKS}|Lighting panel|Camera panel|Render panel|Material panel|Output panel|${VIEW_WORKSPACES}`,
+};
+
 /** Where each File label sits in the order of its groups. */
 const FILE_RANK = new Map([
   ['New sculpt', 0], ['New armature', 0], ['Open…', 0], ['Open recent', 0],
@@ -101,8 +111,8 @@ export const suites = {
   /** Sculpt, Present from Sculpt and Armature: one shape. */
   async menuShape(page, base, t) {
     await openSculpt(page, base);
-    const sculptFile = 'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
-    const sculptView = 'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Paint|Present';
+    const sculptFile = SCULPT_FILE;
+    const sculptView = SCULPT_VIEW.sculpt;
     const sculpt = await readMenus(page, 'Sculpt');
     checkShape(t, 'Sculpt', sculpt, { names: 'File,Edit,View,Help', file: sculptFile, view: sculptView });
     const ws = (menus) => Object.fromEntries(menus.View.filter((r) => ['Armature', 'Sculpt', 'Paint', 'Present'].includes(r.label)).map((r) => [r.label, r.disabled]));
@@ -114,7 +124,7 @@ export const suites = {
     checkShape(t, 'Present from Sculpt', present, {
       names: 'File,Edit,View,Help',
       file: sculptFile,
-      view: 'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools|Lighting panel|Camera panel|Render panel|Material panel|Output panel|Hide interface|Armature|Sculpt|Paint|Present',
+      view: SCULPT_VIEW.present,
     });
     t.eq(JSON.stringify(ws(present)), JSON.stringify({ Armature: false, Sculpt: false, Paint: false, Present: true }), 'Present from Sculpt: Present is greyed out and Sculpt is the way back');
 

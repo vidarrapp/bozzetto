@@ -57,6 +57,7 @@ import { suites as wireAo } from './wireAo.mjs';
 import { suites as shadowsGroups } from './shadowsGroups.mjs';
 import { suites as smoke } from './smoke.mjs';
 import { suites as studyName } from './studyName.mjs';
+import { suites as studioShell } from './studioShell.mjs';
 import { suites as sliderScrub } from './sliderScrub.mjs';
 import { suites as strengthCm } from './strengthCm.mjs';
 import { suites as surfaceSmooth } from './surfaceSmooth.mjs';
@@ -123,6 +124,7 @@ const suites = {
   ...clarity,
   ...calipers,
   ...studyName,
+  ...studioShell,
   ...sculptLayers,
   ...lookTabs,
   ...tint,
