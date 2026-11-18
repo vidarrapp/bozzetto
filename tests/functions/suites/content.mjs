@@ -141,7 +141,7 @@ export async function run({ checks, on, off, compileShared, repo }) {
     [container(JSON.stringify({ ...sceneHeader(), buffers: [{ t: 'f32', off: 0, len: 300_000_000 }] }), 0), /too large to open/, 'over 1 GiB unpacked'],
     [bozz({ edit: (h) => (h.scene.look = { pad: 'x'.repeat(MiB + 10) }) }), /over the 1 MiB/, 'a header over the 1 MiB the server reads'],
     [bozz({ raw: true }).subarray(0, 40), /cut short/, 'a header cut short'],
-    [bozz({ edit: (h) => (h.scene.v = 5) }), /version/, 'a version the app does not read'],
+    [bozz({ edit: (h) => (h.scene.v = 6) }), /version/, 'a version the app does not read'],
     [bozz({ edit: (h) => (h.scene.meshes = []) }), /no objects/, 'no objects'],
     [bozz({ edit: (h) => (h.scene.active = 1) }), /no object is selected/, 'a selected object past the last'],
     [bozz({ edit: (h) => (h.buffers[0].t = 'f32') }), /faces of the wrong kind or size/, 'faces that are floats'],
