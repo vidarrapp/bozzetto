@@ -900,10 +900,42 @@ body.bz-dock-lifted .sculpt-toolbar__btn .bz-tip {
   white-space: nowrap;
 }
 
+/* A tool put in from the window: the bar's box makes room for it at both ends (the tiles stay where they are; dockDrag.ts moves them as the layout will). */
+body.bz-shell .sculpt-toolbar__brushes.dock-room {
+  padding-left: 36px;
+  padding-right: 36px;
+}
+
+/* Out of the bar's zone with a tool lifted from it: the ghost dims, and letting go takes the tool off the bar. */
+.dock-ghost--out .dock-ghost__tile {
+  opacity: 0.5;
+}
+
+.dock-ghost--gone .dock-ghost__tile {
+  transform: scale(0.6);
+  opacity: 0;
+  transition:
+    transform 160ms ease-out,
+    opacity 160ms ease-out;
+}
+
+.dock-ghost--gone .dock-ghost__name {
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+
+/* The tool in hand that is not on the bar: its tile stands at the end of the tools with no digit, and a dashed line inside it says it is not kept. */
+body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn.sculpt-toolbar__btn--extra {
+  outline: 1px dashed var(--bz-on-accent);
+  outline-offset: -5px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   body.bz-shell .sculpt-toolbar__brushes.dock-active .sculpt-toolbar__btn,
   .dock-ghost--home,
-  .dock-ghost__tile {
+  .dock-ghost__tile,
+  .dock-ghost--gone .dock-ghost__tile,
+  .dock-ghost--gone .dock-ghost__name {
     transition: none;
   }
 }
@@ -2846,4 +2878,36 @@ body.bz-shell.paint-ws:not(.presenting) .panel--model {
 body.paint-ws .sculpt-toolbar__neg,
 body.bz-shell.paint-ws .bz-edge .sculpt-toolbar__neg {
   display: none;
+}
+
+/* The Library button in the Tool panel's heading: a small button after the tool's name; its hit area reaches 44px. */
+body.bz-shell .panel__libbtn {
+  position: relative;
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+  cursor: pointer;
+}
+
+body.bz-shell .panel__libbtn::before {
+  content: '';
+  position: absolute;
+  inset: -8px -4px;
+}
+
+@media (hover: hover) {
+  body.bz-shell .panel__libbtn:hover {
+    background: var(--bz-hover);
+  }
+}
+
+body.bz-shell .panel__libbtn:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
 }

@@ -206,6 +206,23 @@ export const PANELS: Topic[] = [
     ],
   },
   {
+    id: 'asset-library',
+    title: 'Asset library',
+    group: G,
+    blocks: [
+      p('The **Asset library** is one window that floats over the view and stays open while you work. Open it with the **Library** button at the top of the Tool panel, or **View**, then **Asset library**. It does not block anything under it: you can sculpt and paint on the model while it is open. Drag it by its title row, resize it from the lower right corner, and close it with the **×**, with **Esc** while it has the focus, or from **View** again. **Tab** hides it with the rest of the interface. It keeps its place, size and last tab on this device when saving is on.'),
+      p('It has four tabs: **Tools**, **Materials**, **Lighting** and **HDRIs**. Only Tools has anything in it today; the others say they come in a later version. Under the tabs, **Bozzetto** shows what ships with the app and **Mine** shows your own copies, which come in a later version. **Search** narrows the tiles that show by name as you type.'),
+      h('The Tools tab'),
+      p('Every tool is a tile with its icon and its name, in two groups, **Sculpt** and **Paint**, the group of the workspace you are in first. A small square on a tile means the tool is on that workspace\'s tool bar. The tool in hand has the orange tile, as on the bar.'),
+      options(
+        ['Tap', 'Takes the tool in hand, as picking it on the bar. A tool of the other workspace is dimmed: a tap on it says where it is used, and does nothing else.'],
+        ['Press and hold, then drag', 'Lifts the tool, with the Pencil or a finger (with a mouse, press and drag). Move it over the tool bar and the others make room; let go and the tool is on the bar at that place. If it was already on the bar it moves there. Let go anywhere else and it flies back to the window. Only a tool of the workspace you are in lifts.'],
+        ['Press and hold, let go', 'Opens a small menu at the tile: **Use**, and **Add to tool bar** or **Remove from tool bar**.'],
+      ),
+      p('Taking a tool off the bar, and the extra tile for a tool in hand that is not on it, are in the Getting started topic, under **Take a tool off the tool bar**.'),
+    ],
+  },
+  {
     id: 'render-panel',
     title: 'Lighting, Camera and Render',
     group: G,

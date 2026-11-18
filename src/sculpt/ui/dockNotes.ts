@@ -1,5 +1,5 @@
 import { toolBars } from '../tools/bars';
-import type { Workspace } from '../tools/registry';
+import { toolById, type Workspace } from '../tools/registry';
 
 /**
  * The tool bar's notices: plain ones that go by themselves, and the one with
@@ -41,4 +41,27 @@ export function resetToolBar(ws: Workspace): void {
   if (toolBars.isDefault(ws)) return;
   const was = toolBars.reset(ws);
   notice('Tool bar put back in its default order.', 8000, () => toolBars.set(ws, was));
+}
+
+/** A tool was taken off the tool bar (dragged off, or from its menu): it is still in the library, and Undo puts it back where it was. */
+export function tellRemoved(name: string, undo: () => void): void {
+  notice(`${name} is off the tool bar. It is still in the library.`, 8000, undo);
+}
+
+/** Take a tool off its workspace's bar from a menu: the same notice and Undo as dragging it off. */
+export function removeFromBar(ws: Workspace, id: string): void {
+  const was = [...toolBars.order(ws)];
+  if (!was.includes(id)) return;
+  toolBars.set(
+    ws,
+    was.filter((t) => t !== id),
+  );
+  tellRemoved(toolById(id)?.name ?? '', () => toolBars.set(ws, was));
+}
+
+/** Put a tool at the end of its workspace's bar from a menu; it stays in hand if it was. */
+export function addToBar(ws: Workspace, id: string): void {
+  const was = [...toolBars.order(ws)];
+  if (was.includes(id)) return;
+  toolBars.set(ws, [...was, id]);
 }
