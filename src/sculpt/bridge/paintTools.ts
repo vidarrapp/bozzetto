@@ -2,10 +2,17 @@ import { vec3 } from 'gl-matrix';
 import Paint from '@sculpt-vendor/editing/tools/Paint';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import Picking from '@sculpt-vendor/math3d/Picking';
-import { decodeSrgb } from '../../paint/blend';
+import { BYTE_TO_LINEAR, decodeSrgb } from '../../paint/blend';
+import { hiddenFromCamera, releaseOcclusion } from './occlusion';
 import { LayeredPaint, PaintBlurBrush, PaintBrush } from './tools';
 import type { PaintStroke } from './paintLayers';
 import type { SculptSession } from './SculptSession';
+
+/** A picture's value (sRGB, 0..1) in linear light: its pixels are bytes, so the table has it. */
+const linear = (v: number): number => {
+  const b = Math.round(v * 255);
+  return b >= 0 && b <= 255 && Math.abs(b - v * 255) < 1e-4 ? BYTE_TO_LINEAR[b] : decodeSrgb(v);
+};
 
 /**
  * The Paint workspace's tools beyond Paint itself (tools.ts): Erase, Blur,
@@ -151,17 +158,31 @@ export interface ProjectSource {
  * model under the brush. For each vertex in the dab, the picture's pixel
  * under that vertex's place on screen goes through the brush's falloff and
  * strength into the active layer (or Base). Only the vertices that face the
- * camera, within the dab the Pencil touches (so a part of the model behind
- * the touched surface is not reached), and that a picture covers.
+ * camera, within the dab the Pencil touches, that a picture covers, and
+ * that the camera sees: a vertex with something nearer in front of it (the
+ * model's own surface, or another visible object) takes nothing.
  */
 export class PaintProjectBrush extends PaintBrush {
   source: ProjectSource | null = null;
+  /** Whether a vertex something nearer hides is passed by (on; the tests turn it off to time what it costs). */
+  depthTest = true;
   private readonly world = vec3.create();
 
   constructor(session: SculptSession) {
     super(session);
     // Only what faces the camera.
     this._culling = true;
+  }
+
+  /** A stroke starts with no tiles of the last one (the depth test keeps them while a stroke goes on). */
+  override pushState(force?: boolean): void {
+    releaseOcclusion();
+    super.pushState(force);
+  }
+
+  override end(): void {
+    releaseOcclusion();
+    super.end();
   }
 
   /** Whether the tool can project now (a picture is in the view): the shell says otherwise. */
@@ -205,8 +226,8 @@ export class PaintProjectBrush extends PaintBrush {
     this.session.paint.dabDone(this.getMesh(), hit.ids, false);
   }
 
-  /** The vertices of the dab that a picture covers, with the linear colour of the picture under each. */
-  private colours(iVerts: ArrayLike<number>, _picking: Picking): { ids: Uint32Array; rgb: Float32Array } {
+  /** The vertices of the dab that a picture covers and the camera sees, with the linear colour of the picture under each. */
+  private colours(iVerts: ArrayLike<number>, picking: Picking): { ids: Uint32Array; rgb: Float32Array } {
     const src = this.source!;
     const session = this.session;
     const mesh = this.getMesh();
@@ -218,17 +239,52 @@ export class PaintProjectBrush extends PaintBrush {
     const ids: number[] = [];
     const rgb: number[] = [];
     const out = this.world;
+    // The mirrored dab is picked with the mirrored ray, so what it faces is checked against the real camera too.
+    const eye = this.depthTest && picking === session.getPickingSymmetry() ? cam.eye() : null;
+    const nAr = mesh.getNormals();
+    const here = vec3.create();
+    // The camera's matrix once for the dab (its `project` makes it, and inverts another, for every vertex).
+    const S = cam.screenMatrix();
+    const H = cam.canvasHeight();
     for (let i = 0; i < iVerts.length; i++) {
       const v = iVerts[i];
       out[0] = vAr[v * 3];
       out[1] = vAr[v * 3 + 1];
       out[2] = vAr[v * 3 + 2];
       vec3.transformMat4(out, out, m as unknown as Float32Array);
-      const p = cam.project(out);
-      const c = src.sample(box.left + p[0] / ratio, box.top + p[1] / ratio);
+      const w = S[3] * out[0] + S[7] * out[1] + S[11] * out[2] + S[15];
+      const px = (S[0] * out[0] + S[4] * out[1] + S[8] * out[2] + S[12]) / w;
+      const py = H - (S[1] * out[0] + S[5] * out[1] + S[9] * out[2] + S[13]) / w;
+      const c = src.sample(box.left + px / ratio, box.top + py / ratio);
       if (!c) continue;
+      if (eye) {
+        vec3.sub(here, eye, out);
+        const nx = nAr[v * 3];
+        const ny = nAr[v * 3 + 1];
+        const nz = nAr[v * 3 + 2];
+        const wx = m[0] * nx + m[4] * ny + m[8] * nz;
+        const wy = m[1] * nx + m[5] * ny + m[9] * nz;
+        const wz = m[2] * nx + m[6] * ny + m[10] * nz;
+        if (wx * here[0] + wy * here[1] + wz * here[2] <= 0) continue;
+      }
       ids.push(v);
-      rgb.push(decodeSrgb(c[0]), decodeSrgb(c[1]), decodeSrgb(c[2]));
+      rgb.push(linear(c[0]), linear(c[1]), linear(c[2]));
+    }
+    if (this.depthTest && ids.length) {
+      // What the camera does not see at a vertex's place on screen takes nothing: tested against the
+      // object's own surface and the other visible objects, only for the vertices a picture covers.
+      const hidden = hiddenFromCamera(session, mesh, ids, Math.sqrt(picking.getLocalRadius2()));
+      let k = 0;
+      for (let i = 0; i < ids.length; i++) {
+        if (hidden[i]) continue;
+        ids[k] = ids[i];
+        rgb[k * 3] = rgb[i * 3];
+        rgb[k * 3 + 1] = rgb[i * 3 + 1];
+        rgb[k * 3 + 2] = rgb[i * 3 + 2];
+        k++;
+      }
+      ids.length = k;
+      rgb.length = k * 3;
     }
     return { ids: Uint32Array.from(ids), rgb: Float32Array.from(rgb) };
   }

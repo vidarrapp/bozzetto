@@ -175,6 +175,12 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **Merge down keeps to the math.** The layer is composed, with its own blend mode, opacity and mask, onto the colours of the layer below, and the layer below keeps its own mode, opacity and mask. Merging into an Overlay layer gives what merging into a Normal layer and then switching to Overlay gives.
+- **Project paints only what the camera sees.** A part of the model behind a nearer part, or behind another object in view, no longer takes projected colour.
+- **The Details overlay names the paint layer.** In Paint its Layer line shows the active paint layer, Base, or the group.
+
 ### v0.7.0
 
 - **A Paint workspace.** Painting has its own workspace between Sculpt and Present (`Shift`+`B`), with Paint, Erase, Blur, Fill, Pick and Project on `1` to `6`. Project paints a reference picture in the view onto the model.

@@ -27,7 +27,7 @@ import { devices, openForInput, openPanel, screenOf } from './smoke.mjs';
 const SHOTS = '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9835c4/scratchpad/app/paint';
 
 /** In the page: helpers on window.__pt, shared by every check below. */
-function install() {
+export function install() {
   const S = window.__sculpt;
   const T = { PAINT: 8, ERASE: 15, BLUR: 16, FILL: 17, PICK: 18, PROJECT: 19, BRUSH: 0 };
   const pt = {

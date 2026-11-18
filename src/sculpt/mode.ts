@@ -810,7 +810,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let goArmature: () => Promise<void> = async () => undefined;
   // The details overlay at the top left of the view: the object's numbers, as plain text.
   const details = new DetailsOverlay();
-  const readSculptDetails = makeSculptDetails(session);
+  const readSculptDetails = makeSculptDetails(session, () => paintOn);
   const paintDetails = (): void => {
     if (details.isOn() && !presenting) details.set(readSculptDetails());
   };
@@ -1992,6 +1992,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Paint layers: the same panel and the same autosave.
   session.paint.onChange = () => {
     layersPanel?.refresh();
+    refreshReadout();
     persist.markDirty();
   };
   session.paint.onFirstUse = (mesh) => library.markPainted(mesh);
