@@ -1,23 +1,24 @@
 import type { Viewer } from '../viewer/Viewer';
 import { deviceStore } from '../ui/deviceStorage';
-import { BEHIND, DEFAULT_BLEND, type Placement, type ReferenceBoard, type RefItem, type StoredCamera } from './board';
-import { blendModeById } from '../ui/blendModes';
+import { BEHIND, type Placement, type ReferenceBoard, type RefItem, type StoredCamera } from './board';
 import { compactRange } from '../ui/Panel';
 import { setSliderValue } from '../ui/sliderEntry';
 import { Vector3 } from 'three';
 import { drawLook } from './image';
+import { OVERLAY_SLOTS, type OverlayPicture } from '../viewer/refBlend';
 
 /**
  * What the board's pictures do on screen. A picture in the view is one
  * kind of thing: a floating picture with a place, a size, an opacity, a
  * blend mode, mirror and greyscale. Small in a corner at Normal is a
  * picture to glance at; fitted across the view at Multiply 30% is a film
- * to trace on. Several may be in the view at once. Behind is the one blend
- * that is not an element: the viewer draws that picture behind the model.
+ * to trace on. Several may be in the view at once. No picture is a page
+ * element: the viewer draws them in its own frame, over the model after
+ * tone mapping (up to four at once, the topmost) or, for Behind, under it,
+ * so a browser's own compositing of page elements is never involved.
  *
- * Two layers sit in the view's own box. The picture layer holds the
- * pictures and is never an input target (pointer-events none), locked or
- * not, so nothing in it can start, end or swallow a stroke or a gesture.
+ * Two layers sit in the view's own box. The picture layer is empty (it only
+ * measures the view) and is never an input target (pointer-events none).
  * The chrome layer holds what arranging draws (an outline, corner marks
  * and a row of buttons per picture) and exists only while arranging; it
  * is the one thing that takes a pointer, and only on the pictures' own
@@ -107,7 +108,6 @@ export class ReferenceView {
   private readonly pictures = new Pictures();
   private readonly layer: HTMLDivElement;
   private readonly chrome: HTMLDivElement;
-  private readonly pics = new Map<string, HTMLDivElement>();
   private readonly frames = new Map<string, FrameEls>();
   private showAll = readShow();
   private backdropActive = false;
@@ -177,14 +177,15 @@ export class ReferenceView {
   describe(): {
     shown: boolean;
     arranging: boolean;
-    pictures: { id: string; name: string; blend: string; opacity: number; element: boolean }[];
+    /** drawn: how each picture is drawn: 'over' (blended in the view's frame), 'behind' (under the model) or 'none' (more than the view blends at once). */
+    pictures: { id: string; name: string; blend: string; opacity: number; drawn: 'over' | 'behind' | 'none' }[];
     behind: boolean;
   } {
     return {
       shown: this.showAll,
       arranging: this.board.isArranging(),
       behind: this.backdropActive,
-      pictures: this.visibleItems().map((i) => ({ id: i.id, name: i.name, blend: i.blend, opacity: i.opacity, element: this.pics.has(i.id) })),
+      pictures: this.visibleItems().map((i) => ({ id: i.id, name: i.name, blend: i.blend, opacity: i.opacity, drawn: i.blend === BEHIND ? (this.backdropActive ? 'behind' : 'none') : this.blended.has(i.id) ? 'over' : 'none' })),
     };
   }
 
@@ -316,9 +317,10 @@ export class ReferenceView {
     }
     this.pictures.keep(new Set(this.board.list().map((i) => i.id)));
 
-    // The pictures: an element each, blended with what is under it (the view's canvas, and the pictures below).
-    const ids = new Set<string>();
+    // The pictures over the model: the viewer draws them in its own frame (viewer/refBlend.ts), the
+    // topmost OVERLAY_SLOTS of them, lowest first. Behind is the one drawn under the model.
     let behind: RefItem | null = null;
+    const over: { item: RefItem; canvas: HTMLCanvasElement }[] = [];
     const fresh = new Set(items.map((i) => i.id));
     for (const item of this.board.inView().filter((i) => fresh.has(i.id))) {
       const canvas = canvases.get(item.id);
@@ -327,28 +329,11 @@ export class ReferenceView {
         behind = item; // the topmost Behind is the one drawn behind the model
         continue;
       }
-      ids.add(item.id);
-      let pic = this.pics.get(item.id);
-      if (!pic) {
-        pic = document.createElement('div');
-        pic.className = 'ref-pic';
-        pic.style.pointerEvents = 'none';
-        this.pics.set(item.id, pic);
-      }
-      if (pic.firstChild !== canvas) pic.replaceChildren(canvas);
-      canvas.className = 'ref-pic__canvas';
-      pic.dataset.id = item.id;
-      pic.dataset.blend = item.blend;
-      pic.style.mixBlendMode = blendModeById(item.blend)?.css ?? DEFAULT_BLEND;
-      pic.style.opacity = String(item.opacity);
-      this.layer.appendChild(pic); // in order: the later is above
+      over.push({ item, canvas });
     }
-    for (const [id, pic] of [...this.pics]) {
-      if (!ids.has(id)) {
-        pic.remove();
-        this.pics.delete(id);
-      }
-    }
+    this.overCanvases = new Map(over.map((o) => [o.item.id, o.canvas]));
+    this.overIds = over.map((o) => o.item.id);
+    this.pushOverlays();
 
     if (behind) {
       this.backdropActive = true;
@@ -365,6 +350,22 @@ export class ReferenceView {
   }
 
   private behindCanvas: HTMLCanvasElement | null = null;
+  private overCanvases = new Map<string, HTMLCanvasElement>();
+  private overIds: string[] = [];
+
+  /** The pictures over the model, with where each stands now: uniforms in the viewer, no rebuild. */
+  private pushOverlays(): void {
+    const list: OverlayPicture[] = [];
+    for (const id of this.overIds) {
+      const item = this.board.get(id);
+      const canvas = this.overCanvases.get(id);
+      if (!item || !canvas || !this.visibleItems().includes(item)) continue;
+      list.push({ canvas, opacity: item.opacity, mode: item.blend, rect: this.backdropRect(item) });
+    }
+    this.viewer.setOverlays(list);
+    this.blended = new Set(this.overIds.slice(-OVERLAY_SLOTS));
+  }
+  private blended = new Set<string>();
 
   private backdropRect(item: RefItem): { x: number; y: number; w: number; h: number } {
     const v = this.viewRect();
@@ -389,13 +390,6 @@ export class ReferenceView {
     const obstacles = this.obstacles(cr);
     for (const item of items) {
       const b = this.boxOf(item, this.placeOf(item));
-      const pic = this.pics.get(item.id);
-      if (pic) {
-        pic.style.left = `${b.left}px`;
-        pic.style.top = `${b.top}px`;
-        pic.style.width = `${b.width}px`;
-        pic.style.height = `${b.height}px`;
-      }
       const f = this.frames.get(item.id);
       if (!f) continue;
       f.el.style.left = `${b.left}px`;
@@ -416,6 +410,7 @@ export class ReferenceView {
       f.bar.style.left = `${barBox.l - b.left - 1}px`;
       f.bar.dataset.inside = barBox.t >= b.top ? 'true' : 'false';
     }
+    this.pushOverlays();
     if (this.backdropActive && this.behindCanvas) {
       const behind = [...items].reverse().find((i) => i.blend === BEHIND);
       if (behind) this.viewer.setBackdrop(this.behindCanvas, behind.opacity, this.backdropRect(behind));
@@ -575,6 +570,7 @@ export class ReferenceView {
     this.mo?.disconnect();
     window.cancelAnimationFrame(this.relayout);
     if (this.backdropActive) this.viewer.setBackdrop(null);
+    this.viewer.setOverlays([]);
     this.layer.remove();
     this.chrome.remove();
     this.pictures.reset();

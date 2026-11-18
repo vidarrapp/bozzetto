@@ -6,8 +6,9 @@ import { selectEl } from './dom';
  * Reference panel's picture over the view, and the Paint workspace's layers.
  *
  * `css` is the mix-blend-mode that matches the mode where the browser has
- * one, so a picture can blend live over the 3D view as an element; null
- * for the modes it has no equal of (they need a renderer or a canvas pass).
+ * one; null for the modes it has no equal of (they need a canvas pass). The
+ * Reference panel offers the ones with a match, and the viewer draws those
+ * itself (viewer/refBlend.ts) to the same formulas.
  */
 export interface BlendMode {
   id: string;
@@ -52,7 +53,7 @@ export const BLEND_MODES: readonly BlendMode[] = [
   { id: 'luminosity', label: 'Luminosity', group: 5, css: 'luminosity' },
 ];
 
-/** The modes a browser can blend live as an element (those with a CSS match). */
+/** The modes with a CSS match: what the Reference panel offers. */
 export const CSS_BLEND_MODES: readonly BlendMode[] = BLEND_MODES.filter((m) => m.css !== null);
 
 export const blendModeById = (id: string): BlendMode | undefined => BLEND_MODES.find((m) => m.id === id);
