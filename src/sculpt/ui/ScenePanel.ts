@@ -739,25 +739,11 @@ export class ScenePanel extends SidePanel {
       ],
       current.id,
     );
-    // The padlock means "not edited": re-assigning fills the object's
-    // colours, so a locked object's material is read-only with it.
+    // The padlock means "not edited": a locked object's material is read-only with it.
     select.disabled = this.session.isLocked(active);
     select.addEventListener('change', () => {
       void (async () => {
         const picked = select.value;
-        // Any assignment re-fills the object, so painted work would go: ask.
-        if (this.library!.isPainted(active)) {
-          const yes = await askWindow({
-            title: `Change the material of ${this.session.getMeshName(active)}?`,
-            text: 'The colours painted on this object will be replaced.',
-            yes: 'Change material',
-            danger: true,
-          });
-          if (!yes) {
-            select.value = current.id;
-            return;
-          }
-        }
         if (picked === NEW_ID) {
           const name = await askText({ title: 'New material', label: 'Material name', value: 'Clay', yes: 'Make material' });
           if (name === null) {

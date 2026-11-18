@@ -2317,7 +2317,7 @@ export class SculptSession {
       savedMeshes.push(one);
     }
     return {
-      v: 4,
+      v: 5,
       savedAt: Date.now(),
       meshes: savedMeshes,
       active: Math.max(0, this.meshes.indexOf(this.mesh)),

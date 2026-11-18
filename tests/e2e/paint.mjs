@@ -7,7 +7,7 @@
 //   q, six tools on 1 to 6, no brushes, no Calipers, no Transform, no Negative)
 //   and Sculpt's bar with no paint tool and a free 0; the tabs (Scene, Layers;
 //   no Model, no Render); Present from Paint and back to it; leaving Paint puts
-//   Sculpt back as it was; Colour comes back on Sculpt colours with a notice.
+//   Sculpt back as it was; entering Paint changes no Colour setting and says nothing.
 // paintBlend: the module's known values for every mode, and each mode on real
 //   vertices of a stroke, against an independent statement of Photoshop's
 //   arithmetic; opacity; Dissolve does not flicker.
@@ -339,16 +339,17 @@ export const suites = {
     void after.model;
     t.ok(await page.evaluate(() => !document.querySelector('.layers-sculpt').hidden), 'the Layers tab shows the sculpt layers again');
 
-    // --- Colour comes back on Sculpt colours ---------------------------------
+    // --- Nothing to switch on: Colour is left as it is, and no notice ----------
     await page.evaluate(() => window.__sculpt.viewer.materials.setPlainColor(true));
     await press(page, 'Shift+B');
     const colour = await page.evaluate(() => ({
       state: window.__sculpt.viewer.materials.getMaterialState().vertexColors,
       toasts: [...document.querySelectorAll('.sculpt-status, .status-toast, [class*="toast"]')].map((e) => e.textContent).join('|'),
     }));
-    t.eq(colour.state, true, 'entering Paint turns Colour to Sculpt colours');
-    t.ok(/Sculpt colours/.test(colour.toasts), `and says so (${colour.toasts.slice(0, 100)})`);
+    t.eq(colour.state, false, 'entering Paint leaves Colour as the look had it (paint shows in Paint whatever it says)');
+    t.ok(!/Sculpt colours|Albedo and paint/.test(colour.toasts), `and says nothing (${colour.toasts.slice(0, 100)})`);
     await press(page, 'Shift+B');
+    await page.evaluate(() => window.__sculpt.viewer.materials.setPlainColor(false));
 
     // The address reopens it.
     await page.goto(`${base}/?sculpt=1&q=low&paint=1`, { waitUntil: 'domcontentloaded' });

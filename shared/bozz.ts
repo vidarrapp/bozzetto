@@ -174,7 +174,7 @@ const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.i
  * - every value at most MAX_DEPTH deep, and no field called `__proto__`;
  * - every array reference an integer naming an entry of the table, and no
  *   entry named twice;
- * - a version the app reads (3 or 4), at least one object, and a selected
+ * - a version the app reads (3, 4 or 5), at least one object, and a selected
  *   object among them;
  * - per object: its faces a u32 array of four a face, at least one level
  *   and a selected level among them, a matrix of 16; per level: at least
@@ -322,7 +322,7 @@ export function checkHeader(layout: Layout): void {
 
   const scene = layout.scene;
   if (!isRec(scene)) throw damaged('it holds no scene');
-  if (scene.v !== 3 && scene.v !== 4) throw damaged('a version this app does not read');
+  if (scene.v !== 3 && scene.v !== 4 && scene.v !== 5) throw damaged('a version this app does not read');
   const meshes = scene.meshes;
   if (!Array.isArray(meshes) || meshes.length === 0) throw damaged('it has no objects');
   if (typeof scene.active !== 'number' || !Number.isInteger(scene.active) || scene.active < 0 || scene.active >= meshes.length) {
