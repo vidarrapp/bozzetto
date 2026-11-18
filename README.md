@@ -25,15 +25,16 @@ Your work autosaves on your device. Nothing uploads unless you sign in and save 
 
 <img width="1180" height="820" alt="Bozzetto Screenshot - Armature mode" src="docs/screenshots/armature.jpg" />
 
-A posable figure, for reference or as the start of a sculpt. Pick **Create → New Armature** in the gallery. No sign-in needed.
+A posable mannequin, for reference or as the start of a sculpt, and the first of four workspaces of one page: Armature, Sculpt, Paint and Present, one `Shift`+`1` to `4` away from each other. Pick **Create → New Armature** in the gallery, or go to Armature from any workspace. No sign-in needed. Armature loads the first time you go there, so Sculpt starts as fast as before.
 
 - **Figures.** Four mannequins, male and female in realistic and stylized proportions, plus two block figures. You can also load your own rigged `.glb`.
 - **Pose.** Tap a part to turn its joint, held within the joint's limits. Symmetry (`X`) mirrors the pose to the other side.
 - **Reach.** Drag the ring at a hand or a foot and the limb follows. Pin a ring to hold it in place while the rest of the figure moves. An arrowhead out from each knee and elbow aims the bend, and the one in front of the face makes the head, neck and a little of the back look at it.
 - **Feet on the floor.** Feet stand flat on the floor and stay planted through a crouch or a lean.
 - **Proportions.** Change the size and length of each part.
-- **Send to Sculpt.** Turns the posed figure into one clay object and opens it in Sculpt.
-- **Files.** The figure autosaves and shows as a card in the gallery. **File → Save** writes an `.armature` file.
+- **Remesh to a figure.** Turns the posed mannequin into one clay object in the same scene, in the Armature tab or in Sculpt's Model tab, in one undo step. Pressed again it adds another. A figure is made only by pressing the button, never by changing workspace.
+- **The mannequin elsewhere.** Until you make a figure, the posed mannequin shows in Sculpt, Paint and Present too and is listed in the Scene tab; a stroke on it asks whether to remesh it. After that it shows only in Armature.
+- **Files.** The armature autosaves and shows as a card in the gallery. **File → Save** writes an `.armature` file.
 
 ## Sculpt
 
@@ -171,6 +172,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 | `L`, held while dragging | Move the key light |
 
 ## Changelog
+
+### Unreleased
+
+- **Armature in the page.** Armature is a workspace of the Sculpt page: no page change between Armature, Sculpt, Paint and Present, and no question on a switch. It shows the same working view as Sculpt with the floor on, and shares Sculpt's Material and Reference panels and the one reference board. **Remesh to a figure** makes the figure from the posed mannequin without leaving the page; until you do, the mannequin shows in every workspace, listed in the Scene tab, and a stroke on it asks once whether to remesh it.
 
 ### v0.7.8
 

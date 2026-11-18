@@ -1726,15 +1726,6 @@ body.presenting .measure-overlay {
   width: min(268px, calc(100vw - 64px));
 }
 
-/* The undo and redo chips in Armature mode: where Sculpt's sit at the foot
-   of its rail, bottom-left by the resting hand. */
-.armature-hist {
-  position: fixed;
-  left: 44px;
-  bottom: 96px;
-  z-index: 12;
-}
-
 /* Travels its own width plus its left offset, which parks the handle -
    which juts 36px off the panel's right edge - flush at x 0. */
 .panel--left.panel--collapsed {

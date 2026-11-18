@@ -636,6 +636,13 @@ export class ScenePanel extends SidePanel {
     }
   }
 
+  /**
+   * The scene's armature, while its mannequin stands in the scene as it is posed and no figure has
+   * been made from it: a row of its own, marked by the armature's icon, with none of an object's
+   * controls (no eye, lock, material or delete; it takes no strokes). Null: no row.
+   */
+  armatureRow: (() => { name: string } | null) | null = null;
+
   /** Rebuild the object rows from the live scene (list/selection changes). */
   refresh(): void {
     const active = this.session.getMesh();
@@ -712,6 +719,20 @@ export class ScenePanel extends SidePanel {
         return row;
       }),
     );
+    const armature = this.armatureRow?.();
+    if (armature) {
+      const row = div('outliner__row outliner__row--armature');
+      row.dataset.role = 'armature-row';
+      row.title = 'The armature: its posed mannequin, which cannot be sculpted. Make a figure from it in the Armature tab or the Model tab.';
+      const mark = document.createElement('i');
+      mark.className = 'fi fi-ss-bone outliner__mark';
+      mark.setAttribute('aria-hidden', 'true');
+      const name = document.createElement('span');
+      name.className = 'outliner__name';
+      name.textContent = armature.name;
+      row.append(mark, name);
+      this.listEl.appendChild(row);
+    }
     this.refreshMaterial();
     if (this.floorRow) this.refreshFloor();
     this.onRefresh?.();

@@ -23,7 +23,7 @@ import { ensureDeviceChoice, showDeviceNotice } from './ui/deviceChoice';
 
 /**
  * App entry. `?tl=<id>` opens the viewer for that project; with no id we show
- * the landing gallery, or Sculpt, Armature or the passkey check when asked,
+ * the landing gallery, or the Sculpt page (on Armature, Sculpt or Paint) or the passkey check when asked,
  * and with accounts on the Account page (`?account`), My projects (`?me`),
  * the Community (`?community`), a member's page in it (`?u=<handle>`) and,
  * for the owner and moderators, the Review page (`?review`) and the viewer
@@ -54,12 +54,10 @@ async function main(): Promise<void> {
   const workspace = (!id && (params.get('sculpt') === '1' || params.get('armature') === '1')) || (!!id && params.get('present') === '1' && params.get('review') !== '1');
   if (workspace) await ensureDeviceChoice();
   else if (!id) showDeviceNotice();
-  if (!id && params.get('sculpt') === '1') {
+  // One page, four workspaces: `?armature=1` opens it on Armature (its project=, template= and
+  // scope= are an armature's), `?sculpt=1` on Sculpt, `&paint=1` on Paint.
+  if (!id && (params.get('sculpt') === '1' || params.get('armature') === '1')) {
     await bootSculpt();
-    return;
-  }
-  if (!id && params.get('armature') === '1') {
-    await bootArmature();
     return;
   }
   // The passkey check (Preferences > Diagnostics, docs/accounts.md batch
@@ -157,9 +155,9 @@ async function main(): Promise<void> {
 const BUNDLED_DEMO = import.meta.env.DEV || import.meta.env.MODE === 'test';
 
 /**
- * Project-less sculpt entry (/?sculpt=1): boot the viewer on a synthetic
- * one-frame manifest (no API, no timelapse, no transport bar) and mount
- * sculpt mode over it.
+ * Project-less sculpt entry (/?sculpt=1, and /?armature=1 for the same page on its
+ * Armature workspace): boot the viewer on a synthetic one-frame manifest (no API, no
+ * timelapse, no transport bar) and mount sculpt mode over it.
  */
 async function bootSculpt(): Promise<void> {
   const viewport = document.getElementById('viewport');
@@ -175,7 +173,7 @@ async function bootSculpt(): Promise<void> {
   const { mountSculptSplash } = await import('./ui/SculptSplash');
   const splash = mountSculptSplash(overlay);
   try {
-    setStatus('Entering sculpt mode…');
+    setStatus(new URLSearchParams(window.location.search).get('armature') === '1' ? 'Entering armature mode…' : 'Entering sculpt mode…');
     const { sculptStandaloneProject } = await import('./sculpt/standalone');
     const { manifest, source } = sculptStandaloneProject();
     const viewer = await mountViewer(viewport, manifest, source, setStatus);
@@ -407,40 +405,6 @@ function viewerManifest(raw: unknown): Manifest {
     throw new SceneProjectError(`"${r.title ?? 'This'}" is an armature: it opens in Armature mode, from the gallery or My projects`);
   }
   return validateManifest(raw);
-}
-
-/**
- * Armature entry (/?armature=1): the same viewer boot as sculpt, with the
- * armature mode mounted over it instead.
- */
-async function bootArmature(): Promise<void> {
-  const viewport = document.getElementById('viewport');
-  const overlay = document.getElementById('overlay');
-  if (!viewport) throw new Error('#viewport element not found');
-  const setStatus = (msg: string): void => {
-    const box = overlay?.querySelector<HTMLElement>('.overlay__msg');
-    if (box) box.textContent = msg;
-  };
-  const { mountSculptSplash } = await import('./ui/SculptSplash');
-  const splash = mountSculptSplash(overlay);
-  try {
-    setStatus('Entering armature mode…');
-    const { sculptStandaloneProject } = await import('./sculpt/standalone');
-    const { manifest, source } = sculptStandaloneProject();
-    const viewer = await mountViewer(viewport, manifest, source, setStatus);
-    addGalleryLink();
-    const { mountArmatureMode } = await import('./armature/mode');
-    await mountArmatureMode(viewer);
-    await splash.finished;
-    if (overlay) {
-      overlay.classList.add('overlay--done');
-      window.setTimeout(() => overlay.remove(), 450);
-    }
-  } catch (err) {
-    console.error(err);
-    splash.dispose();
-    showError(overlay, err);
-  }
 }
 
 /**

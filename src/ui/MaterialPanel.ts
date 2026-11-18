@@ -51,10 +51,27 @@ export class MaterialPanel extends SidePanel {
   private albedoPicker: ColorPickerHandle | null = null;
   private roughInput: HTMLInputElement | null = null;
   private metalInput: HTMLInputElement | null = null;
+  /** Present puts the editing away, and Armature has no object to speak for: either hides the Surface section. */
+  private presenting = false;
+  private surfaceWanted = true;
   private readonly onPresent = (e: Event): void => {
     // Sculpt's Present puts the editing away; the object's own values with it.
-    if (this.surfaceSection) this.surfaceSection.hidden = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
+    this.presenting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
+    this.paintSurface();
   };
+
+  /**
+   * Whether the workspace in front has an object's material to show (Sculpt and Paint do; Armature's
+   * mannequin has none, and shows the Display section alone).
+   */
+  setSurfaceShown(shown: boolean): void {
+    this.surfaceWanted = shown;
+    this.paintSurface();
+  }
+
+  private paintSurface(): void {
+    if (this.surfaceSection) this.surfaceSection.hidden = this.presenting || !this.surfaceWanted;
+  }
 
   constructor(
     private readonly viewer: Viewer,

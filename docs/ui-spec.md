@@ -211,7 +211,7 @@ place, each only where the place has it.
   guest sees **Sign in to save to library** instead where the site has
   accounts, and nothing extra where it has none), Keep on this device
   (the Present workspace has one Save, or Save to its place); Import OBJ…, Z-up OBJ import, Load model…, Export
-  OBJ, Send to Sculpt, New sculpt from this, Edit in Present; Publish…;
+  OBJ, Remesh to a figure (Armature's File menu: the posed mannequin made into a figure, in this scene), New sculpt from this, Edit in Present; Publish…;
   Close, always last, with the page it returns to as its hint.
 - **Open recent** is a row with a chevron that opens a second list beside
   the menu (flipped to the left at the screen's edge; on a phone it takes
@@ -419,7 +419,8 @@ document itself scrolls, and there is no CSS switch to turn that off.
   2026-11-11: one panel open per side, with folder tabs). Material is on the
   right everywhere (owner call, 2026-11-17). Tab order, left to right.
   Sculpt: left Scene, Model, Layers; right Tool, Material, Reference.
-  Armature: left Armature; right Material, Reference. Present from Sculpt:
+  Armature: left Armature; right Material, Reference (the page's own, the
+  same as in Sculpt and Paint). Present from Sculpt:
   left Lighting, Camera, Render; right Material, Output. The Present
   workspace (owner): left Lighting, Camera, Render; right Frames, Project,
   Material, Output. The viewer and review mode: right Material, Lighting,
@@ -789,10 +790,59 @@ byte a vertex of the highest level (255 shows the layer, 0 hides it where the
 working mask protected), saved run-length; records are version 2 and old
 records open.
 
-## The three workspaces as tabs
+## The four workspaces as tabs
 
-Sculpt, Paint and Present are tabs of one mode (owner, 2026-11-18): from any
-of them to any other in one step, and each keeps its own panels and tool.
+Armature, Sculpt, Paint and Present are tabs of one page (owner, 2026-11-18):
+from any of them to any other in one step, and each keeps its own panels and
+tool. The page is the Sculpt page: `/?sculpt=1` opens it on Sculpt,
+`/?armature=1` on Armature (with the `project=`, `template=` and `scope=` of an
+armature, which Armature reads and cleans off the address), and the address
+follows the workspace (`armature=1` while Armature is in front, `sculpt=1`
+when it is left, `paint=1` as before).
+
+- **Armature is loaded on first use.** Its code and the four mannequin files
+  are fetched the first time the workspace is entered (`src/armature/
+  workspace.ts` is the facade the page carries), so Sculpt starts as fast as it
+  did. The path shows Armature current at once, a quiet notice says "Loading
+  Armature…", and the switch is not held up: another step still works, and
+  the load ends put away if it is used.
+- **One working view.** Armature shows Sculpt's view (its light, its shading,
+  the cavity pass, flat clay, the one look of the scene) with the floor shown
+  and fixed where the mannequin stands, so changing tab changes nothing but
+  the tools. `src/armature/viewerNeeds.ts` lists what Armature still asks of
+  the viewer on entering and gives back on leaving: the fixed floor, the
+  ground shown, and the pose drag counted as a move for the frame meter. The
+  shadows' bound (Sculpt's) takes the posed mannequin in while it is drawn.
+  Sculpt's tool bar, brush fields, Solo, Negative and ring are put away in
+  Armature (`body.armature-ws`); Undo, Redo and Arrange stay on the edge
+  column, and Undo and Redo act on the workspace in front (Armature has its
+  own steps until there is one history).
+- **The mannequin and the figure.** A figure is made only by pressing
+  **Remesh to a figure** (the Figure section of the Armature tab, the Figure
+  section at the top of the Model tab, Armature's File menu, Ctrl+Enter in
+  Armature, or Remesh in the question below), never by changing tab. It is
+  the posed mannequin baked to world triangles and voxelised at the
+  Resolution (one slider, shared by the two panels) into one object named
+  Figure, in one undo step (a scene with nothing done to it makes way for it;
+  one with work keeps its objects; pressed again it adds Figure 2); a grid
+  the device cannot spare is refused with the reason. Until a figure stands in
+  the scene the posed mannequin is drawn in Sculpt, Paint and Present too,
+  without handles, listed in the Scene tab as a row of its own (the bone
+  icon, its name, no eye, lock, material or delete), and takes no strokes:
+  a stroke that starts on it asks once a visit `Remesh "Figure" to sculpt
+  it?`, text `Sculpting needs a surface of its own. The armature keeps its pose,
+  and you can make another figure from it later.`, with **Remesh** (an ordinary
+  main action, not the danger style) and Cancel; Cancel leaves everything as
+  it was and the press goes to the view. Once a figure stands in the scene
+  (its step is in the history: undoing it brings the mannequin back) the
+  mannequin shows only in Armature. The scene has an armature from the first
+  entry to Armature in a visit; the second half of step C saves it in the
+  scene's record, so it is there from the start.
+- **Panels.** Armature: left Armature; right Material, Reference (the same
+  two panels and the same board as in the other workspaces; pictures on the
+  old Armature board are added to the page's board once, on first load). The
+  Armature tab's sections: Mannequin, Joint, Proportions, Reach, Figure
+  (where things stand, Resolution, Remesh to a figure).
 
 - **Keys.** `ws.armature` Shift+1, `ws.sculpt` Shift+2, `ws.paint` Shift+3,
   `ws.present` Shift+4 (rebindable, in the View menu and the hotkey guide),
@@ -816,8 +866,7 @@ of them to any other in one step, and each keeps its own panels and tool.
 - **Tool.** Paint comes back to the paint tool it last had (kept on the
   device); Sculpt to the one it left.
 - **Nothing stops a switch.** It is refused only mid-stroke or mid-drag. No
-  question is asked on the way between the three (Armature's step asks, as it
-  leaves the page). Kept across a switch: the camera, the active object and
+  question is asked on the way between the four. Kept across a switch: the camera, the active object and
   selection, the undo history, symmetry and the scene's look. Present entered
   from Paint is left by a key or the path to the workspace asked for (the
   turntable stopped, a clip being saved cancelled), landing on that

@@ -164,7 +164,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'arm.deselect', label: 'Deselect the joint', group: 'Armature', mode: 'armature', chord: 'escape' },
   { id: 'arm.undo', label: 'Undo', group: 'Armature', mode: 'armature', chord: 'ctrl+z', repeat: true, sameKeyAs: 'edit.undo' },
   { id: 'arm.redo', label: 'Redo', group: 'Armature', mode: 'armature', chord: 'ctrl+shift+z', repeat: true, sameKeyAs: 'edit.redo' },
-  { id: 'arm.send', label: 'Send to Sculpt', group: 'Armature', mode: 'armature', chord: 'ctrl+enter' },
+  { id: 'arm.send', label: 'Remesh to a figure', group: 'Armature', mode: 'armature', chord: 'ctrl+enter' },
   { id: 'gesture.armPick', label: 'Select a part (its gizmo appears; a tap on touch)', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Click a part' },
   { id: 'gesture.armOrbit', label: 'Orbit, on the figure or off it, keeping the selection', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag' },
   { id: 'gesture.armDeselect', label: 'Deselect', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Click off the figure' },
