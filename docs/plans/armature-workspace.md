@@ -114,6 +114,39 @@ viewer setting of Armature's goes behind suspend and resume, its teardown gaps
 are closed, and what it keeps in module-wide state moves into the instance.
 Tested by mounting, suspending and resuming it on its own page.
 
+*Done (suite `armatureSuspend`).* `mountArmatureMode` returns its disposer with
+`suspend({ figure: 'show' | 'hide' })`, `resume()` and `isSuspended()` on it
+(the test page has the same on `window.__armature`). What the next step can
+rely on:
+
+- Suspended, Armature has no listener on the window, the document or the canvas
+  (its keys never reach `keymap.actionFor`, so the same keys can belong to
+  another workspace), no timer, no observer and no settings or device-choice
+  subscription; the transform gizmos are disconnected from the canvas and the
+  side panels no longer answer `bozzetto:panel-open`, `panel-set` or the Tab
+  close-all. Its DOM (strip, menus, panels, edge column, details, reference
+  view) is `display: none`, its scene objects are hidden, not disposed. The
+  figure stays drawn only with `figure: 'show'`. Resume puts all of it back
+  with the pose, selection, gizmo mode, open panels and undo history as they
+  were; nothing is fetched.
+- What Armature sets on the viewer is one list, `src/armature/viewerNeeds.ts`,
+  applied by `apply()` (mount, resume) and undone by `undo()` (suspend,
+  dispose): the Floor offset, `lockFloor`, the fill's and rim's Casts shadow,
+  `keyOnlyShadows`, `tapToFocus`, the primary subject's visibility,
+  anti-aliasing, `fastFrames`, `interactionProbe`, `chrome.onChange` and the
+  subject fit. Undo restores what the viewer had when the list was last
+  applied; resume writes back what Armature held. Step C changes the list there.
+- Module-wide state: the handle shaders' uniforms moved into `HandleKit`; the
+  mannequin rigs (`figureReads`), the parsed models and the fetched files stay
+  shared across mounts, as read-only caches that make a second mount fetch
+  nothing. Mount, dispose, mount works on one page; the disposer now also
+  restores `tapToFocus`, unsubscribes the device-choice listener and disposes
+  the highlight material.
+- Left for the shared shell: `body.bz-shell` (set by the title strip, removed
+  only when Armature is disposed), the `bozzetto:sculptmode` event (sent on
+  mount and dispose, not on suspend), the look (background, light colours) and
+  the panel ids `material` and `reference`, which Sculpt uses too.
+
 **C. Armature in the page (stage 1).** Armature opens as a workspace of the
 Sculpt page, loaded on first use, in Sculpt's working view with the floor on.
 The armature is saved in the scene. The posed mannequin shows in every

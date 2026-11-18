@@ -28,7 +28,7 @@ import '../sculpt/ui/shell.css';
 import { DetailsOverlay, type DetailLine } from '../sculpt/ui/DetailsOverlay';
 import { formatLength } from '../viewer/units';
 import { Armature, buildArmature, importArmature, SCENE_SCALE, type ArmatureState } from './Armature';
-import { ARROW_TIP, HandleKit, RING_RADIUS, setHandleViewport, type HandleShape, type HandleState, type HandleView } from './handleViews';
+import { ARROW_TIP, HandleKit, RING_RADIUS, type HandleShape, type HandleState, type HandleView } from './handleViews';
 import { onCentimetres } from './units';
 import { UNITS } from '../viewer/units';
 import { fetchFigure, figureById, tuneRig } from './figures';
@@ -68,6 +68,8 @@ import {
   type ArmatureLink,
 } from './project';
 import { askText, askWindow, tellWindow } from '../ui/askWindow';
+import { viewerNeeds } from './viewerNeeds';
+import { Hidden, panelListeners, watchAdditions } from './suspend';
 
 /** Undo steps kept (owner call), the oldest let go past it. */
 const HISTORY_LIMIT = 100;
@@ -103,7 +105,6 @@ const FLOOR_RING_MARGIN = 1.1;
 
 /** The rig of a model already parsed once this session, by its bytes. */
 const parsed = new WeakMap<ArrayBuffer, ReturnType<typeof rigFromGLTF>>();
-let pending: { bytes: ArrayBuffer; read: ReturnType<typeof rigFromGLTF> } | null = null;
 
 /**
  * The rig of a loaded model. Parsing a glTF is asynchronous and building a
@@ -111,7 +112,7 @@ let pending: { bytes: ArrayBuffer; read: ReturnType<typeof rigFromGLTF> } | null
  * kept for the rebuilds that follow.
  */
 function readModel(bytes: ArrayBuffer): ReturnType<typeof rigFromGLTF> {
-  const held = parsed.get(bytes) ?? (pending?.bytes === bytes ? pending.read : null);
+  const held = parsed.get(bytes);
   if (!held) throw new Error('that model has not been read yet');
   parsed.set(bytes, held);
   return held;
@@ -122,7 +123,6 @@ async function parseModel(bytes: ArrayBuffer): Promise<ReturnType<typeof rigFrom
   const gltf = await getGLTFLoader().parseAsync(bytes.slice(0), '');
   const read = rigFromGLTF(gltf, IMPORTED, 'Model');
   read.rig.id = IMPORTED;
-  pending = { bytes, read };
   parsed.set(bytes, read);
   return read;
 }
@@ -146,6 +146,24 @@ async function ensureFigure(id: string): Promise<void> {
   figureReads.set(id, read);
 }
 
+/** What the mannequin does while Armature is suspended: stays drawn (the posed figure shows in other workspaces) or goes. */
+export interface SuspendOptions {
+  /** Default 'hide'. */
+  figure?: 'show' | 'hide';
+}
+
+/**
+ * What mounting Armature gives back: the disposer, which is also the thing
+ * itself, with `suspend` and `resume` beside it. Suspended, Armature hears
+ * nothing, shows nothing of its own and has put the viewer back as it found
+ * it (viewerNeeds.ts); resumed, it has everything as it left it.
+ */
+export type ArmatureMount = (() => void) & {
+  suspend(opts?: SuspendOptions): void;
+  resume(): void;
+  isSuspended(): boolean;
+};
+
 /**
  * Armature mode (owner design): a posable block figure as a subject of
  * its own - an art-reference tool with the full Render panel, and the
@@ -158,28 +176,67 @@ async function ensureFigure(id: string): Promise<void> {
  * Everything else - dragging off the figure, the wheel, the panels - is
  * the viewer as it always was.
  */
-export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
-  // The floor is fixed where the figure stands (owner call), as it is in
-  // a sculpt on real units, so the Render panel built on the event below
-  // offers no pedestal; its height comes once the figure is built
-  // (holdFloor), and the look's Floor offset raises or lowers it.
-  const savedFloorOffset = viewer.getFloorOffset();
-  viewer.lockFloor(0);
-  // Only the key light casts by default in Armature mode (owner call); the
-  // fill's and the rim's Casts shadow boxes still tick them on, and a look
-  // saved before the rim cast by default keeps its rim as it was saved
-  // (Lighting.keyOnlyShadows). Sculpt and the viewer keep all three.
-  const lighting = viewer.lighting;
-  const casts = (id: 'fill' | 'rim'): boolean => lighting.state().find((l) => l.id === id)?.castShadow ?? true;
-  const castsBefore = { fill: casts('fill'), rim: casts('rim') };
-  lighting.setShadow('fill', false);
-  lighting.setShadow('rim', false);
-  lighting.keyOnlyShadows = true;
+export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> {
+  // What Armature sets on the viewer is one list (viewerNeeds.ts), applied
+  // here and undone by suspend and by the disposer. Among them: the floor is
+  // fixed where the figure stands (owner call), as it is in a sculpt on real
+  // units, so the Render panel built on the event below offers no pedestal;
+  // its height comes once the figure is built (holdFloor), and the look's
+  // Floor offset raises or lowers it. Only the key light casts by default in
+  // Armature mode (owner call); the fill's and the rim's Casts shadow boxes
+  // still tick them on, and a look saved before the rim cast by default keeps
+  // its rim as it was saved (Lighting.keyOnlyShadows). Sculpt and the viewer
+  // keep all three. The hooks are filled in once the mode has built what
+  // they ask about.
+  const hooks = {
+    interaction: (): 'move' | null => null,
+    chromeChanged: (_hidden: boolean): void => undefined,
+  };
+  const needs = viewerNeeds(viewer, {
+    interaction: () => hooks.interaction(),
+    chromeChanged: (hidden) => hooks.chromeChanged(hidden),
+  });
+  needs.apply();
   // The Render panel, Help and Preferences all listen for this.
   window.dispatchEvent(
     new CustomEvent('bozzetto:sculptmode', { detail: { active: true, mode: 'armature' } }),
   );
-  viewer.tapToFocus = false;
+  /**
+   * Armature is suspended: it hears nothing and shows nothing (suspend()).
+   * Read by the few places that would otherwise bring something back into
+   * view on their own, a figure arriving or a selection made by a test hook.
+   */
+  let suspended = false;
+  /** What the figure does while suspended; see SuspendOptions. */
+  let figureShown = false;
+  /**
+   * Everything the mode listens to or runs on its own, as a list of things
+   * that start and stop: every window, document and canvas listener, the
+   * observers, the timers, the subscriptions to settings and the device's
+   * choice. Registered once, started at once; suspend stops them all, resume
+   * starts them again, and nothing is added twice.
+   */
+  const subscriptions: Array<{ start(): void; stop(): void }> = [];
+  const subscribe = (start: () => () => void): void => {
+    let off: (() => void) | null = null;
+    const sub = {
+      start: () => {
+        off ??= start();
+      },
+      stop: () => {
+        off?.();
+        off = null;
+      },
+    };
+    subscriptions.push(sub);
+    sub.start();
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const listen = (target: EventTarget, type: string, fn: (e: any) => void, options?: boolean | AddEventListenerOptions): void =>
+    subscribe(() => {
+      target.addEventListener(type, fn as EventListener, options);
+      return () => target.removeEventListener(type, fn as EventListener, options);
+    });
 
   // An armature project opened by its address (docs/accounts.md §4-5): one's
   // own (`&project=<id>`, from My projects or the owner's gallery, saved back
@@ -330,8 +387,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // The viewer boots on a synthetic one-frame manifest whose subject is a
   // placeholder cube; sculpt mode swaps its geometry, this mode brings its
   // own figure instead - so the cube has to be sent away, or it sits at the
-  // origin as a tiny box (owner report).
-  viewer.setSculptVisible(false);
+  // origin as a tiny box (owner report): viewerNeeds' sculptVisible.
   // A neutral grey backdrop (STUDIO_BG), as Sculpt's, until a saved look says otherwise.
   viewer.environment.setBackgroundMode('color');
   viewer.environment.setBackgroundColor(STUDIO_BG);
@@ -371,11 +427,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   wash.positionNode = positionLocal.add(normalLocal.mul(float(0.008 * SCENE_SCALE)));
   let highlight: Mesh | null = null;
 
-  const rotateTc = new TransformControls(viewer.camera, canvas);
+  const rotateTc = new TransformControls(viewer.camera, null);
   rotateTc.mode = 'rotate';
   rotateTc.space = 'local';
   rotateTc.setSize(0.75);
-  const moveTc = new TransformControls(viewer.camera, canvas);
+  const moveTc = new TransformControls(viewer.camera, null);
   moveTc.mode = 'translate';
   moveTc.space = 'world';
   moveTc.setSize(0.9);
@@ -385,7 +441,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
    * than the part itself, whose scale is the proportions' to set; the
    * stand-in's scale is read as a factor on the part as the drag found it.
    */
-  const scaleTc = new TransformControls(viewer.camera, canvas);
+  const scaleTc = new TransformControls(viewer.camera, null);
   scaleTc.mode = 'scale';
   scaleTc.space = 'local';
   scaleTc.setSize(0.75);
@@ -402,6 +458,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   /** The part's proportions as the drag began. */
   let scaleFrom: { size: number; length: number } | null = null;
   const controls = [rotateTc, moveTc, scaleTc];
+  // Their own pointer listeners on the canvas are part of what is suspended.
+  subscribe(() => {
+    for (const tc of controls) tc.connect(canvas);
+    return () => {
+      for (const tc of controls) tc.disconnect();
+    };
+  });
   const attached = new Set<TransformControls>();
   const rootMiddle = new Vector3();
   const rootStep = new Vector3();
@@ -560,12 +623,15 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         }
         tc.attach(tc === scaleTc ? scaleProxy : tc === moveTc && def.kind === 'root' ? rootProxy : target);
         tc.enabled = true;
-        tc.getHelper().visible = true;
+        tc.getHelper().visible = !suspended;
         attached.add(tc);
       }
       placeControls();
       highlight = armature.partHighlight(selected, wash);
-      if (highlight) armature.partBones.get(selected)!.add(highlight);
+      if (highlight) {
+        highlight.visible = !suspended;
+        armature.partBones.get(selected)!.add(highlight);
+      }
     }
     syncHandles();
     panel.refresh(selected);
@@ -589,7 +655,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       trimFreeRotate(false);
       moveTc.attach(ball);
       moveTc.enabled = true;
-      moveTc.getHelper().visible = true;
+      moveTc.getHelper().visible = !suspended;
       attached.add(moveTc);
     }
     syncHandles();
@@ -639,11 +705,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // The shaders measure their pixels against the canvas as the page shows it.
   const placeViewport = (): void => {
     const r = canvas.getBoundingClientRect();
-    setHandleViewport(r.width, r.height);
+    kit.setViewport(r.width, r.height);
   };
   placeViewport();
   const viewportObserver = new ResizeObserver(placeViewport);
-  viewportObserver.observe(canvas);
+  subscribe(() => {
+    viewportObserver.observe(canvas);
+    return () => viewportObserver.disconnect();
+  });
   // The handle being dragged or hovered, and what it is doing. Declared
   // here, ahead of the first sync, which paints from them.
   /** The reach ring being dragged, by chain. */
@@ -764,7 +833,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     // picture changed, so a still frame's smoothing starts over.
     viewer.invalidate();
     syncPlantMarks();
-    handleGroup.visible = handlesOn;
+    handleGroup.visible = handlesOn && !suspended;
     if (!handlesOn) return;
     placeViewport();
     for (const [id, m] of handles) {
@@ -844,13 +913,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   };
   // Fast frames while a pose drag moves the figure (and, the viewer sees
   // for itself, while the view moves): Viewer.updateFrameMode. The AO is
-  // drawn through the drag.
-  viewer.fastFrames = true;
-  viewer.interactionProbe = () => (dragUnderway() ? 'move' : null);
+  // drawn through the drag. The viewer's side of it is viewerNeeds' fastFrames
+  // and interactionProbe; this is what the probe asks.
+  hooks.interaction = () => (dragUnderway() ? 'move' : null);
   // Anti-aliasing as Preferences says, as in Sculpt (the viewer's own is 4x MSAA).
-  const applyAntialias = (): void => viewer.setAntialias(settings.get('antialias'));
-  applyAntialias();
-  const offAntialias = settings.onChange(applyAntialias);
+  subscribe(() => settings.onChange(() => viewer.setAntialias(settings.get('antialias'))));
   const dragPlane = new Plane();
   const dragPoint = new Vector3();
   // Scratch for the aim and look drags, which run on every move.
@@ -1278,10 +1345,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     viewer.invalidate();
     flushPanel();
   };
-  canvas.addEventListener('pointerdown', onPointerDown, true);
-  canvas.addEventListener('pointermove', onPointerMove, true);
-  window.addEventListener('pointerup', onPointerUp, true);
-  window.addEventListener('pointercancel', onPointerUp, true);
+  listen(canvas, 'pointerdown', onPointerDown, true);
+  listen(canvas, 'pointermove', onPointerMove, true);
+  listen(window, 'pointerup', onPointerUp, true);
+  listen(window, 'pointercancel', onPointerUp, true);
 
   // --- history + autosave ----------------------------------------------------
   /**
@@ -1368,11 +1435,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   };
   // The title strip, and the undo and redo buttons where Sculpt has them,
   // at the foot of the left edge.
+  // The mode's own pieces of the page, found by what the next stretch puts there (ownedDom, below).
+  const addedToPage = watchAdditions([document.body, canvas.parentElement]);
   const strip = new TitleStrip();
   mountAccountHandle(strip);
   const chrome = pageChrome();
   strip.onToggleChrome = () => chrome.toggle();
-  chrome.onChange = (hidden) => strip.setChromeHidden(hidden);
+  hooks.chromeChanged = (hidden) => strip.setChromeHidden(hidden);
   const histButtons = new HistoryButtons({
     undo,
     redo,
@@ -1430,9 +1499,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     saveTimer = window.setTimeout(() => void flushSave(), SAVE_GAP_MS);
   };
   // Turned on from Preferences: the figure as it stands is kept straight away.
-  onDeviceChoice((c) => {
-    if (c === 'keep') scheduleSave(false);
-  });
+  subscribe(() =>
+    onDeviceChoice((c) => {
+      if (c === 'keep') scheduleSave(false);
+    }),
+  );
   /**
    * Picture the figure for the gallery card, as sculpt mode does its work,
    * and save it with the rest. The balls, the gizmo and the selection wash
@@ -1473,8 +1544,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     // An Armature slider let go (or a value typed): its step is taken now.
     if (e.type === 'change' && pendingStep && (e.target as Element | null)?.closest?.('.panel--armature')) commit();
   };
-  document.addEventListener('input', onLookEdit);
-  document.addEventListener('change', onLookEdit);
+  listen(document, 'input', onLookEdit);
+  listen(document, 'change', onLookEdit);
   // The Render panel's Reset look (it only asks; the mode owns the defaults).
   const onLookReset = (): void => {
     void viewer.applyLook(defaultLook).then(() => {
@@ -1482,7 +1553,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       scheduleSave();
     });
   };
-  window.addEventListener('bozzetto:look-reset', onLookReset);
+  listen(window, 'bozzetto:look-reset', onLookReset);
   // Leaving some other way - a reload, a closed tab: the record is saved at
   // once, and the picture follows if the page lives long enough to take it
   // (a page on its way out may never draw another frame).
@@ -1490,7 +1561,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     void flushSave();
     void snapshot(false);
   };
-  window.addEventListener('pagehide', onHidden);
+  listen(window, 'pagehide', onHidden);
   // File > Close, which the "← Gallery" chip used to be.
   const leaveForGallery = (): void => {
     void snapshot().finally(() => {
@@ -1501,10 +1572,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // Signing in again and reloading onto an update leave the page and come
   // back (ui/leaving): the figure is saved and pictured first, as leaving
   // for the gallery does.
-  const offLeaving = beforeLeaving(async () => {
-    await snapshot();
-    return true;
-  });
+  subscribe(() =>
+    beforeLeaving(async () => {
+      await snapshot();
+      return true;
+    }),
+  );
 
   // --- the figure: presets and files ----------------------------------------------
   /**
@@ -1556,6 +1629,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       for (const id of pinned) armature.setPinned(id, true);
     }
     viewer.adoptMesh(armature.mesh);
+    if (suspended) armature.mesh.visible = figureShown;
     buildHandles();
     syncHandles();
     panel.syncFigure();
@@ -1778,10 +1852,20 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   const referenceArrange = new ArrangeButton(referenceBoard);
   referenceArrange.mount(edge);
   referencePanel.setPlacer((id, x, y) => referenceView.placeAt(id, x, y));
-  const offIntake = installIntake(referenceBoard, () => referencePanel.isOpen(), (items, x, y) => {
-    let n = 0;
-    for (const item of items) if (referenceView.placeAt(item.id, x + n * 24, y + n * 24)) n++;
-    return n > 0;
+  subscribe(() =>
+    installIntake(referenceBoard, () => referencePanel.isOpen(), (items, x, y) => {
+      let n = 0;
+      for (const item of items) if (referenceView.placeAt(item.id, x + n * 24, y + n * 24)) n++;
+      return n > 0;
+    }),
+  );
+  // The panels hear the other panels (and the Tab key) on the window; suspended, they hear none of it.
+  const panelEvents = [panel, materialPanel, referencePanel].map(panelListeners);
+  subscribe(() => {
+    for (const p of panelEvents) p.start();
+    return () => {
+      for (const p of panelEvents) p.stop();
+    };
   });
   // What an opened project needed mending, or why it did not open: said
   // now that there is a page to say it on.
@@ -2067,7 +2151,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   const helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help', strip.menus, true);
   strip.setWorkspace(workspaceNow().current, workspaceNow().steps);
   // Which panel was open on each side last time, open again; kept from here on.
-  const offPanelMemory = rememberPanels('armature');
+  subscribe(() => rememberPanels('armature'));
   // The readout: the scene's name and where its work is kept. The figure's numbers are the details overlay's.
   const details = new DetailsOverlay();
   const paintDetails = (): void => {
@@ -2082,7 +2166,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     if (armature.symmetry) lines.push({ id: 'symmetry', key: 'Symmetry', value: 'on' });
     details.set(lines);
   };
-  const offDetailsSetting = settings.onChange(paintDetails);
+  subscribe(() => settings.onChange(paintDetails));
   const paintReadout = (): void => {
     strip.setReadout({
       name: link?.title ?? name,
@@ -2091,7 +2175,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     paintDetails();
   };
   paintReadout();
-  const readoutTimer = window.setInterval(paintReadout, 500);
+  subscribe(() => {
+    const timer = window.setInterval(paintReadout, 500);
+    return () => clearInterval(timer);
+  });
+  // The pieces of the page the strip, the panels, the edge column, the details and the reference
+  // view put there: what suspend takes out of sight.
+  const ownedDom = addedToPage();
 
   // --- keys ------------------------------------------------------------------------------
   const onKey = (e: KeyboardEvent): void => {
@@ -2169,22 +2259,93 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     e.preventDefault();
     e.stopPropagation();
   };
-  window.addEventListener('keydown', onKey, true);
+  listen(window, 'keydown', onKey, true);
   // A held key ends on its own key, whatever the modifiers are doing now.
   const onKeyUp = (e: KeyboardEvent): void => {
     if (keymap.holdActionForKeyUp(e, 'armature')?.id === 'arm.light' && !lightArmed) lightHeld = false;
   };
-  window.addEventListener('keyup', onKeyUp, true);
+  listen(window, 'keyup', onKeyUp, true);
   // Losing the window eats the keyup (an app switch with L down): without
   // this every press after it would still go to the light.
   const onBlur = (): void => {
     lightHeld = false;
     lightArmed = false;
   };
-  window.addEventListener('blur', onBlur);
+  listen(window, 'blur', onBlur);
+
+  // --- suspend and resume ----------------------------------------------------------
+  const hiddenDom = new Hidden();
+  const menus = [fileMenu, editMenu, viewMenu, helpMenu];
+  /** The scene things that are the tool's, not the figure's, in the state they should be in while shown. */
+  const overlayShown = (): Array<[Object3D, boolean]> => [
+    [handleGroup, handlesOn],
+    [plantGroup, true],
+    ...controls.map((tc): [Object3D, boolean] => [tc.getHelper(), attached.has(tc)]),
+    ...(highlight ? ([[highlight, true]] as Array<[Object3D, boolean]>) : []),
+  ];
+  const suspend = (opts: SuspendOptions = {}): void => {
+    figureShown = opts.figure === 'show';
+    if (suspended) {
+      armature.mesh.visible = figureShown;
+      viewer.invalidate();
+      return;
+    }
+    // What is in hand is let go: a drag that never gets its pointer-up, a held key.
+    for (const tc of controls) {
+      if (tc.dragging) (tc as unknown as { pointerUp(p: { button: number }): void }).pointerUp({ button: 0 });
+    }
+    if (reaching !== null || aiming !== null || moving !== null || looking) {
+      reaching = aiming = moving = null;
+      if (looking) {
+        looking = false;
+        armature.endLook();
+      }
+      viewer.setOrbitEnabled(true);
+    }
+    down.clear();
+    tap = null;
+    hovered = null;
+    lightHeld = lightArmed = false;
+    lightPointer = -1;
+    // The timers' work is done now: a slider's step taken, the save written, the light's panel caught up.
+    if (pendingStep) commit();
+    if (saveTimer) void flushSave();
+    if (lightSyncTimer) {
+      clearTimeout(lightSyncTimer);
+      lightSyncTimer = 0;
+      window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+    }
+    for (const sub of subscriptions) sub.stop();
+    for (const m of menus) m.close();
+    suspended = true;
+    for (const [o] of overlayShown()) o.visible = false;
+    armature.mesh.visible = figureShown;
+    hiddenDom.hide(ownedDom.filter((el) => el.isConnected));
+    needs.undo();
+    viewer.invalidate();
+  };
+  const resume = (): void => {
+    if (!suspended) return;
+    needs.apply();
+    hiddenDom.show();
+    suspended = false;
+    armature.mesh.visible = true;
+    for (const [o, shown] of overlayShown()) o.visible = shown;
+    for (const sub of subscriptions) sub.start();
+    // The canvas may have a different size than it had; the shaders measure their pixels against it.
+    placeViewport();
+    paintReadout();
+    syncPlantMarks();
+    viewer.invalidate();
+  };
 
   // Console/test handle.
   const handle = {
+    /** Take Armature out of sight and hearing (SuspendOptions), and give the viewer back; the test hook for suspend(). */
+    suspend,
+    /** Put it all back as it was left. */
+    resume,
+    isSuspended: () => suspended,
     reference: { board: referenceBoard, view: referenceView, panel: referencePanel },
     get armature() {
       return armature;
@@ -2347,6 +2508,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     commit,
     send,
     save: flushSave,
+    /** Dispose the mode (the page's own disposer). */
+    dispose: () => dispose(),
     /** Picture the figure for the gallery card and save, as leaving does. */
     snapshot,
     /** The .armature file File > Save would write, as text. */
@@ -2367,69 +2530,49 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   };
   (window as unknown as { __armature?: object }).__armature = handle;
 
-  return () => {
+  const dispose = (): void => {
     void flushSave();
     clearTimeout(lightSyncTimer);
-    window.removeEventListener('keydown', onKey, true);
-    window.removeEventListener('keyup', onKeyUp, true);
-    window.removeEventListener('blur', onBlur);
-    canvas.removeEventListener('pointerdown', onPointerDown, true);
-    canvas.removeEventListener('pointermove', onPointerMove, true);
-    window.removeEventListener('pointerup', onPointerUp, true);
-    window.removeEventListener('pointercancel', onPointerUp, true);
-    document.removeEventListener('input', onLookEdit);
-    document.removeEventListener('change', onLookEdit);
-    window.removeEventListener('bozzetto:look-reset', onLookReset);
-    window.removeEventListener('pagehide', onHidden);
-    offLeaving();
+    clearTimeout(pendingStep);
+    for (const sub of subscriptions) sub.stop();
     select(null);
-    viewer.fastFrames = false;
-    viewer.interactionProbe = null;
-    offAntialias();
-    viewer.setAntialias('always');
-    viewer.setSculptVisible(true);
-    // The lights' boxes as the mode found them, for whatever comes next.
-    lighting.keyOnlyShadows = false;
-    lighting.setShadow('fill', castsBefore.fill);
-    lighting.setShadow('rim', castsBefore.rim);
+    // What the mode set on the viewer goes back as the viewer had it (a no-op when suspended already).
+    needs.undo();
     for (const tc of controls) {
       viewer.scene.remove(tc.getHelper());
       tc.dispose();
     }
     viewer.removeSculptExtra(armature.mesh);
     armature.dispose();
+    wash.dispose();
     viewer.scene.remove(handleGroup);
     viewer.scene.remove(plantGroup);
     kit.dispose();
-    viewportObserver.disconnect();
-    // The floor goes back to what the project under the mode asks for.
-    viewer.setFloorOffset(savedFloorOffset);
-    viewer.lockFloor(viewer.manifestFloor());
     panel.dispose();
     materialPanel.dispose();
-    offIntake();
     referenceArrange.dispose();
     referenceView.dispose();
     referencePanel.dispose();
     referenceBoard.dispose();
-    clearInterval(readoutTimer);
-    offDetailsSetting();
     details.dispose();
-    offPanelMemory();
     fileMenu.dispose();
     editMenu.dispose();
     viewMenu.dispose();
     helpMenu.dispose();
-    if (pendingStep) clearTimeout(pendingStep);
     histButtons.dispose();
     edge.remove();
-    chrome.onChange = null;
     strip.dispose();
     openInput.remove();
     modelInput.remove();
     delete (window as unknown as { __armature?: object }).__armature;
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: false, mode: 'view' } }));
   };
+  return Object.assign(dispose, { suspend, resume, isSuspended: () => suspended });
+}
+
+// The tests mount, dispose and mount again on one page (armatureSuspend).
+if (typeof window !== 'undefined' && (import.meta.env.DEV || import.meta.env.MODE === 'test')) {
+  (window as unknown as { __armatureMount?: typeof mountArmatureMode }).__armatureMount = mountArmatureMode;
 }
 
 export type { Armature };

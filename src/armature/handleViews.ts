@@ -105,14 +105,15 @@ function tokens(): { rest: string; hover: string; hot: string; edge: string; sha
   };
 }
 
-// Shared by every handle's material: the page size the shaders measure pixels against.
-const viewCss = uniform(new Vector2(1, 1));
-const edgeColour = uniform(new Color('#000000'));
-const shadeAlpha = uniform(0.35);
-
-/** Tell the shaders how big the canvas is on the page, in CSS pixels. */
-export function setHandleViewport(width: number, height: number): void {
-  viewCss.value.set(Math.max(1, width), Math.max(1, height));
+/**
+ * What the shaders of one kit's handles share: the page size they measure
+ * pixels against, and the shade's colour and strength. Owned by the kit, so
+ * a second kit (a second mount of the mode) never moves the first one's.
+ */
+interface KitUniforms {
+  viewCss: Tsl;
+  edgeColour: Tsl;
+  shadeAlpha: Tsl;
 }
 
 export interface HandleView {
@@ -141,7 +142,8 @@ const toClip = (world: Tsl): Tsl => cameraProjectionMatrix.mul(cameraViewMatrix)
  * stroke with a faint soft shade round it, about `edge` px wider on each
  * side and fading out (--bz-view-shade-line), no hard dark border.
  */
-const paint = (d: Tsl, stroke: Tsl, edge: Tsl): { rgb: Tsl; alpha: Tsl } => {
+const paintWith = (u: KitUniforms, d: Tsl, stroke: Tsl, edge: Tsl): { rgb: Tsl; alpha: Tsl } => {
+  const { edgeColour, shadeAlpha } = u;
   const aa = max(fwidth(d), float(0.0001));
   const inside = clamp(float(0.5).sub(d.div(aa)), 0, 1);
   const shade = clamp(float(1).sub(max(d, float(0)).div(edge)), 0, 1).mul(shadeAlpha);
@@ -187,13 +189,25 @@ export class HandleKit {
   private readonly cubeEdges = cubeEdgeGeometry();
   private readonly made: HandleView[] = [];
   private readonly colours = tokens();
+  private readonly shared: KitUniforms = {
+    viewCss: uniform(new Vector2(1, 1)),
+    edgeColour: uniform(new Color('#000000')),
+    shadeAlpha: uniform(0.35),
+  };
 
   constructor() {
-    edgeColour.value.set(this.colours.edge);
-    shadeAlpha.value = this.colours.shade;
+    this.shared.edgeColour.value.set(this.colours.edge);
+    this.shared.shadeAlpha.value = this.colours.shade;
+  }
+
+  /** Tell the shaders how big the canvas is on the page, in CSS pixels. */
+  setViewport(width: number, height: number): void {
+    this.shared.viewCss.value.set(Math.max(1, width), Math.max(1, height));
   }
 
   create(shape: HandleShape, name: string): HandleView {
+    const { viewCss } = this.shared;
+    const paint = (d: Tsl, stroke: Tsl, edge: Tsl): { rgb: Tsl; alpha: Tsl } => paintWith(this.shared, d, stroke, edge);
     const colour = uniform(new Color(this.colours.rest));
     const thick = uniform(STROKE.rest);
     const pin = uniform(0);
