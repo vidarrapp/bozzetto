@@ -111,15 +111,23 @@ export function playwright() {
   throw new Error('Playwright not found: npm i -D playwright-core, or npm i -g playwright');
 }
 
-/** Headless Chromium with software GL, which is what a CI box has. */
-export async function launch() {
+/**
+ * Headless Chromium with software GL, which is what a CI box has. There the
+ * page has no WebGPU adapter and the viewer draws through its WebGL2
+ * fallback. `E2E_GPU=webgpu` adds the flags that give it a software WebGPU
+ * adapter (SwiftShader's Vulkan), so a suite can be run on the path an iPad
+ * and a desktop take: slower, and the place to look when something is right
+ * here and wrong on a device.
+ */
+export const WEBGPU_ARGS = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader'];
+export async function launch({ webgpu = process.env.E2E_GPU === 'webgpu' } = {}) {
   const pw = playwright();
   const managed = '/opt/pw-browsers/chromium';
   const executablePath = process.env.E2E_BROWSER ?? (existsSync(managed) ? managed : undefined);
   const browser = await pw.chromium.launch({
     headless: true,
     executablePath,
-    args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+    args: [...(webgpu ? WEBGPU_ARGS : []), '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
   });
   // Every context gets the question bridge (below).
   const newContext = browser.newContext.bind(browser);

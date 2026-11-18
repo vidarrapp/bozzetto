@@ -1177,6 +1177,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
       e.stopPropagation();
       return;
     }
+    // A skinned mesh turns a ray away at its bounding sphere and box before it looks at a triangle, and it
+    // works the sphere out once and keeps it: the figure as it stood at the first press. Posed or moved since,
+    // whatever had left that first ball (a raised hand, the feet of a leap, the head of a figure moved up)
+    // could not be tapped, while the hips and chest near the middle still could. Both are taken afresh for
+    // the press, from the figure as it stands.
+    armature.mesh.computeBoundingSphere();
+    armature.mesh.computeBoundingBox();
     const hit = raycaster.intersectObject(armature.mesh, false)[0];
     picked = hit ? armature.boneAt(hit) : null;
     // Selected when it lifts, if it was a tap; the press goes on to the

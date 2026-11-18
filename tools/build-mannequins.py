@@ -103,11 +103,10 @@ PRIMARY = {
 # hand forward (-). The placeholder rig in rig.ts folds them the same way;
 # hinge_limits checks that it still does.
 HINGE_FOLD = {'shin': 1, 'forearm': -1}
-# How far a hinge folds from straight, how far it opens past straight, and
-# the twist it keeps, in degrees.
+# How far a hinge folds from straight and how far it opens past straight,
+# in degrees. (The twist it keeps is rig.json's own.)
 HINGE_RANGE = 150
 HINGE_OPEN = 5
-HINGE_TWIST = [-20, 20]
 # Vertices this close to the centre plane (metres) are on it: they belong
 # to neither half of a lump that straddles it.
 CENTRE_BAND = 1e-3
@@ -512,7 +511,8 @@ def hinge_limits(rig, heads, tails):
         x = [round(min(lo, 0.0), 1), round(max(hi, 0.0), 1)]
         if fold_of(x) != fold:
             raise SystemExit(f'{name} rests {r:.1f} degrees folded: the app would read {x} as folding the other way')
-        limits[name] = {'x': x, 'y': list(HINGE_TWIST), 'z': [0, 0]}
+        # The twist a hinge keeps is the rig's own (rig.json), so the app's table is the one place it is set.
+        limits[name] = {'x': x, 'y': list(bone['limits']['y']), 'z': [0, 0]}
         bends[name] = bend
     return limits, bends
 

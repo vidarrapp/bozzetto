@@ -241,3 +241,18 @@ reverse their winding when they bake the matrix into the positions, which
 keeps their normals outward; each prints every part's signed volume and
 stops on a negative one.
 
+
+## Changing the joint limits without Blender
+
+The limits live in `src/armature/rig.ts`. The four mannequins under
+`public/assets/armature` carry a copy on their bones, so after a change:
+
+```
+npm run rig:json
+python3 tools/set-glb-limits.py
+python3 tools/set-glb-limits.py --check
+```
+
+`set-glb-limits.py` rewrites only the `bz_limit_*` values in each file.
+Ball joints take all three ranges from `tools/rig.json`; a hinge keeps the
+fold range the build worked out from that figure's rest and takes its twist.
