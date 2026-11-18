@@ -5,10 +5,12 @@
 // glyphs first renders (sculpt mode). Attribution lives in the README.
 import '../../ui/icons';
 import type { InputShell } from '../bridge/InputShell';
-import { liftedOn, onTap, TAP_CLICK_MS } from '../../ui/dom';
+import { eventTime, liftedOn, LONG_PRESS_MS, onTap, TAP_CLICK_MS } from '../../ui/dom';
 import { chordLabel, keymap } from '../../ui/keymap';
 import { slotAction, toolBars } from '../tools/bars';
 import { toolById, type ToolDef, type Workspace } from '../tools/registry';
+import { Dock } from './dockDrag';
+import { tellNotKept } from './dockNotes';
 
 // Inline-SVG overrides: an ./icons/<slot>.svg (slots below, e.g. flatten.svg
 // or negative.svg) replaces that button's font glyph at build time. This is
@@ -21,22 +23,6 @@ const svgIcons = import.meta.glob('./icons/*.svg', {
 
 function svgFor(slot: string): string | null {
   return svgIcons[`./icons/${slot}.svg`] ?? null;
-}
-
-/**
- * How long a press on Negative lasts before it latches carving instead of
- * arming one stroke: well past the slowest deliberate tap, and still quick
- * to reach on purpose.
- */
-const LATCH_MS = 600;
-
-/**
- * When an input event happened, by the platform's own clock, so a press
- * lasts as long as it was held however late a busy page got to its
- * events. A browser that leaves the stamp out is read at arrival instead.
- */
-function eventTime(e: Event): number {
-  return e.timeStamp > 0 ? e.timeStamp : performance.now();
 }
 
 /**
@@ -116,7 +102,7 @@ export class SculptToolbar {
   /**
    * The timer is ours, not the OS's: the press starts it, and running out
    * with the press still down is the long press, which latches there and
-   * then, under the finger. A lift before LATCH_MS is a tap; the lift's
+   * then, under the finger. A lift before LONG_PRESS_MS is a tap; the lift's
    * own timestamp says which it was (see onNegativeUp). No
    * setPointerCapture: capturing a touch pointer and then putting a second
    * one down makes Safari cancel the captured one.
@@ -128,7 +114,7 @@ export class SculptToolbar {
     e.preventDefault();
     clearTimeout(this.negTimer);
     this.negPress = { pointerId: e.pointerId, downAt: eventTime(e), before: null };
-    this.negTimer = window.setTimeout(this.onNegativeHeld, LATCH_MS);
+    this.negTimer = window.setTimeout(this.onNegativeHeld, LONG_PRESS_MS);
   };
 
   /** Still down when the timer ran out: the long press shows, and latches. */
@@ -149,10 +135,10 @@ export class SculptToolbar {
     if (!press || e.pointerId !== press.pointerId) return;
     this.endNegativePress();
     // The events' own times decide; the timer only shows a long press while
-    // it is held. A main thread busy past LATCH_MS (a heavy frame, an
+    // it is held. A main thread busy past LONG_PRESS_MS (a heavy frame, an
     // autosave) gets to the lift after the timer has run, and a tap must
     // not latch for that, nor a long press arm.
-    if (eventTime(e) - press.downAt >= LATCH_MS) {
+    if (eventTime(e) - press.downAt >= LONG_PRESS_MS) {
       if (!press.before) this.latchNegative();
       return; // a long press: its lift changes nothing
     }
@@ -204,7 +190,18 @@ export class SculptToolbar {
     this.refresh();
   }
 
+  /** Lifting a tool off the bar and putting it elsewhere on it (dockDrag.ts). */
+  private readonly dock = new Dock({
+    bar: () => this.center,
+    workspace: () => (this.paintOn ? 'paint' : 'sculpt'),
+    tile: (id) => this.btns.get(id),
+    isStroking: () => this.input.isStroking(),
+    nameOf: (id) => toolById(id)?.name ?? '',
+    previewOrder: (ids) => this.previewOrder(ids),
+  });
+
   constructor(private readonly input: InputShell) {
+    toolBars.onNotKept = tellNotKept;
     this.root = document.createElement('div');
     this.root.className = 'sculpt-toolbar';
     // With a transport bar present (?tl=...&sculpt=1), sit above it.
@@ -231,7 +228,7 @@ export class SculptToolbar {
     this.negativeBtn.addEventListener('contextmenu', (e) => e.preventDefault());
     // The belt to the CSS braces. On iOS a stationary press starts a
     // callout/drag gesture at ~450ms and Safari cancels the touch, before
-    // the long press at LATCH_MS could ever run out: every press would end
+    // the long press at LONG_PRESS_MS could ever run out: every press would end
     // as a tap. Cancelling the default on touchstart is what actually stops
     // that gesture from arming. It also stops the click a touch would
     // synthesise, which this button does not need: its pointer events
@@ -306,7 +303,10 @@ export class SculptToolbar {
       btn.classList.add('sculpt-toolbar__btn--paint');
       btn.hidden = true;
     }
-    onTap(btn, () => this.input.selectBrush(engine));
+    // A press that lifts the tile, or slips, is not a tap (the dock decides, on its own window listeners).
+    onTap(btn, () => this.input.selectBrush(engine), () => this.dock.swallowing);
+    btn.addEventListener('pointerdown', (e) => this.dock.begin(e, id));
+    btn.addEventListener('contextmenu', (e) => e.preventDefault());
     return btn;
   }
 
@@ -380,6 +380,25 @@ export class SculptToolbar {
   }
 
   /**
+   * The badges and tips the tools would have with the bar in this order, for
+   * the dock to show while a tool is lifted; null puts the real ones back.
+   */
+  private previewOrder(ids: readonly string[] | null): void {
+    if (!ids) {
+      this.paintKeys();
+      return;
+    }
+    ids.forEach((id, i) => {
+      const btn = this.btns.get(id);
+      if (!btn) return;
+      const place = i + 1;
+      const chord = place <= 10 ? keymap.chordFor(slotAction(place)) : null;
+      setButtonKey(btn, chord);
+      btn.dataset.place = String(place);
+    });
+  }
+
+  /**
    * The Paint workspace's bar, or Sculpt's: in Paint the Select tool and the
    * paint tools stand, and the brushes, Transform and Calipers are put away;
    * Sculpt has the brushes, Transform and Calipers and no paint tool. The
@@ -437,6 +456,8 @@ export class SculptToolbar {
     this.input.onNegativeChange = null;
     this.offKeys?.();
     this.offBars?.();
+    this.dock.dispose();
+    if (toolBars.onNotKept === tellNotKept) toolBars.onNotKept = null;
     this.root.remove();
   }
 }

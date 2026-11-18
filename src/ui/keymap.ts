@@ -286,6 +286,8 @@ export class Keymap {
         this.emit();
       } else this.save();
     });
+    // The places' words (the guide's and Preferences' "Tool bar, place 3: ...") follow the order of a bar: whoever draws them is told as for a rebind.
+    toolBars.onChange(() => this.emit());
   }
 
   action(id: string): ActionDef | undefined {

@@ -12,6 +12,8 @@ import type { PublishWindow } from './ui/PublishWindow';
 import type { MenuItem } from './ui/TopMenu';
 import { editMenuItems } from './ui/menuShape';
 import { keyFor, viewMenuItems } from './ui/viewMenu';
+import { resetToolBar } from './ui/dockNotes';
+import { toolBars } from './tools/bars';
 import { makeSculptDetails } from './ui/DetailsOverlay';
 import type { Readout } from './ui/TitleStrip';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
@@ -203,6 +205,7 @@ export function sculptWorkspaces(p: SculptPage): Workspace[] {
       referenceShow: { get: () => view.isShown(), toggle: () => view.setShown(!view.isShown()) },
       referenceArrange: { get: () => board.isArranging(), toggle: () => board.setArranging(!board.isArranging()), key: true },
       toolKeys: true,
+      toolBar: id === 'present' ? undefined : { isDefault: () => toolBars.isDefault(id), reset: () => resetToolBar(id) },
       details: true,
       panels: panelsOf(id),
       moveLight: { get: () => input.isLightArmed(), toggle: () => input.armLight(!input.isLightArmed()) },

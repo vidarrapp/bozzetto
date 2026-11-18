@@ -36,6 +36,8 @@ export interface ViewHooks {
   referenceArrange?: { get: () => boolean; toggle: () => void; key?: boolean };
   /** The tool bar's digits: a setting, so the mode that has a tool bar says so. */
   toolKeys?: boolean;
+  /** Reset tool bar: the default order back on this workspace's bar (greyed out while it is the default). */
+  toolBar?: { isDefault: () => boolean; reset: () => void };
   /** The panels this mode has, in the order of the menu: [id, name]. */
   panels: Array<[id: string, name: string, enabled?: () => boolean]>;
   /** Keep the panels as given, not in the order of the other places' tabs (the viewer's Lighting is at the right). */
@@ -110,6 +112,8 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
       toggle: (on) => settings.set('toolKeys', on ? 'on' : 'off'),
     });
   }
+  const bar = h.toolBar;
+  if (bar) looks.push({ label: 'Reset tool bar', enabled: () => !bar.isDefault(), action: bar.reset });
   group(...looks);
 
   const hide = h.hideInterface;

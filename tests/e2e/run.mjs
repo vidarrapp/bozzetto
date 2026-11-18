@@ -71,6 +71,7 @@ import { suites as zoomFocus } from './zoomFocus.mjs';
 import { suites as lookTabs } from './lookTabs.mjs';
 import { suites as tint } from './tint.mjs';
 import { suites as toolNames } from './toolNames.mjs';
+import { suites as dock } from './dock.mjs';
 import { suites as workspaceTabs } from './workspaceTabs.mjs';
 
 // One suite file per line, so two branches adding a file do not collide.
@@ -130,6 +131,7 @@ const suites = {
   ...lookTabs,
   ...tint,
   ...toolNames,
+  ...dock,
   ...workspaceTabs,
   ...detailsOverlay,
 };
