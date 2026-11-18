@@ -19,7 +19,7 @@ export function withLayersFlattened(
   verb: string,
   go: () => void,
 ): void {
-  if (!session.layers.withLayers(meshes).length) {
+  if (!layeredMeshes(session, meshes).length) {
     go();
     return;
   }
@@ -28,15 +28,27 @@ export function withLayersFlattened(
   });
 }
 
+/** The objects among `meshes` that have sculpt layers, paint layers or both. */
+export function layeredMeshes(session: SculptSession, meshes: SculptMesh[]): SculptMesh[] {
+  return meshes.filter((m) => session.layers.has(m) || session.paint.has(m));
+}
+
+/** "sculpt layers", "paint layers" or "sculpt and paint layers": what the objects among `meshes` have. */
+export function layerWords(session: SculptSession, meshes: SculptMesh[]): string {
+  const s = meshes.some((m) => session.layers.has(m));
+  const p = meshes.some((m) => session.paint.has(m));
+  return s && p ? 'sculpt and paint layers' : p ? 'paint layers' : 'sculpt layers';
+}
+
 /** The question itself, for an operation that is already async: true to go on. */
 export async function askFlatten(session: SculptSession, meshes: SculptMesh[], verb: string): Promise<boolean> {
-  const have = session.layers.withLayers(meshes);
+  const have = layeredMeshes(session, meshes);
   if (!have.length) return true;
   const names = have.map((m) => `"${session.getMeshName(m)}"`);
   const list = names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(' and ');
   return askWindow({
     title: `Flatten the layers of ${list}?`,
-    text: `${verb.charAt(0).toUpperCase()}${verb.slice(1)} rebuilds the surface, so its layers become part of it, and their masks go. Undo brings them back.`,
+    text: `${verb.charAt(0).toUpperCase()}${verb.slice(1)} rebuilds the surface, so the ${layerWords(session, have)} become part of it, and their masks go. Undo brings them back.`,
     yes: `Flatten and ${verb}`,
   });
 }
