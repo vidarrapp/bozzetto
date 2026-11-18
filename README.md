@@ -177,7 +177,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ### Unreleased
 
-- **Albedo tints the paint.** An object\'s material colour now multiplies its paint, as a material does over vertex colours: unpainted objects show their albedo, a red stroke is red times it, and a white albedo shows paint exactly as picked. Changing Albedo is instant on any mesh, Paint no longer switches Colour or shows a notice, and scenes saved before open looking as they did.
+- **Albedo tints the paint.** An object's material colour now multiplies its paint, as a material does over vertex colours: unpainted objects show their albedo, a red stroke is red times it, and a white albedo shows paint exactly as picked. Changing Albedo is instant on any mesh, Paint no longer switches Colour or shows a notice, and scenes saved before open looking as they did.
 
 ### v0.7.0
 
