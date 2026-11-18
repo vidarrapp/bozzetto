@@ -172,9 +172,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
-### Unreleased
+### v0.7.8
 
-- **Four tool settings are kept with the scene.** Move's Falloff, Crease's Pinch, and Polish's Plane lock and Build-up used to go back to their defaults when the scene was opened again. A key you set for a tool in Preferences now shows on its button and its tooltip, and Help says a tool's key is its place on the tool bar.
+- **Tool settings kept with the scene.** Move's Falloff, Crease's Pinch, and Polish's Plane lock and Build-up used to go back to their defaults when a scene was opened again. They are now saved with it.
+- **Your own tool keys show.** A key you set for a tool in Preferences now shows on its button and in its tip. The number keys belong to the places on the tool bar.
 
 ### v0.7.7
 
