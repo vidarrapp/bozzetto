@@ -190,8 +190,11 @@ export const ACTIONS: ActionDef[] = [
   // moves them everywhere.
   { id: 'ui.chrome', label: 'Close panels, then hide the interface', group: 'Interface', mode: 'both', chord: 'tab' },
   { id: 'ui.show', label: 'Show the interface', group: 'Interface', mode: 'both', chord: 'escape' },
-  { id: 'ui.present', label: 'Present: the model alone, with Lighting, Camera and Render (Esc leaves)', group: 'Interface', mode: 'sculpt', chord: 'shift+p' },
-  { id: 'ui.paint', label: 'Paint: the paint tools and the paint layers (again goes back to Sculpt)', group: 'Interface', mode: 'sculpt', chord: 'shift+b' },
+  // The workspaces by number, from any of them (the only workspace keys; Esc leaves Present to where it began): Shift and the digit's physical key (keyNameOf), so a Swedish and a US keyboard agree.
+  { id: 'ws.armature', label: 'Go to Armature', group: 'Interface', mode: 'sculpt', chord: 'shift+1' },
+  { id: 'ws.sculpt', label: 'Go to Sculpt', group: 'Interface', mode: 'sculpt', chord: 'shift+2' },
+  { id: 'ws.paint', label: 'Go to Paint', group: 'Interface', mode: 'sculpt', chord: 'shift+3' },
+  { id: 'ws.present', label: 'Go to Present', group: 'Interface', mode: 'sculpt', chord: 'shift+4' },
   { id: 'ui.help', label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
   { id: 'ui.fps', label: 'Frame meter', group: 'Interface', mode: 'both', chord: 'p' },
   { id: 'ui.preferences', label: 'Preferences (fingers, hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },
@@ -427,6 +430,10 @@ export class Keymap {
       const raw = deviceStore.get(STORAGE_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as Record<string, string | null>;
+      // Present and Paint had keys of their own (ui.present, ui.paint): a rebind carries over to the workspace keys.
+      for (const [from, to] of [['ui.present', 'ws.present'], ['ui.paint', 'ws.paint']]) {
+        if (from in parsed && !(to in parsed)) parsed[to] = parsed[from];
+      }
       for (const [id, chord] of Object.entries(parsed)) {
         if (!this.byId.has(id) || this.byId.get(id)?.sameKeyAs) continue;
         if (chord !== null && typeof chord !== 'string') continue;

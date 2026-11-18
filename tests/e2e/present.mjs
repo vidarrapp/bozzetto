@@ -251,12 +251,12 @@ export const suites = {
       const item = [...document.querySelectorAll('.file-menu--view .file-menu__item')].find((b) => b.querySelector('.file-menu__label')?.textContent === 'Present');
       return item ? item.querySelector('.file-menu__key')?.textContent : null;
     });
-    t.ok(presentItem && /Shift \+ P|Shift\+P/.test(presentItem), `View has Present, and shows the hotkey ("${presentItem}")`);
+    t.ok(presentItem && /Shift \+ 4|Shift\+4/.test(presentItem), `View has Present, and shows the hotkey ("${presentItem}")`);
     await press(page, 'Escape');
 
-    await press(page, 'Shift+P');
+    await press(page, 'Shift+4');
     let now = await ui(page);
-    t.ok(now.presenting && now.shown.bar && now.shown.material && now.shown.render && now.shown.output && now.shown.menus, `Shift+P presents: the bar and the Material, Render and Output tabs up (${show(now.shown)})`);
+    t.ok(now.presenting && now.shown.bar && now.shown.material && now.shown.render && now.shown.output && now.shown.menus, `Shift+4 presents: the bar and the Material, Render and Output tabs up (${show(now.shown)})`);
     t.ok(now.open.output && !now.open.render, `the Output panel opens with it (${show(now.open)})`);
     t.eq(now.path, 'Armature > Sculpt > Paint > Present*', 'the path shows Present as the current step');
     t.ok(
@@ -266,9 +266,9 @@ export const suites = {
     t.ok(!now.selecting && now.gizmo === null && !now.open.scene && !now.open.tool, `the Select tool and the side panels are put away (${show(now)})`);
     const highlighted = await page.evaluate(() => window.__sculpt.viewer.isSculptHighlighted('primary'));
     t.ok(!highlighted, 'and no selection outline is drawn');
-    await press(page, 'Shift+P');
+    await press(page, 'Escape');
     let after = await ui(page);
-    t.ok(same(after, before), `Shift+P again puts everything back as it was (${show(after)})`);
+    t.ok(same(after, before), `Esc puts everything back as it was (${show(after)})`);
 
     // The chip in, Esc out; then the gizmo, in its mode, comes back too.
     await press(page, 'q');
@@ -294,7 +294,7 @@ export const suites = {
     await settle(page);
     const [cx, cy] = await screenOf(page, 'Sphere');
     const path = line([cx - 90, cy - 20], [cx + 90, cy + 20]);
-    await press(page, 'Shift+P');
+    await press(page, 'Shift+4');
     const tool = (await ui(page)).tool;
     let sum = await meshSum(page);
     let strokes = await strokeCount(page);
@@ -375,14 +375,14 @@ export const suites = {
     await press(page, 'Tab');
     await press(page, 'Tab');
     const hiddenBefore = await ui(page);
-    await press(page, 'Shift+P');
-    await press(page, 'Shift+P');
+    await press(page, 'Shift+4');
+    await press(page, 'Escape');
     after = await ui(page);
     t.ok(hiddenBefore.chrome && after.chrome && !after.presenting, 'Tab-hidden going in, Tab-hidden coming out');
     await press(page, 'Tab');
 
     // --- the turntable -----------------------------------------------------
-    await press(page, 'Shift+P');
+    await press(page, 'Shift+4');
     // The turntable moves the camera only: the autosave counts no edit for it.
     const edits0 = await page.evaluate(() => window.__sculpt.persist.editCount());
     home = await camera(page);
@@ -550,7 +550,7 @@ async function clipChecks(page, base, t) {
     p.on('pageerror', (e) => errors.push(String(e)));
     await openForInput(p, base);
     await p.addStyleTag({ content: '.panel { transition: none !important; }' });
-    await p.keyboard.press('Shift+P');
+    await p.keyboard.press('Shift+4');
     await p.waitForTimeout(100);
     const turning = () => p.evaluate(() => window.__sculpt.present.isTurning());
     await press(p, 'Space');
@@ -672,7 +672,7 @@ async function publishChecks(page, base, t) {
     t.ok(end.state === 'done' && plainPut.length === 0, `outside Present, Save to library writes no look blocks (${end.text}; ${plainPut.length} updates)`);
 
     // Present, a view of its own and a look: the lens, the grade, the backdrop.
-    await owner.keyboard.press('Shift+P');
+    await owner.keyboard.press('Shift+4');
     await owner.evaluate(() => {
       const v = window.__sculpt.viewer;
       v.setFocalLength(85);

@@ -233,6 +233,7 @@ place, each only where the place has it.
   the panel toggles for the tabs the place has, then Hide interface; then
   Armature, Sculpt, Paint and Present where the place has the workspace path,
   the one you are in and any that cannot be reached greyed out with the reason.
+  On the Sculpt page each shows its key (Shift+1 to 4, `ws.*`).
   In Paint the panel toggles are Scene, Layers, Material, Tool and Reference.
   In the viewer there is one subject, so one Frame all, on F. Cycle ground
   is G only, and stays in the hotkey guide.
@@ -297,7 +298,8 @@ place, each only where the place has it.
 - Move light
 - Hide interface
 
-- Paint workspace (Shift+B) and Present mode
+- Armature (Shift+1), Sculpt (Shift+2), Paint (Shift+3) and Present (Shift+4)
+  (see "The three workspaces as tabs")
 
 Every toggle in View carries a check, so the menu keeps a check column.
 
@@ -761,12 +763,44 @@ byte a vertex of the highest level (255 shows the layer, 0 hides it where the
 working mask protected), saved run-length; records are version 2 and old
 records open.
 
+## The three workspaces as tabs
+
+Sculpt, Paint and Present are tabs of one mode (owner, 2026-11-18): from any
+of them to any other in one step, and each keeps its own panels and tool.
+
+- **Keys.** `ws.armature` Shift+1, `ws.sculpt` Shift+2, `ws.paint` Shift+3,
+  `ws.present` Shift+4 (rebindable, in the View menu and the hotkey guide),
+  each straight to that workspace from any other; the one you are in does
+  nothing. These are the only workspace keys: Shift+B and Shift+P are gone
+  (`ui.paint` and `ui.present` no longer exist; a rebind of either made in
+  Preferences carries over to `ws.paint` / `ws.present` when the keymap
+  loads). Esc leaves Present to where it began. A chord is Shift and the
+  digit's physical key (`event.code`, `Digit1` to `Digit4`), so a Swedish keyboard (Shift+2 types
+  `"`) and a US one (`@`) agree; where a keyboard sends no `code` the key does
+  not match (nothing guesses from the character).
+- **Panels.** Each workspace keeps which panel is open on each side (at most
+  one a side), on the device (`bz.panels.sculpt`, `.paint`, `.present`).
+  Entering opens what it last had and puts the other's away. First visit:
+  Sculpt as it always began; Paint with Layers at the left and Tool at the
+  right; Present with Output at the right and nothing at the left. Present of
+  a published project (the owner's Frames and Project tabs) is another page
+  with its own memory in the page only; it does not share Present's.
+- **Tool.** Paint comes back to the paint tool it last had (kept on the
+  device); Sculpt to the one it left.
+- **Nothing stops a switch.** It is refused only mid-stroke or mid-drag. No
+  question is asked on the way between the three (Armature's step asks, as it
+  leaves the page). Kept across a switch: the camera, the active object and
+  selection, the undo history, symmetry and the scene's look. Present entered
+  from Paint ends in Paint (Esc); a key to the other workspace ends
+  it as Esc does (the turntable stopped, a clip being saved cancelled) and
+  lands on that workspace's own panels and tool.
+
 ## The Paint workspace
 
 A workspace of the Sculpt page, as Present from Sculpt is: **Armature ›
-Sculpt › Paint › Present**. Shift+B (the keymap's `ui.paint`, rebindable)
-toggles it; View, Paint and the path's Paint step go in, the path's Sculpt
-step and Shift+B come out. The page's address has `paint=1` while it is up
+Sculpt › Paint › Present**. Shift+3 (the keymap's `ws.paint`, rebindable)
+goes in; View, Paint and the path's Paint step go in too, and Shift+2, the
+path's Sculpt step and View, Sculpt come out. The page's address has `paint=1` while it is up
 (`/?sculpt=1&paint=1` opens in it). The body carries `paint-ws`.
 
 - **Bar.** Select on q, then Paint, Erase, Blur, Fill, Pick and Project on 1
@@ -777,8 +811,9 @@ step and Shift+B come out. The page's address has `paint=1` while it is up
   over any other Paint tool it does nothing.
 - **Tabs.** Left: Scene, Layers (paint layers here, sculpt layers in Sculpt).
   Right: Tool, Material, Reference. Model and Render are not Paint's (Render
-  returns in Present, entered from Paint).
-- **Present from Paint** returns to Paint (Esc, Shift+P). The View menu's panel
+  returns in Present, entered from Paint). Paint keeps its own open panels
+  (first visit: Layers and Tool) and comes back to its last paint tool.
+- **Present from Paint** returns to Paint (Esc). The View menu's panel
   items are the workspace's own.
 - **Colour.** Nothing to switch on: paint shows in Sculpt, Paint and Present
   from Sculpt whatever the look says, so entering Paint neither changes

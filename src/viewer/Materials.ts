@@ -219,6 +219,27 @@ export class Materials {
     this.rebuildSculptColor();
   }
 
+  /**
+   * Several colour-state changes as one: the colour node is composed once, for
+   * where they end, not once for each step on the way (Present's entry turns
+   * the mask tint off and presenting on, and a state in between is a shader
+   * nobody sees).
+   */
+  batch(change: () => void): void {
+    this.batching++;
+    try {
+      change();
+    } finally {
+      this.batching--;
+      if (!this.batching && this.batchDirty) {
+        this.batchDirty = false;
+        this.rebuildSculptColor();
+      }
+    }
+  }
+  private batching = 0;
+  private batchDirty = false;
+
   /** Plain colour (true) or the model's own paint (false); see MaterialState.vertexColors. */
   setPlainColor(plain: boolean): void {
     if (plain === this.plainColor) return;
@@ -235,7 +256,19 @@ export class Materials {
     return this.modelVertexColor && !this.plainColor;
   }
 
+  /**
+   * The colour nodes composed for each state (see rebuildSculptColor), kept so
+   * a state that comes back is the same graph and the renderer finds its
+   * shader again instead of building one: Present and back is two states, not
+   * a rebuild each way.
+   */
+  private readonly colorGraphs = new Map<string, { color: unknown; rough: unknown; metal: unknown }>();
+
   private rebuildSculptColor(): void {
+    if (this.batching) {
+      this.batchDirty = true;
+      return;
+    }
     for (const id of ['lit', 'matcap']) {
       const m = this.registry.get(id) as MeshStandardNodeMaterial;
       // Roughness and metalness are per-vertex too - SculptGL keeps them in
@@ -243,6 +276,19 @@ export class Materials {
       // is what lets one object be matte clay and the next one polished
       // without a second three.js material. Lit only: a matcap bakes its
       // own shading and has nothing to do with either.
+      const stateKey = [id, this.sculptVertexColor, this.readsVertexColor(), this.sculptVertexPBR, this.groupColorsOn && this.sculptVertexColor && !this.presenting, this.maskTintOn].join('|');
+      const kept = this.colorGraphs.get(stateKey);
+      if (kept) {
+        if (id === 'lit') {
+          m.roughnessNode = kept.rough as MeshStandardNodeMaterial['roughnessNode'];
+          m.metalnessNode = kept.metal as MeshStandardNodeMaterial['metalnessNode'];
+        }
+        m.colorNode = kept.color as MeshStandardNodeMaterial['colorNode'];
+        m.needsUpdate = true;
+        continue;
+      }
+      let rough: unknown = null;
+      let metal: unknown = null;
       if (id === 'lit') {
         type FloatNode = ReturnType<typeof float>;
         const pbr = attribute('materialsPBR', 'vec3') as unknown as {
@@ -250,8 +296,10 @@ export class Materials {
           y: FloatNode;
         };
         const on = this.sculptVertexPBR;
-        m.roughnessNode = (on ? pbr.x : null) as MeshStandardNodeMaterial['roughnessNode'];
-        m.metalnessNode = (on ? pbr.y : null) as MeshStandardNodeMaterial['metalnessNode'];
+        rough = on ? pbr.x : null;
+        metal = on ? pbr.y : null;
+        m.roughnessNode = rough as MeshStandardNodeMaterial['roughnessNode'];
+        m.metalnessNode = metal as MeshStandardNodeMaterial['metalnessNode'];
       }
       // The TSL runtime hands back fluent proxies; the published typings
       // for attribute()/materialColor lag behind, hence the casts.
@@ -310,6 +358,7 @@ export class Materials {
       // Same cast rationale as above: the published node typings are
       // narrower than what the TSL runtime actually accepts here.
       m.colorNode = node as unknown as MeshStandardNodeMaterial['colorNode'];
+      this.colorGraphs.set(stateKey, { color: node, rough, metal });
       m.needsUpdate = true;
     }
     this.onColorNodeChange?.();

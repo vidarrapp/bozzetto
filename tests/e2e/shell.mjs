@@ -546,7 +546,7 @@ export const suites = {
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 });
     t.eq(await path(), 'Armature > Sculpt* > Paint > Present', 'the Sculpt step leaves Present');
     t.ok(!(await chip()) && !(await shown(page, '.panel--output .panel__handle')), 'Publish and the Output tab are gone with it');
-    await page.keyboard.press('Shift+P');
+    await page.keyboard.press('Shift+4');
     await page.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 5000 });
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 });

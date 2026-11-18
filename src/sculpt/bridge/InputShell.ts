@@ -114,10 +114,8 @@ export interface InputShellHooks {
   dolly(factor: number, at: { x: number; y: number }): void;
   /** Tab: close open panels, then clear the standing interface. */
   toggleChrome(): void;
-  /** Shift+p (or View > Present mode): into Present mode, or back out of it. */
-  togglePresent(): void;
-  /** Shift+b (or View > Paint): into the Paint workspace, or back out of it. */
-  togglePaint(): void;
+  /** Shift+1 to 4 (ws.*): straight to a workspace from any other; the one you are in does nothing. */
+  goWorkspace(to: 'armature' | 'sculpt' | 'paint' | 'present'): void;
   /** Space (play.toggle) in Present: the turntable on or off. */
   togglePlay(): void;
   /** ctrl+h: show/hide the mask tint (the mask itself stays). */
@@ -132,13 +130,16 @@ export interface InputShellHooks {
 
 /**
  * What the keyboard still does in Present mode: look round the model,
- * change how it is lit and shown, leave, and the guides. Every other
+ * change how it is lit and shown, leave (or go to another workspace), and the guides. Every other
  * action this shell answers edits the scene, picks a tool or moves the
  * selection, and is claimed and dropped there.
  */
 const PRESENT_KEYS = new Set([
   'play.toggle',
-  'ui.present',
+  'ws.armature',
+  'ws.sculpt',
+  'ws.paint',
+  'ws.present',
   'ui.chrome',
   'ui.show',
   'ui.help',
@@ -2442,7 +2443,9 @@ export class InputShell {
     // panel checkbox, ctrl+z must still undo rather than go quietly dead.
     // Tab is not one of their keys: it goes on to the chrome check below
     // (a select keeps it there).
-    if (isFormControlTarget(e) && !e.ctrlKey && !e.metaKey && e.key !== 'Tab') return;
+    // The workspace keys (Shift+1 to 4) mean nothing to a slider or a select, and are the only way between workspaces by key: they go on.
+    const workspaceKey = e.shiftKey && !e.ctrlKey && !e.metaKey && /^Digit[1-4]$/.test(e.code);
+    if (isFormControlTarget(e) && !e.ctrlKey && !e.metaKey && e.key !== 'Tab' && !workspaceKey) return;
     // A focused profile-curve anchor is a slider too: its arrows move it and
     // Delete removes it (CurveEditor).
     if ((e.target as Element | null)?.closest?.('.curve-editor__plot') && !e.ctrlKey && !e.metaKey && e.key !== 'Tab') return;
@@ -2501,11 +2504,17 @@ export class InputShell {
         if (e.key === 'Tab') releaseFocusForChrome();
         this.hooks.toggleChrome();
         return this.claim(e);
-      case 'ui.present':
-        this.hooks.togglePresent();
+      case 'ws.armature':
+        this.hooks.goWorkspace('armature');
         return this.claim(e);
-      case 'ui.paint':
-        this.hooks.togglePaint();
+      case 'ws.sculpt':
+        this.hooks.goWorkspace('sculpt');
+        return this.claim(e);
+      case 'ws.paint':
+        this.hooks.goWorkspace('paint');
+        return this.claim(e);
+      case 'ws.present':
+        this.hooks.goWorkspace('present');
         return this.claim(e);
       case 'play.toggle':
         // Play / pause, the viewer's key: in Present the turntable is what

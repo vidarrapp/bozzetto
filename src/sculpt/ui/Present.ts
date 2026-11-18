@@ -7,8 +7,9 @@ import { deviceStore } from '../../ui/deviceStorage';
 /**
  * Present, the third workspace (Armature, Sculpt, Present): the model on its
  * own, for looking at and for showing. The path in the title strip, View >
- * Present and Shift+P (the keymap's ui.present, rebindable, which also
- * leaves) go in; Esc, the path's Sculpt step and Shift+P leave.
+ * Present and Shift+4 (the keymap's ws.present, rebindable) go in; Esc
+ * leaves to where Present began, and the path's, the menu's and the keys'
+ * other workspaces leave to that one.
  *
  * Presenting hides what edits - the tool bar, the edge controls and their undo
  * chips, the Scene, Model and Tool panels and their tabs, the brush ring and
@@ -18,9 +19,10 @@ import { deviceStore } from '../../ui/deviceStorage';
  * path showing Present, and Publish at its right (Present only); the notices
  * stay. Material and Output (below) stand at the right, and Lighting, Camera
  * and Render (everything on the look) at the left. Nothing about the scene changes by going in or
- * out, and the autosave carries on. Leaving puts the interface back as it
- * was: which panels were open, the tool, the gizmo or the Select tool, the
- * mask tint, Tab's hidden state.
+ * out, and the autosave carries on. Each workspace keeps its own panels
+ * (panelMemory's WorkspacePanels), so Present opens as it was left and leaving
+ * puts the other's back; leaving also puts back the tool, the gizmo or the
+ * Select tool, the mask tint and Tab's hidden state.
  *
  * Where the tool bar stood, one bar at the bottom centre holds the
  * turntable - a slow turn about the subject's vertical axis, at the speed
@@ -254,8 +256,7 @@ export class PresentMode {
     this.restore = this.host.enter();
     this.active = true;
     this.bar.hidden = false;
-    // The Output tab opens; Lighting, Camera and Render wait at the left.
-    this.output.setCollapsed(false);
+    // Which panels stand open is Present's own memory (WorkspacePanels): the first time, Output.
     this.onChange?.(true);
     window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
     return true;
@@ -267,7 +268,6 @@ export class PresentMode {
     this.setTurning(false);
     this.active = false;
     this.bar.hidden = true;
-    this.output.setCollapsed(true);
     const restore = this.restore;
     this.restore = null;
     restore?.();
