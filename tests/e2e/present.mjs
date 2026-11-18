@@ -266,9 +266,14 @@ export const suites = {
     t.ok(!now.selecting && now.gizmo === null && !now.open.scene && !now.open.tool, `the Select tool and the side panels are put away (${show(now)})`);
     const highlighted = await page.evaluate(() => window.__sculpt.viewer.isSculptHighlighted('primary'));
     t.ok(!highlighted, 'and no selection outline is drawn');
+    // Esc with nothing open and the interface showing changes nothing: Present is left by a workspace key.
+    const inPresent = await ui(page);
     await press(page, 'Escape');
+    await page.waitForTimeout(300);
+    t.ok(same(await ui(page), inPresent), 'Esc in Present with nothing open changes nothing');
+    await press(page, 'Shift+2');
     let after = await ui(page);
-    t.ok(same(after, before), `Esc puts everything back as it was (${show(after)})`);
+    t.ok(same(after, before), `Shift+2 puts everything back as it was (${show(after)})`);
 
     // The chip in, Esc out; then the gizmo, in its mode, comes back too.
     await press(page, 'q');
@@ -281,12 +286,12 @@ export const suites = {
     // The menu shuts as its item runs; Esc must reach Present, not a menu still closing.
     await page.waitForFunction(() => !document.querySelector('.bz-menuname.is-open, .file-menu:not([hidden]) .file-menu__item:focus'), null, { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(150);
-    await press(page, 'Escape');
+    await press(page, 'Shift+2');
     // Leaving takes a few frames on a busy machine (the slide back, the panels coming up).
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(300);
     after = await ui(page);
-    t.ok(same(after, gizmoBefore) && after.gizmo === 'rotate' && !after.shown.output, `Esc leaves, the rotate gizmo back (${show(after)})`);
+    t.ok(same(after, gizmoBefore) && after.gizmo === 'rotate' && !after.shown.output, `Shift+2 leaves, the rotate gizmo back (${show(after)})`);
     await press(page, '3'); // a brush again: Standard clay
 
     // --- locked: brushes, gizmo and edits; orbit still turns ----------------
@@ -367,16 +372,21 @@ export const suites = {
     t.ok(now.shown.hide, `the hide button shows in Present (${show(now.shown)})`);
     await press(page, 'Tab');
     await press(page, 'Tab');
+    now = await uiOnce(page, allHidden);
+    t.ok(allHidden(now), 'hidden again');
     await press(page, 'Escape');
+    now = await uiOnce(page, allBack);
+    t.ok(allBack(now), `Esc brings the hidden interface back and does not leave Present (${show(now.shown)})`);
+    await press(page, 'Shift+2');
     // The interface slides back in: wait for its end.
     now = await uiOnce(page, (u) => !u.presenting && !u.chrome && u.shown.toolbar && u.shown.rail);
-    t.ok(!now.presenting && !now.chrome && now.shown.toolbar && now.shown.rail, `Esc with the interface hidden leaves Present with the interface as it was (${show(now)})`);
+    t.ok(!now.presenting && !now.chrome && now.shown.toolbar && now.shown.rail, `Shift+2 leaves Present with the interface as it was (${show(now)})`);
     // Hidden before Present, hidden after.
     await press(page, 'Tab');
     await press(page, 'Tab');
     const hiddenBefore = await ui(page);
     await press(page, 'Shift+4');
-    await press(page, 'Escape');
+    await press(page, 'Shift+2');
     after = await ui(page);
     t.ok(hiddenBefore.chrome && after.chrome && !after.presenting, 'Tab-hidden going in, Tab-hidden coming out');
     await press(page, 'Tab');
@@ -458,7 +468,7 @@ export const suites = {
     t.ok(!near(got[4], got[0], 12), `and the model is in the middle (${show(got[4])})`);
     const live = await page.evaluate(() => ({ w: window.__sculpt.viewer.captureCanvas.width, ratio: window.devicePixelRatio }));
     t.eq(live.w, Math.round(view.w * Math.min(live.ratio, 2)), 'the screen goes back to its own resolution afterwards');
-    await press(page, 'Escape');
+    await press(page, 'Shift+2');
 
     // --- Save turntable --------------------------------------------------------
     await clipChecks(page, base, t);
@@ -763,7 +773,7 @@ async function publishChecks(page, base, t) {
       `the viewer opens at the presented camera (${show(opened.cam.position)} vs ${show(look.camera.position)}, ${opened.cam.focalLength} mm)`,
     );
     t.ok(opened.tone === 'agx' && same(opened.env, look.environment), `under its grade and environment (${opened.tone})`);
-    await owner.keyboard.press('Escape');
+    await owner.keyboard.press('Shift+2');
 
     // The gallery: every card's picture frame is 4:5, the shape the pictures are captured at, and the pictures sit in it.
     await owner.evaluate(() => window.__sculpt.persist.flush());

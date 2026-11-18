@@ -1747,8 +1747,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   /**
    * From any workspace to any other in one step, by the path, the View menu or
    * Shift+1 to 4. Nothing is asked: it is refused only mid-stroke or mid-drag
-   * (the one thing that cannot be left half done). Leaving Present is as Esc
-   * leaves it (the turntable stopped, a clip being saved cancelled), landing on
+   * (the one thing that cannot be left half done). Leaving Present is as it
+   * always was (the turntable stopped, a clip being saved cancelled), landing on
    * the workspace asked for with its own panels and tool.
    */
   const goWorkspace = (to: Workspace): boolean => {

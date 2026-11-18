@@ -774,7 +774,9 @@ of them to any other in one step, and each keeps its own panels and tool.
   nothing. These are the only workspace keys: Shift+B and Shift+P are gone
   (`ui.paint` and `ui.present` no longer exist; a rebind of either made in
   Preferences carries over to `ws.paint` / `ws.present` when the keymap
-  loads). Esc leaves Present to where it began. A chord is Shift and the
+  loads). Esc does not leave Present (owner, 2026-11-18): it closes the
+  menu, window or field that is open and shows a hidden interface, as
+  everywhere. A chord is Shift and the
   digit's physical key (`event.code`, `Digit1` to `Digit4`), so a Swedish keyboard (Shift+2 types
   `"`) and a US one (`@`) agree; where a keyboard sends no `code` the key does
   not match (nothing guesses from the character).
@@ -791,9 +793,9 @@ of them to any other in one step, and each keeps its own panels and tool.
   question is asked on the way between the three (Armature's step asks, as it
   leaves the page). Kept across a switch: the camera, the active object and
   selection, the undo history, symmetry and the scene's look. Present entered
-  from Paint ends in Paint (Esc); a key to the other workspace ends
-  it as Esc does (the turntable stopped, a clip being saved cancelled) and
-  lands on that workspace's own panels and tool.
+  from Paint is left by a key or the path to the workspace asked for (the
+  turntable stopped, a clip being saved cancelled), landing on that
+  workspace's own panels and tool.
 
 ## The Paint workspace
 
@@ -813,7 +815,7 @@ path's Sculpt step and View, Sculpt come out. The page's address has `paint=1` w
   Right: Tool, Material, Reference. Model and Render are not Paint's (Render
   returns in Present, entered from Paint). Paint keeps its own open panels
   (first visit: Layers and Tool) and comes back to its last paint tool.
-- **Present from Paint** returns to Paint (Esc). The View menu's panel
+- **Present from Paint** is left by Shift+3 to Paint (or any other). The View menu's panel
   items are the workspace's own.
 - **Colour.** Nothing to switch on: paint shows in Sculpt, Paint and Present
   from Sculpt whatever the look says, so entering Paint neither changes

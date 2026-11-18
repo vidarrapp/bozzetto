@@ -3,8 +3,8 @@
 // workspaceTabs: each workspace remembers its own panels (through a round trip
 //   and a reload; Present reopens Lighting when that was open; first visits),
 //   Paint comes back to its last tool; every pair of the three by key and by
-//   the path; Shift+B and Shift+P are gone, Esc leaves Present to where it
-//   began; camera, selection, undo and symmetry kept; no question on any
+//   the path; Shift+B and Shift+P are gone, and Esc does not leave Present
+//   (it still shows a hidden interface); camera, selection, undo and symmetry kept; no question on any
 //   switch; a switch mid-stroke is refused; leaving Present stops the
 //   turntable; the second round of switches builds nothing.
 // workspaceKeys: Shift+1 to 4 as a US and a Swedish keyboard send them (the
@@ -110,10 +110,12 @@ export const suites = {
     await setPanel(page, 'camera', true);
     await setPanel(page, 'material', true);
     t.eq(await openIds(page), 'camera,material', 'Camera and Material took their sides over');
+    const inPresent = await openIds(page);
     await page.keyboard.press('Escape');
-    await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 8000 });
-    t.eq(await where(page), 'Sculpt', 'Esc leaves Present to Sculpt, where it began');
-    t.eq(await openIds(page), 'scene,sculpt', 'with its panels');
+    await page.waitForTimeout(300);
+    t.ok((await where(page)) === 'Present' && (await openIds(page)) === inPresent, 'Esc in Present, with nothing open, changes nothing');
+    await go(page, 'Sculpt');
+    t.eq(await openIds(page), 'scene,sculpt', 'Shift+2 leaves Present to Sculpt with its panels');
 
     // --- Paint: first visit, its panels and its tool -------------------------------
     await go(page, 'Paint');
@@ -175,11 +177,15 @@ export const suites = {
     await send(page, { key: 'B', code: 'KeyB', shiftKey: true });
     t.eq(await where(page), 'Paint', 'nor does Shift+B in Paint');
 
-    // Present entered from Paint ends in Paint with Esc.
+    // Present entered from Paint: Esc shows a hidden interface and leaves nothing; Shift+3 goes to Paint.
     await go(page, 'Present');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
     await page.keyboard.press('Escape');
-    await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 8000 });
-    t.eq(await where(page), 'Paint', 'Esc leaves Present entered from Paint to Paint');
+    await page.waitForTimeout(300);
+    t.ok(await page.evaluate(() => !document.body.classList.contains('chrome-hidden') && document.body.classList.contains('presenting')), 'Esc brings back a hidden interface and stays in Present');
+    await go(page, 'Paint');
+    t.eq(await where(page), 'Paint', 'Shift+3 leaves Present for Paint');
 
     // --- kept across all that ------------------------------------------------------------
     await go(page, 'Sculpt');
@@ -312,7 +318,7 @@ export const suites = {
     await page.waitForFunction(() => document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent === 'Present', null, { timeout: 8000 });
     t.ok(true, 'with a slider focused, Shift+4 still goes to Present');
     await page.evaluate(() => document.getElementById('wstabs-range')?.remove());
-    await page.keyboard.press('Escape');
+    await go(page, 'Sculpt');
 
     // The View menu and the hotkey guide show them.
     await page.evaluate(() => [...document.querySelectorAll('.bz-menuname')].find((b) => b.textContent === 'View')?.click());
@@ -334,7 +340,7 @@ export const suites = {
     );
     t.eq(rows.join('|'), 'Go to Armature=Shift+1|Go to Sculpt=Shift+2|Go to Paint=Shift+3|Go to Present=Shift+4', 'the hotkey guide has the four rows');
     t.ok(!(await page.evaluate(() => /Shift \+ [PB]\b/.test(document.querySelector('.help-guide')?.textContent ?? ''))), 'and no row for the old Shift+B and Shift+P');
-    await page.keyboard.press('Escape');
+    await go(page, 'Sculpt');
 
     // Someone who had bound the old Present key keeps a working key.
     await page.evaluate(() => {
@@ -344,8 +350,7 @@ export const suites = {
     await send(page, { key: 'U', code: 'KeyU', shiftKey: true });
     await page.waitForFunction(() => document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent === 'Present', null, { timeout: 8000 });
     t.ok(true, 'an old rebind of the Present key (Shift+U) now runs Go to Present');
-    await page.keyboard.press('Escape');
-    await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 8000 });
+    await go(page, 'Sculpt');
     await send(page, { key: '$', code: 'Digit4', shiftKey: true });
     await page.waitForTimeout(200);
     t.eq(await where(page), 'Sculpt', "and the carried-over action has only the user's key (Shift+4 is not a second one)");

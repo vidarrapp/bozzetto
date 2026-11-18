@@ -7,9 +7,9 @@ import { deviceStore } from '../../ui/deviceStorage';
 /**
  * Present, the third workspace (Armature, Sculpt, Present): the model on its
  * own, for looking at and for showing. The path in the title strip, View >
- * Present and Shift+4 (the keymap's ws.present, rebindable) go in; Esc
- * leaves to where Present began, and the path's, the menu's and the keys'
- * other workspaces leave to that one.
+ * Present and Shift+4 (the keymap's ws.present, rebindable) go in; the path's,
+ * the menu's and the keys' other workspaces (Shift+1 to 3) leave it. Esc does
+ * not: it keeps closing what is open and bringing a hidden interface back.
  *
  * Presenting hides what edits - the tool bar, the edge controls and their undo
  * chips, the Scene, Model and Tool panels and their tabs, the brush ring and
@@ -121,15 +121,6 @@ export class PresentMode {
   /** Told when Present begins or ends. */
   onChange: ((on: boolean) => void) | null = null;
 
-  /** Esc leaves, unless something nearer the focus took it (a menu, a window, a dialog). */
-  private readonly onKeyDown = (e: KeyboardEvent): void => {
-    if (!this.active || e.key !== 'Escape' || e.defaultPrevented) return;
-    if (document.body.classList.contains('has-modal')) return;
-    const at = e.target as Element | null;
-    if (at?.closest?.('[role="menu"], [role="dialog"], .float-window, input[type="text"], textarea, select')) return;
-    this.leave();
-  };
-
   /** Any press or wheel on the view stops the turn: the hand takes over. */
   private readonly onViewInput = (e: Event): void => {
     if (!this.turning) return;
@@ -228,7 +219,6 @@ export class PresentMode {
     this.paintClip();
     this.paintSpeed();
 
-    window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('pointerdown', this.onViewInput, true);
     window.addEventListener('wheel', this.onViewInput, { capture: true, passive: true });
   }
@@ -398,7 +388,6 @@ export class PresentMode {
 
   dispose(): void {
     this.leave();
-    window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('pointerdown', this.onViewInput, true);
     window.removeEventListener('wheel', this.onViewInput, { capture: true });
     this.output.dispose();

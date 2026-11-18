@@ -309,7 +309,7 @@ export const suites = {
     const pr = await shell(page);
     t.ok(pr.presenting && pr.path === 'Armature > Sculpt > Paint > Present*', `Shift+4 presents from Paint (${pr.path})`);
     t.ok(pr.tabs.render, 'the Render tab is there in Present, entered from Paint');
-    await press(page, 'Escape');
+    await press(page, 'Shift+3');
     const back = await shell(page);
     t.ok(!back.presenting && back.paint && back.path === 'Armature > Sculpt > Paint* > Present', `leaving Present returns to Paint (${back.path})`);
     t.eq(back.bar.join(' '), p1.bar.join(' '), "and Paint's bar is as it was");

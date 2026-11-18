@@ -146,7 +146,6 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 | `Ctrl`+`M` / `Ctrl`+`J` | Mirror / merge the selected objects |
 | `Shift`+`W` | Wireframe |
 | `Shift`+`1` / `2` / `3` / `4` | Armature / Sculpt / Paint / Present, from any of them |
-| `Esc` | Leave Present, back to where you came from |
 
 ### Paint
 
@@ -170,7 +169,6 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 | `Shift`+`S` | Shadows on or off |
 | `G` | Cycle the ground |
 | `L`, held while dragging | Move the key light |
-| `Esc` | Leave Present |
 
 ## Changelog
 

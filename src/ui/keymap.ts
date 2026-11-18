@@ -190,7 +190,7 @@ export const ACTIONS: ActionDef[] = [
   // moves them everywhere.
   { id: 'ui.chrome', label: 'Close panels, then hide the interface', group: 'Interface', mode: 'both', chord: 'tab' },
   { id: 'ui.show', label: 'Show the interface', group: 'Interface', mode: 'both', chord: 'escape' },
-  // The workspaces by number, from any of them (the only workspace keys; Esc leaves Present to where it began): Shift and the digit's physical key (keyNameOf), so a Swedish and a US keyboard agree.
+  // The workspaces by number, from any of them (the only workspace keys; Esc does not leave Present): Shift and the digit's physical key (keyNameOf), so a Swedish and a US keyboard agree.
   { id: 'ws.armature', label: 'Go to Armature', group: 'Interface', mode: 'sculpt', chord: 'shift+1' },
   { id: 'ws.sculpt', label: 'Go to Sculpt', group: 'Interface', mode: 'sculpt', chord: 'shift+2' },
   { id: 'ws.paint', label: 'Go to Paint', group: 'Interface', mode: 'sculpt', chord: 'shift+3' },

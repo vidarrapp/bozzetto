@@ -549,8 +549,11 @@ export const suites = {
     await page.keyboard.press('Shift+4');
     await page.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 5000 });
     await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    t.ok(await page.evaluate(() => document.body.classList.contains('presenting')), 'Esc does not leave Present');
+    await page.keyboard.press('Shift+2');
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 });
-    t.eq(await path(), 'Armature > Sculpt* > Paint > Present', 'Esc leaves too');
+    t.eq(await path(), 'Armature > Sculpt* > Paint > Present', 'Shift+2 leaves too');
 
     // --- the Armature step asks ------------------------------------------------
     await step('armature');
