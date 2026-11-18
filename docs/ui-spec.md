@@ -476,13 +476,17 @@ Tool, with Material before it.
   dropped on the view is added and placed in the view where it fell. Under
   them, one button, **Arrange** / **Lock**, greyed until a picture is in the
   view.
-- **Board:** a two-column grid of thumbnails, newest first, square corners.
-  The tile whose picture is in the view has the grey selected fill (orange is
-  for focus only). Under each: its name, what is on it (In view, Mirrored,
-  Grey) or its size in mono, and a **More** row menu: Place in view (Remove
-  from view when it is in), Match view (greyed with the hint "Lock the picture
-  first" until the picture was locked in the view), Mirror, Greyscale,
-  Delete. A tap on a tile only selects it. **A tile is dragged into the
+- **Board:** a single column of cards, newest first, square corners. A card
+  is the thumbnail with the name and the size (mono) beside it, and under
+  them a row of five icons, each at least 44px wide, with the glyphs of the
+  row over a picture in the view: **In view** (eye; a toggle, orange while
+  the picture is in the view), **Match view** (camera; greyed, with "Match
+  view: lock the picture first" as its tip, until the picture was locked in
+  the view), **Flip** and **Greyscale** (toggles, orange while on), **Delete**
+  (trash, red under the pointer, asking first). Each names itself on hover and
+  on a long press (the edge buttons' tip). There is no More menu. The card
+  whose picture is in the view has the grey selected fill (orange is for focus
+  only). A tap on a tile only selects it. **A tile is dragged into the
   view**: the picture follows the finger, the Pencil or the mouse, is placed
   where it is let go at a default size, and Arrange turns on. A mouse or the
   Pencil starts the drag on a move of 6px; a finger starts it after a hold of
@@ -495,22 +499,29 @@ Tool, with Material before it.
   is a picture to glance at; fitted across the view at Multiply 30% is a film
   to trace on. The place is stored relative to the centre of the view (in
   units of its shorter side), so it survives a resize or a turn of the device.
-- **Blend modes.** The Look pop-up has a select in Photoshop's order and
+- **Blend modes.** The row under a picture has a select in Photoshop's order and
   groups (`src/ui/blendModes.ts`, shared with the Paint workspace's layers):
   **Behind** first (drawn behind the model by the viewer), then the modes the
   browser can blend live over the 3D view, as an element with
   `mix-blend-mode` over the canvas: Normal | Darken, Multiply, Color Burn |
   Lighten, Screen, Color Dodge, Linear Dodge (Add) | Overlay, Soft Light, Hard
-  Light | Difference, Exclusion | Hue, Saturation, Color, Luminosity. Opacity
-  applies to every mode. Only the topmost Behind picture is drawn behind the
+  Light | Difference, Exclusion | Hue, Saturation, Color, Luminosity (the
+  first is labelled **Behind the model** there). Opacity applies to every mode. Only the topmost Behind picture is drawn behind the
   model.
 - **Arranging (unlocked).** Putting a picture in the view turns it on. Every
   picture in the view has a thin outline, four corner marks and a row of
   five icon buttons at its top edge (inside the top edge when there is no
   room above), each 44px with its name on hover and long press: **Lock**
   (ends arranging for all pictures), **Fit** (fill the view, keeping the
-  aspect), **Flip** (mirror), **Look** (a small pop-up: blend mode, Opacity,
-  Greyscale), **Remove from view** (a cross; the picture stays on the board).
+  aspect), **Flip** (mirror), **Greyscale**, **Remove from view** (a cross;
+  the picture stays on the board). Flip and Greyscale show they are on by an
+  orange icon alone, no filled square. **Under the picture** is one row:
+  the blend select and an **Opacity** slider, 0 to 100 %, built as the app's
+  slider rows are (a press anywhere on the row and a drag scrubs, never
+  moving the picture; a double tap types a value). The row is as wide as the
+  picture, never narrower than 240px, centred under it and kept inside the
+  view: at the bottom edge it sits over the picture's lower edge. Both rows
+  are light marks with the faint shade (no dark box).
   A finger, the mouse or the Pencil drags a picture to move it; a pinch or
   the wheel scales it; a corner is dragged to resize it, the opposite corner
   staying. Arranging is not kept: a scene opens locked.

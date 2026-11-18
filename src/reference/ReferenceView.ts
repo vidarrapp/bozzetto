@@ -2,7 +2,8 @@ import type { Viewer } from '../viewer/Viewer';
 import { deviceStore } from '../ui/deviceStorage';
 import { BEHIND, DEFAULT_BLEND, type Placement, type ReferenceBoard, type RefItem, type StoredCamera } from './board';
 import { blendModeById, blendSelect, CSS_BLEND_MODES } from '../ui/blendModes';
-import { checkbox, compactRange } from '../ui/Panel';
+import { compactRange } from '../ui/Panel';
+import { setSliderValue } from '../ui/sliderEntry';
 import { Vector3 } from 'three';
 import { drawLook } from './image';
 
@@ -26,6 +27,10 @@ import { drawLook } from './image';
 
 const SHOW_KEY = 'bz.reference.show';
 const BAR_BTN = 44;
+/** The row under a picture: as wide as the picture, never narrower than this, and one finger tall. */
+const UNDER_MIN_W = 240;
+const UNDER_H = 44;
+const EDGE = 4;
 const MIN_W = 0.06;
 const MAX_W = 6;
 
@@ -34,7 +39,7 @@ export const FRAME_ACTIONS = [
   { id: 'lock', name: 'Lock', icon: 'fi-ss-lock' },
   { id: 'fit', name: 'Fit', icon: 'fi-ss-expand' },
   { id: 'flip', name: 'Flip', icon: 'fi-ss-reflect-horizontal' },
-  { id: 'look', name: 'Look', icon: 'fi-ss-settings-sliders' },
+  { id: 'grey', name: 'Greyscale', icon: 'fi-ss-circle-half' },
   { id: 'remove', name: 'Remove from view', icon: 'fi-ss-cross-small' },
 ] as const;
 
@@ -83,6 +88,10 @@ interface FrameEls {
   el: HTMLDivElement;
   bar: HTMLDivElement;
   buttons: Map<string, HTMLButtonElement>;
+  /** The row under the picture: the blend mode and Opacity. */
+  under: HTMLDivElement;
+  select: HTMLSelectElement;
+  opacity: HTMLInputElement;
 }
 
 export class ReferenceView {
@@ -98,8 +107,6 @@ export class ReferenceView {
   private readonly offPlace: () => void;
   private readonly ro: ResizeObserver | null;
   private renderToken = 0;
-  private lookFor: string | null = null;
-  private readonly look: LookPopup;
 
   private readonly onPresent = (e: Event): void => {
     this.presenting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
@@ -122,7 +129,6 @@ export class ReferenceView {
     host.append(this.layer);
     // The chrome stands outside the viewer's own container, whose pointer handling would take a press first; it is kept over the view's box.
     document.body.appendChild(this.chrome);
-    this.look = new LookPopup(board, () => this.lookFor);
     board.bindCamera(
       () => this.cameraNow(),
       (c) => this.cameraSet(c),
@@ -375,17 +381,41 @@ export class ReferenceView {
       f.el.style.height = `${b.height}px`;
       // The row sits above the top edge, or inside it when there is no room above.
       const barW = FRAME_ACTIONS.length * BAR_BTN;
-      const above = b.top >= BAR_BTN + 4;
-      f.bar.style.top = above ? `${-BAR_BTN - 4}px` : '4px';
       const absLeft = Math.min(Math.max(b.left, 4), Math.max(4, v.w - barW - 4));
+      // Nor over the tabs at the top, which stand over the view and would take a press first.
+      const clear = this.tabsBottom(cr, absLeft, absLeft + barW);
+      const above = b.top >= BAR_BTN + 4 + clear;
+      f.bar.style.top = above ? `${-BAR_BTN - 4}px` : '4px';
       f.bar.style.left = `${absLeft - b.left}px`;
       f.bar.dataset.inside = above ? 'false' : 'true';
+      // The row under the picture: centred, as wide as the picture but not narrower than it needs, kept inside the view.
+      const underW = Math.max(UNDER_MIN_W, b.width);
+      const wantLeft = b.left + (b.width - underW) / 2;
+      const underLeft = Math.min(Math.max(wantLeft, EDGE), Math.max(EDGE, v.w - underW - EDGE));
+      const room = b.top + b.height + EDGE + UNDER_H <= v.h - EDGE;
+      // At the bottom edge it sits over the picture's lower edge, inside the view.
+      const underTop = room ? b.top + b.height + EDGE : Math.max(EDGE, v.h - EDGE - UNDER_H);
+      // The frame's own border (1px) is outside the box its children are placed in.
+      f.under.style.width = `${underW}px`;
+      f.under.style.left = `${underLeft - b.left - 1}px`;
+      f.under.style.top = `${underTop - b.top - 1}px`;
+      f.under.dataset.inside = room ? 'false' : 'true';
     }
     if (this.backdropActive && this.behindCanvas) {
       const behind = [...items].reverse().find((i) => i.blend === BEHIND);
       if (behind) this.viewer.setBackdrop(this.behindCanvas, behind.opacity, this.backdropRect(behind));
     }
-    this.look.place(this.lookFor ? (this.frames.get(this.lookFor) ?? null) : null, v.w);
+  }
+
+  /** How far down, in the view's pixels, the panel tabs reach over the view between two x positions (0 where none do). */
+  private tabsBottom(view: DOMRect, x0: number, x1: number): number {
+    let low = 0;
+    for (const h of document.querySelectorAll<HTMLElement>('.panel > .panel__handle')) {
+      const r = h.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      if (r.right - view.left > x0 && r.left - view.left < x1) low = Math.max(low, r.bottom - view.top);
+    }
+    return Math.max(0, low);
   }
 
   // --- arranging ----------------------------------------------------------
@@ -396,7 +426,6 @@ export class ReferenceView {
     const wanted = arranging ? new Set(items.map((i) => i.id)) : new Set<string>();
     for (const [id, f] of [...this.frames]) {
       if (!wanted.has(id)) {
-        if (this.lookFor === id) this.closeLook();
         f.el.remove();
         this.frames.delete(id);
       }
@@ -409,14 +438,18 @@ export class ReferenceView {
         this.frames.set(item.id, f);
       }
       this.chrome.appendChild(f.el); // in order, so the topmost picture's frame is on top
+      this.showValues(f, item);
     }
-    if (this.lookFor && !this.frames.has(this.lookFor)) this.closeLook();
-    this.look.refresh();
   }
 
-  private closeLook(): void {
-    this.lookFor = null;
-    this.look.detach();
+  /** The picture's own values on its buttons and its lower row. */
+  private showValues(f: FrameEls, item: RefItem): void {
+    f.buttons.get('flip')?.setAttribute('aria-pressed', String(item.mirror));
+    f.buttons.get('grey')?.setAttribute('aria-pressed', String(item.grey));
+    if (f.select.value !== item.blend) f.select.value = item.blend;
+    const want = Math.round(item.opacity * 100);
+    // Not while a drag or a typed value is on it: that is the value being set.
+    if (Number(f.opacity.value) !== want && document.activeElement !== f.opacity) setSliderValue(f.opacity, want);
   }
 
   private buildFrame(id: string): FrameEls {
@@ -446,8 +479,21 @@ export class ReferenceView {
       bar.appendChild(b);
     }
     el.appendChild(bar);
+
+    // Under the picture: the blend mode and Opacity.
+    const under = document.createElement('div');
+    under.className = 'ref-frame__under';
+    const select = blendSelect(CSS_BLEND_MODES, DEFAULT_BLEND, [[BEHIND, 'Behind the model']]);
+    select.className = 'ref-frame__blend';
+    select.setAttribute('aria-label', 'Blend mode');
+    select.addEventListener('change', () => this.board.setLook(id, { blend: select.value }));
+    const slider = compactRange('Opacity', 0, 100, 1, 100, (v) => this.board.setLook(id, { opacity: v / 100 }), { unit: ' %', limits: { min: 0, max: 100 } });
+    slider.classList.add('ref-frame__opacity');
+    const opacity = slider.querySelector('input[type=range]') as HTMLInputElement;
+    under.append(select, slider);
+    el.appendChild(under);
     bindFrame(el, id, this);
-    return { el, bar, buttons };
+    return { el, bar, buttons, under, select, opacity };
   }
 
   private act(action: (typeof FRAME_ACTIONS)[number]['id'], id: string): void {
@@ -463,18 +509,9 @@ export class ReferenceView {
       case 'flip':
         this.board.setLook(id, { mirror: !item.mirror });
         break;
-      case 'look': {
-        if (this.lookFor === id) {
-          this.closeLook();
-        } else {
-          this.lookFor = id;
-          const f = this.frames.get(id);
-          if (f) this.look.attach(f.bar);
-          this.look.refresh();
-          this.layout();
-        }
+      case 'grey':
+        this.board.setLook(id, { grey: !item.grey });
         break;
-      }
       case 'remove':
         this.board.takeOut(id);
         break;
@@ -506,7 +543,6 @@ export class ReferenceView {
     window.removeEventListener('bozzetto:present', this.onPresent);
     this.ro?.disconnect();
     if (this.backdropActive) this.viewer.setBackdrop(null);
-    this.look.dispose();
     this.layer.remove();
     this.chrome.remove();
     this.pictures.reset();
@@ -571,20 +607,20 @@ function bindFrame(el: HTMLElement, id: string, view: ReferenceView): void {
     view.setPlace(id, { x: (left + width / 2 - v.w / 2) / v.u, y: (top + height / 2 - v.h / 2) / v.u, w: width / v.u });
   };
   // No callout, scroll or zoom from a finger on the picture. Not on its row
-  // of buttons or the Look pop-up, which sit inside the frame: a cancelled
+  // of buttons or the row under it, which sit inside the frame: a cancelled
   // touchstart there means no click follows, and the buttons did nothing
   // under a finger or the Pencil.
   el.addEventListener(
     'touchstart',
     (e) => {
-      if ((e.target as Element).closest('.ref-frame__bar, .ref-look')) return;
+      if ((e.target as Element).closest('.ref-frame__bar, .ref-frame__under')) return;
       e.preventDefault();
     },
     { passive: false },
   );
   el.addEventListener('pointerdown', (e) => {
     const target = e.target as Element;
-    if (target.closest('.ref-frame__bar, .ref-look')) return;
+    if (target.closest('.ref-frame__bar, .ref-frame__under')) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     try {
@@ -650,7 +686,7 @@ function bindFrame(el: HTMLElement, id: string, view: ReferenceView): void {
   el.addEventListener(
     'wheel',
     (e) => {
-      if ((e.target as Element).closest('.ref-look')) return;
+      if ((e.target as Element).closest('.ref-frame__under')) return;
       e.preventDefault();
       const st = view.frameState(id);
       if (!st) return;
@@ -662,92 +698,4 @@ function bindFrame(el: HTMLElement, id: string, view: ReferenceView): void {
     },
     { passive: false },
   );
-}
-
-/** The Look pop-up: blend mode, Opacity and Greyscale of one picture, under its row of buttons. */
-class LookPopup {
-  readonly el: HTMLDivElement;
-  private readonly select: HTMLSelectElement;
-  private readonly slider: HTMLLabelElement;
-  private readonly grey: HTMLInputElement;
-
-  constructor(
-    private readonly board: ReferenceBoard,
-    private readonly who: () => string | null,
-  ) {
-    this.el = document.createElement('div');
-    this.el.className = 'ref-look';
-    this.el.hidden = true;
-    this.select = blendSelect(CSS_BLEND_MODES, DEFAULT_BLEND, [[BEHIND, 'Behind']]);
-    this.select.className = 'ref-look__blend';
-    this.select.setAttribute('aria-label', 'Blend mode');
-    this.select.addEventListener('change', () => {
-      const id = this.who();
-      if (id) this.board.setLook(id, { blend: this.select.value });
-    });
-    this.slider = compactRange(
-      'Opacity',
-      5,
-      100,
-      1,
-      100,
-      (v) => {
-        const id = this.who();
-        if (id) this.board.setLook(id, { opacity: v / 100 });
-      },
-      { unit: ' %', limits: { min: 5, max: 100 } },
-    );
-    const g = checkbox('Greyscale', false, (on) => {
-      const id = this.who();
-      if (id) this.board.setLook(id, { grey: on });
-    });
-    this.grey = g.querySelector('input') as HTMLInputElement;
-    const row = document.createElement('label');
-    row.className = 'ref-look__row';
-    const cap = document.createElement('span');
-    cap.textContent = 'Blend';
-    row.append(cap, this.select);
-    this.el.append(row, this.slider, g);
-    // Nothing in the pop-up starts a drag of the picture under it.
-    for (const t of ['pointerdown', 'wheel', 'touchstart']) this.el.addEventListener(t, (e) => e.stopPropagation(), { passive: true });
-  }
-
-  attach(bar: HTMLElement): void {
-    bar.appendChild(this.el);
-    this.el.hidden = false;
-  }
-
-  detach(): void {
-    this.el.hidden = true;
-    this.el.remove();
-  }
-
-  place(frame: FrameEls | null, viewW: number): void {
-    if (!frame || this.el.hidden) return;
-    // Within the view's width: the bar is clamped, the pop-up follows it.
-    const bar = frame.bar.getBoundingClientRect();
-    const host = (frame.el.parentElement as HTMLElement).getBoundingClientRect();
-    const popW = this.el.offsetWidth || 240;
-    const absLeft = bar.left - host.left;
-    this.el.style.left = `${Math.min(0, viewW - 4 - (absLeft + popW))}px`;
-  }
-
-  /** Show the picture's own values. */
-  refresh(): void {
-    const id = this.who();
-    const item = id ? this.board.get(id) : undefined;
-    if (!item) return;
-    if (this.select.value !== item.blend) this.select.value = item.blend;
-    this.grey.checked = item.grey;
-    const slider = this.slider.querySelector<HTMLInputElement>('input[type=range]');
-    const want = Math.round(item.opacity * 100);
-    if (slider && document.activeElement !== slider && Number(slider.value) !== want) {
-      slider.value = String(want);
-      slider.dispatchEvent(new Event('input', { bubbles: false }));
-    }
-  }
-
-  dispose(): void {
-    this.el.remove();
-  }
 }

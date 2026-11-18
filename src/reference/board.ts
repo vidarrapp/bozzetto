@@ -47,7 +47,7 @@ export interface RefItem {
   grey: boolean;
   /** 'behind' (drawn behind the model) or a blend mode id from ui/blendModes (an element over the view). */
   blend: string;
-  /** 0.05 to 1, in every mode. */
+  /** 0 to 1, in every mode. */
   opacity: number;
   /** In the view (floating over or behind the model), or only on the board. */
   inView: boolean;
@@ -69,7 +69,7 @@ export function cleanBlend(v: unknown): string {
 }
 
 export function cleanOpacity(v: unknown): number {
-  return typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0.05, v)) : 1;
+  return typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
 }
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);

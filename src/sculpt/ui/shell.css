@@ -1956,15 +1956,19 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
 }
 
 .panel--reference .ref-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
+/* A card: the thumbnail and the name beside it, and under them the row of icons (44px each for a finger). */
 .panel--reference .ref-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 0;
+  align-items: start;
   min-width: 0;
   padding: 4px;
   background: var(--bz-control);
@@ -1996,6 +2000,11 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
   pointer-events: none;
 }
 
+.panel--reference .ref-card__text {
+  min-width: 0;
+  padding-top: 2px;
+}
+
 .panel--reference .ref-card__name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2012,13 +2021,101 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
   color: var(--bz-text-2);
 }
 
-.panel--reference .ref-card .row-more-wrap {
+.panel--reference .ref-card__acts {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.panel--reference .ref-act {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 1 1 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--bz-text-2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.panel--reference .ref-act .fi {
+  display: block;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.panel--reference .ref-act:hover,
+.panel--reference .ref-act:focus-visible {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+}
+
+/* A toggle that is on shows it by colour alone, as Solo and Negative do. */
+.panel--reference .ref-act[aria-pressed='true'],
+.panel--reference .ref-act[aria-pressed='true']:hover {
+  color: var(--bz-orange);
+}
+
+.panel--reference .ref-act[aria-disabled='true'] {
+  color: var(--bz-text-3);
+  cursor: default;
+}
+
+.panel--reference .ref-act[aria-disabled='true']:hover {
+  background: none;
+  color: var(--bz-text-3);
+}
+
+.panel--reference .ref-act--delete:hover,
+.panel--reference .ref-act--delete:focus-visible {
+  color: var(--bz-red-text);
+}
+
+/* The name of an icon: on hover, on the keyboard and under a held finger or the Pencil (edgeTip.ts). */
+.panel--reference .ref-act .bz-tip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background: var(--bz-raised);
+  box-shadow: var(--bz-raised-shadow);
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.panel--reference .ref-act:first-child .bz-tip {
+  left: 0;
+  transform: none;
+}
+
+.panel--reference .ref-act:last-child .bz-tip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.panel--reference .ref-act.is-tip > .bz-tip,
+.panel--reference .ref-act:focus-visible > .bz-tip {
   display: block;
 }
 
-.panel--reference .ref-card .row-more {
-  width: 100%;
-  min-height: 32px;
+@media (hover: hover) {
+  .panel--reference .ref-act:hover > .bz-tip {
+    display: block;
+  }
 }
 
 .panel--reference .ref-over-settings {
@@ -2148,6 +2245,11 @@ body.presenting .ref-chrome {
   filter: drop-shadow(var(--bz-view-shade));
 }
 
+/* A toggle that is on shows it by colour alone, as Solo and Negative do. */
+.ref-frame__btn[aria-pressed='true'] {
+  color: var(--bz-orange);
+}
+
 /* A name on hover, and on a long press. */
 .ref-frame__btn:hover::after,
 .ref-frame__btn--tip::after {
@@ -2166,33 +2268,44 @@ body.presenting .ref-chrome {
   z-index: 2;
 }
 
-.ref-look {
+/* Under the picture: the blend mode and Opacity, as light marks with the faint shade (no dark box). */
+.ref-frame__under {
   position: absolute;
-  left: 0;
-  top: 100%;
-  width: 240px;
-  box-sizing: border-box;
-  padding: 8px 12px 12px;
-  background: var(--bz-panel-fill);
-  cursor: default;
-}
-
-.ref-look[hidden] {
-  display: none;
-}
-
-.ref-look__row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  font: 400 13px/16px var(--bz-font);
+  gap: 12px;
+  height: 44px;
+  box-sizing: border-box;
+  cursor: default;
   color: var(--bz-text);
 }
 
-.ref-look__blend {
+.ref-frame__blend {
+  flex: 0 0 108px;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  outline: 1px solid var(--bz-view-shade-line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+  text-shadow: var(--bz-view-shade);
+}
+
+.ref-frame__blend option {
+  background: var(--bz-panel-fill);
+  color: var(--bz-text);
+  text-shadow: none;
+}
+
+.ref-frame__under .compact {
   flex: 1 1 auto;
   min-width: 0;
+  margin: 0;
+  text-shadow: var(--bz-view-shade);
+  filter: drop-shadow(var(--bz-view-shade));
 }
 
 /* The tile being dragged into the view follows the pointer. */
