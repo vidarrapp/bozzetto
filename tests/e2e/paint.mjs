@@ -243,7 +243,7 @@ export const suites = {
       return page.evaluate(() => [...document.querySelectorAll('.file-menu:not([hidden]) .file-menu__item')].map((b) => b.textContent.replace(/\s+/g, ' ').trim()));
     };
     const view0 = await menu();
-    t.ok(view0.some((x) => /^Paint/.test(x) && /Shift \+ B/.test(x)), `View has a Paint item with its key (${view0.filter((x) => /Paint|Present|Sculpt/.test(x)).join(' | ')})`);
+    t.ok(view0.some((x) => /^Paint/.test(x) && /Shift \+ 3/.test(x)), `View has a Paint item with its key (${view0.filter((x) => /Paint|Present|Sculpt/.test(x)).join(' | ')})`);
     t.ok(view0.some((x) => /^Model panel/.test(x)) && !view0.some((x) => /^Render panel/.test(x)), 'and, in Sculpt, the Model panel and no Render panel');
     await page.keyboard.press('Escape');
 

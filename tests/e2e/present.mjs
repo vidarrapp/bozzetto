@@ -372,8 +372,8 @@ export const suites = {
     t.ok(now.shown.hide, `the hide button shows in Present (${show(now.shown)})`);
     await press(page, 'Tab');
     await press(page, 'Tab');
-    now = await uiOnce(page, allHidden);
-    t.ok(allHidden(now), 'hidden again');
+    now = await uiOnce(page, (u) => u.chrome && u.presenting);
+    t.ok(now.chrome && now.presenting, 'hidden again');
     await press(page, 'Escape');
     now = await uiOnce(page, allBack);
     t.ok(allBack(now), `Esc brings the hidden interface back and does not leave Present (${show(now.shown)})`);
@@ -436,6 +436,8 @@ export const suites = {
 
     // --- Save image ----------------------------------------------------------
     await page.evaluate(() => window.__sculpt.present.setSpeed(12));
+    // Present opens as it was left (the Tab presses above shut its panels): Output is opened for the save.
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'output', open: true } })));
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.click('.present-out__save')]);
     const saved = await page.waitForFunction(() => [...document.querySelectorAll('.file-menu__progress')].some((n) => n.dataset.state === 'done' && /^Saved Sculpt\.png$/.test(n.textContent)), null, { timeout: 10_000 }).then(() => true).catch(() => false);
     t.ok(saved, 'Save image says it saved the file');

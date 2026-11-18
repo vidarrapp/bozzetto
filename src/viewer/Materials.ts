@@ -123,6 +123,12 @@ export class Materials {
    */
   private readonly maskDarkenU = uniform(MASK_DARKEN_DEFAULT);
   private maskTintOn = false;
+  /**
+   * The mask tint's switch as a value (1 on, 0 off) the colour node multiplies the mask by,
+   * so turning the tint on or off is a uniform and not a different shader: Present puts it
+   * away and brings it back at every switch, and a rebuilt shader there was a stall each way.
+   */
+  private readonly maskTintU = uniform(0);
   /** Read albedo from the painted `color` attribute while sculpting. */
   private sculptVertexColor = false;
   /** The viewer's model carries painted colours (a published sculpt's COLOR_0). */
@@ -162,6 +168,7 @@ export class Materials {
 
   setSculptMaskTint(on: boolean): void {
     this.maskTintOn = on;
+    this.maskTintU.value = on ? 1 : 0;
     this.rebuildSculptColor();
   }
 
@@ -264,11 +271,15 @@ export class Materials {
    */
   private readonly colorGraphs = new Map<string, { color: unknown; rough: unknown; metal: unknown }>();
 
+  /** The state key each colour material was last composed for. */
+  private readonly appliedKey = new Map<string, string>();
+
   private rebuildSculptColor(): void {
     if (this.batching) {
       this.batchDirty = true;
       return;
     }
+    let changed = false;
     for (const id of ['lit', 'matcap']) {
       const m = this.registry.get(id) as MeshStandardNodeMaterial;
       // Roughness and metalness are per-vertex too - SculptGL keeps them in
@@ -276,7 +287,11 @@ export class Materials {
       // is what lets one object be matte clay and the next one polished
       // without a second three.js material. Lit only: a matcap bakes its
       // own shading and has nothing to do with either.
-      const stateKey = [id, this.sculptVertexColor, this.readsVertexColor(), this.sculptVertexPBR, this.groupColorsOn && this.sculptVertexColor && !this.presenting, this.maskTintOn].join('|');
+      const stateKey = [id, this.sculptVertexColor, this.readsVertexColor(), this.sculptVertexPBR, this.groupColorsOn && this.sculptVertexColor && !this.presenting, this.sculptVertexPBR || this.maskTintOn].join('|');
+      // The state this material already shows: nothing to rebuild (a rebuild is a shader, and a switch of workspace must not cost one).
+      if (this.appliedKey.get(id) === stateKey) continue;
+      this.appliedKey.set(id, stateKey);
+      changed = true;
       const kept = this.colorGraphs.get(stateKey);
       if (kept) {
         if (id === 'lit') {
@@ -343,9 +358,9 @@ export class Materials {
       // mesh's userData - the one material serves every sculpt object.
       type FloatNode = ReturnType<typeof float>;
       let covered: FloatNode | null = null;
-      if (this.maskTintOn) {
+      if (this.sculptVertexPBR || this.maskTintOn) {
         const materialsPBR = attribute('materialsPBR', 'vec3') as unknown as Vec3Node;
-        covered = materialsPBR.z.clamp(0, 1).oneMinus() as unknown as FloatNode;
+        covered = materialsPBR.z.clamp(0, 1).oneMinus().mul(this.maskTintU) as unknown as FloatNode;
       }
       if (this.sculptVertexPBR) {
         const locked = userData('locked', 'float') as unknown as FloatNode;
@@ -361,7 +376,7 @@ export class Materials {
       this.colorGraphs.set(stateKey, { color: node, rough, metal });
       m.needsUpdate = true;
     }
-    this.onColorNodeChange?.();
+    if (changed) this.onColorNodeChange?.();
     this.onChange?.();
   }
 

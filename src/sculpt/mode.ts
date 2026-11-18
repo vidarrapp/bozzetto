@@ -1406,12 +1406,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         viewer.materials.setPresenting(false);
         viewer.materials.setSculptMaskTint(was.maskTint);
       });
+      // The workspace it began in has its own panels back (or the one a key is going to): before the
+      // look panels hear Present end and shut themselves, which would be written down as the person's doing.
+      wsPanels?.go(presentLeavesTo ?? (paintOn ? 'paint' : 'sculpt'));
       window.dispatchEvent(new CustomEvent('bozzetto:present', { detail: { active: false } }));
       input.presenting = false;
       presenting = false;
       chrome.set(was.chrome);
-      // The workspace it began in has its own panels back (or the one a key is going to).
-      wsPanels?.go(presentLeavesTo ?? (paintOn ? 'paint' : 'sculpt'));
       if (was.select) input.enterSelect();
       else if (was.gizmo) enterTransform(was.gizmo);
       syncHighlights();

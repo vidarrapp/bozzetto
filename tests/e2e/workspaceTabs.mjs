@@ -12,7 +12,7 @@
 //   menu and the hotkey guide, kept out of a text field, a rebind of the old
 //   Present key carried over to the new action.
 import { mkdirSync } from 'node:fs';
-import { camMoved, camera, openForInput, settle } from './smoke.mjs';
+import { camMoved, camera, openForInput, settle, strokeCount } from './smoke.mjs';
 
 const SHOTS = '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9835c4/scratchpad/app/workspace-tabs';
 
@@ -87,7 +87,6 @@ export const suites = {
     await setPanel(page, 'sculpt', true);
     t.eq(await openIds(page), 'scene,sculpt', 'Sculpt: Scene at the left and Tool at the right');
     const cam0 = await camera(page);
-    const mesh0 = await page.evaluate(() => window.__sculpt.session.getMesh()?.id ?? null);
     const asks = [];
     let c0 = await counters(page);
     let t0 = Date.now();
@@ -144,6 +143,18 @@ export const suites = {
 
     // --- every pair, by key and by the path; Shift+B and Shift+P are gone ------------
     const names = ['Sculpt', 'Paint', 'Present'];
+    await page.evaluate(() => {
+      window.__wsMesh = window.__sculpt.session.getMesh();
+    });
+    // One stroke, so there is something to undo.
+    const strokes0 = await strokeCount(page);
+    await page.mouse.move(590, 430);
+    await page.mouse.down();
+    await page.mouse.move(640, 440, { steps: 4 });
+    await page.mouse.move(690, 430, { steps: 4 });
+    await page.mouse.up();
+    await settle(page);
+    t.ok((await strokeCount(page)) > strokes0 && (await page.evaluate(() => window.__sculpt.session.canUndo())), 'a stroke was made, and can be undone');
     const camBefore = await camera(page);
     await page.evaluate(() => {
       window.__sculpt.session.getSculptManager()._symmetry = true;
@@ -191,8 +202,8 @@ export const suites = {
     await go(page, 'Sculpt');
     const camAfter = await camera(page);
     t.ok(camMoved(camBefore, camAfter) < 1e-6, 'the camera is where it was');
-    t.eq(await page.evaluate(() => window.__sculpt.session.getMesh()?.id ?? null), mesh0, 'the active object is the same');
-    t.eq(await page.evaluate(() => window.__sculpt.session.canUndo()), undoBefore, 'the undo history is as it was');
+    t.ok(await page.evaluate(() => !!window.__wsMesh && window.__sculpt.session.getMesh() === window.__wsMesh), 'the active object is the same');
+    t.ok((await page.evaluate(() => window.__sculpt.session.canUndo())) && undoBefore, 'the undo history is kept');
     t.ok(await page.evaluate(() => window.__sculpt.session.getSculptManager()._symmetry === true), 'symmetry is still on');
     t.ok(cam0 && !asks.some(Boolean), 'no question on the first switches either');
 
