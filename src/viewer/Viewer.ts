@@ -1302,6 +1302,16 @@ export class Viewer {
     this.invalidate();
   }
 
+  /** Whether the primary subject is shown (setSculptVisible). */
+  isSculptVisible(): boolean {
+    return this.display.visible;
+  }
+
+  /** The box the stage is fitted to now (fitSubject): a copy, to read or to put back. */
+  subjectBounds(): Box3 {
+    return this.subjectBox.clone();
+  }
+
   /**
    * Size the stage - ground, pedestal, shadow, AO radius - to a world box,
    * and frame it. enterSculpt does this for sculpt mode; a mode that brings
