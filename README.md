@@ -172,9 +172,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
-### Unreleased
+### v0.7.7
 
-- **References: icons instead of menus.** Over a picture in the view the row is Lock, Fit, Flip, Greyscale and Remove, and under it one row holds the blend mode and an Opacity slider that goes down to 0. The Look pop-up and the More menu on each card are gone: the Reference panel has a row of icons under each picture (In view, Match view, Flip, Greyscale, Delete), and the same icons work with a finger and the Pencil.
+- **References: icons instead of menus.** Over a picture in the view the row of icons is Lock, Fit, Flip, Greyscale and Remove, and a row under the picture holds the blend mode and an Opacity slider. In the Reference panel each picture has its own row of icons: In view, Match view, Flip, Greyscale, Delete.
+- **Reference controls stay in reach.** The rows over a picture keep clear of the top bar, the tabs and the tool bar, wherever the picture is.
 
 ### v0.7.6
 
