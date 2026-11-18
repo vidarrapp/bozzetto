@@ -223,31 +223,25 @@ function installDepth() {
     screen(p) {
       return S.session.getCamera().project(p);
     },
-    /** Turn the object about the view's up axis through its centre (for a picture from another side); turn it back with the opposite angle. */
-    turn(deg) {
-      const mesh = pt.mesh();
-      const m = mesh.getMatrix();
-      const { c } = pd.shape();
+    /** Orbit the camera about the view's up axis through the sphere's centre (for a picture from another side); `0` puts it back. */
+    orbit(deg) {
+      if (!pd.home) pd.home = S.viewer.controls.getState();
+      const p = pd.home.position;
+      const c = pd.home.target;
+      if (deg === 0) {
+        S.viewer.controls.setState(p, c);
+        pd.home = null;
+        return;
+      }
       const u = pd.cam().up;
       const th = (deg * Math.PI) / 180;
       const cs = Math.cos(th);
       const sn = Math.sin(th);
-      const rot = (v) => {
-        const d = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
-        const cr = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-        return [0, 1, 2].map((k) => v[k] * cs + cr[k] * sn + u[k] * d * (1 - cs));
-      };
-      for (const o of [0, 4, 8]) {
-        const r = rot([m[o], m[o + 1], m[o + 2]]);
-        m[o] = r[0];
-        m[o + 1] = r[1];
-        m[o + 2] = r[2];
-      }
-      const t = rot([m[12] - c[0], m[13] - c[1], m[14] - c[2]]);
-      m[12] = c[0] + t[0];
-      m[13] = c[1] + t[1];
-      m[14] = c[2] + t[2];
-      S.session.render();
+      const v = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
+      const d = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+      const cr = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+      const q = [0, 1, 2].map((k) => c[k] + v[k] * cs + cr[k] * sn + u[k] * d * (1 - cs));
+      S.viewer.controls.setState(q, c);
     },
     /** A small cube in front of the sphere, left of the view's centre; the pointer goes on the sphere right of it, and the dab reaches behind the cube. */
     blockerScene() {
@@ -596,10 +590,6 @@ export const suites = {
     t.ok(await page.evaluate(([x, y]) => window.__pd.dab(x, y, 220, false), [sp.x, sp.y]), 'a Project stroke lands on the spike');
     asserts(t, 'own surface (the spike)', await page.evaluate((R) => window.__pd.verdict('pre', R), sp.R));
     await page.screenshot({ path: `${SHOTS}/spike-projected-1180.png` });
-    await page.evaluate(() => window.__pd.turn(-50));
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: `${SHOTS}/spike-turned-1180.png` });
-    await page.evaluate(() => window.__pd.turn(50));
 
     // Back faces are untouched.
     const back = await page.evaluate(() => {
@@ -645,10 +635,26 @@ export const suites = {
     const before = await page.evaluate((R) => window.__pd.verdict('pre', R), sp.R);
     t.ok(before.hiddenTouched > 20, `without the depth test it paints ${before.hiddenTouched} of the ${before.hiddenAll} hidden vertices (so the scene shows the difference)`);
     await page.screenshot({ path: `${SHOTS}/spike-projected-before-1180.png` });
-    await page.evaluate(() => window.__pd.turn(-50));
+    // Both strokes seen from the side (pictures only; nothing is asserted from here): before, then with the depth test.
+    await page.evaluate(() => window.__pd.orbit(60));
     await page.waitForTimeout(300);
-    await page.screenshot({ path: `${SHOTS}/spike-turned-before-1180.png` });
-    await page.evaluate(() => window.__pd.turn(50));
+    await page.screenshot({ path: `${SHOTS}/spike-seen-from-the-side-before-1180.png` });
+    await page.evaluate(() => {
+      window.__pd.orbit(0);
+      window.__pt.undo();
+      window.__sculpt.session.getSculptManager().getTool(19).depthTest = true;
+      window.__pd.D.clear();
+    });
+    t.ok(
+      await page.evaluate(() => {
+        const [x, y] = window.__pd.screen(window.__spike.at);
+        return window.__pd.dab(x, y, 220, false);
+      }),
+      'the stroke with the depth test lands again, for the picture from the side',
+    );
+    await page.evaluate(() => window.__pd.orbit(60));
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${SHOTS}/spike-seen-from-the-side-1180.png` });
   },
 
   async paintProjectObjects(page, base, t) {
