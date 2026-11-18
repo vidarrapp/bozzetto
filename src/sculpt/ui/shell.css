@@ -2052,6 +2052,10 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
   pointer-events: none;
 }
 
+.panel--reference .ref-act:active:not(:disabled) {
+  background: none;
+}
+
 .panel--reference .ref-act:focus-visible {
   background: var(--bz-hover);
   color: var(--bz-text);
@@ -2239,8 +2243,14 @@ body.presenting .ref-chrome {
   cursor: pointer;
 }
 
+/* Over the view: no grey fill from the shared button rules, so an icon that is on shows it by colour alone. */
+.ref-frame__btn:hover:not(:disabled),
+.ref-frame__btn:active:not(:disabled) {
+  background: none;
+}
+
 @media (hover: hover) {
-  .ref-frame__btn:hover {
+  .ref-frame__btn:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.14);
   }
 }
