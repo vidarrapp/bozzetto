@@ -107,14 +107,17 @@ shows no callout, and no pointer capture is used for touch.
 ## 3. The library
 
 - **Where.** Opened by a **Library** button in the Tool panel's heading and by
-  **View › Tool library** (decided). The library itself is a sheet that rises
-  out of the bar, joined to it in the same fill: tools are dragged to the bar,
-  and from inside the Tool panel that drag would cross the whole screen.
+  **View › Tool library** (decided). The library is a **floating window over
+  the view** (decided 2026-11-18): it can be moved, it does not block the work
+  under it, and it stays open while tools are dragged from it to the bar and
+  tried on the model, as the Publish window floats today. It opens near the
+  tool bar, so the first drag is short, and remembers where it was left. One
+  press on its close button, the Library button or Esc shuts it.
 - **What it lists**, in sections, two columns of rows on the iPad:
   - **Sculpt:** Standard clay, Crease, Move, Inflate, Pinch, Flatten, Polish,
     Rake, Drag, Smooth, and later Contrast.
   - **Mask and measure:** Mask, Calipers.
-  - **Paint** (in the Paint workspace the sheet shows this section first):
+  - **Paint** (in the Paint workspace the window shows this section first):
     Paint, Erase, Blur, Fill, Pick, Project, and later the new brushes.
   - **My tools:** copies and made tools. Empty, it says "Duplicate a tool to
     keep a second set of its settings."
@@ -156,6 +159,32 @@ a free choice from the whole icon family is not possible offline).
   the iPad, a download elsewhere) and imports them again, with every number
   held to its range, as light rigs are passed on today with `.bozzrig`.
   Sharing tools through the Community is later work.
+
+---
+
+### A material library on the same pattern
+
+Decided 2026-11-18: materials get a library like the tools', in a floating
+window of the same kind. A sketch, to be designed properly before it is built:
+
+- **Opened** by a Library button in the Material tab's heading and View ›
+  Material library. The same window frame, rows and gestures as the tool
+  library, so the two are learned once.
+- **What it lists:** the materials in this scene (each a small lit sphere, its
+  name, and how many objects use it), a set that ships with the app (clays,
+  plaster, wax, bronze, stone, a neutral white for painting), and **My
+  materials**, kept on the device.
+- **Use:** tap a material to give it to the selected objects; drag it onto an
+  object in the view to give it to that one. Duplicate, Name…, Delete… in the
+  row menu, and **Save to My materials** from the Material tab.
+- **Passing on:** a small `.bozzmat` file, as light rigs have `.bozzrig` and
+  tools will have `.bztool`. Scenes keep carrying their own materials, so the
+  work opens the same anywhere.
+- With the material's colour multiplying the paint (decided 2026-11-18), the
+  neutral white is what a painter picks to see paint exactly as picked.
+
+The light rig library (Lighting tab, built) can move into the same window
+frame later, so all three libraries look and behave alike.
 
 ---
 
@@ -450,7 +479,7 @@ saved. Check: fixtures unchanged, and a scene saved by the new build opens in
 the old one with the same settings.
 
 **Step 1. The dock and the library.** Sections 2 and 3: both bars, the
-gestures, the sheet, Smooth and Mask as bar tools, Duplicate, Name and icon,
+gestures, the library window, Duplicate, Name and icon,
 tools in scenes and `.bztool` files. Still today's tool classes: a copy is
 another instance of the same class. Check: touch tests for lift, move, remove
 and replace; a copy's strokes equal its original's at equal settings.

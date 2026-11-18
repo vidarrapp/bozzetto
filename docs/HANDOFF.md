@@ -2,7 +2,7 @@
 
 ## Open questions for Vidar
 
-- [x] 2026-11-17: Tool library, where it opens (plan: docs/plans/tool-library-and-nodes.md): a sheet rising from the tool bar, from a Library button at the bar's end and View > Tool library, also reachable from the Tool panel's heading (recommended); a section inside the Tool panel; or a menu in the top bar. Decided 2026-11-17: the Tool panel's heading gets a **Library** button, and View > Tool library opens it too; no Library button on the tool bar. (Claude's reading: the library itself is still the sheet that rises from the tool bar, so the drag to the bar stays short.)
+- [x] 2026-11-17: Tool library, where it opens (plan: docs/plans/tool-library-and-nodes.md): a sheet rising from the tool bar, from a Library button at the bar's end and View > Tool library, also reachable from the Tool panel's heading (recommended); a section inside the Tool panel; or a menu in the top bar. Decided 2026-11-17: the Tool panel's heading gets a **Library** button, and View > Tool library opens it too; no Library button on the tool bar. Decided 2026-11-18: the library is a floating window over the view, not a sheet from the bar.
 - [x] 2026-11-17: Building tools from nodes: an editor that is a column of stage cards, each part picked from a list, with a wired canvas later or never (recommended); or the wired canvas from the start, as in Blueprints. Decided 2026-11-17: a column of stage cards, each part picked from a list; the wired canvas later or never. Idea to try: a thumbnail for a tool made from its stroke on a plane
 - [x] 2026-11-17: Moving a tool along the tool bar: the others make room and the tools between get new keys, as the Dock does (recommended); or the two tools swap and no other key changes. Decided 2026-11-17: dock style: the others make room and the tools between get new keys
 - [x] 2026-11-17: A full tool bar: ten places, and a tool dropped on it replaces the one under it (recommended); or more than ten, the extra ones with no key. Decided 2026-11-17: the bar may hold more than ten tools; only the first ten have number keys
@@ -116,7 +116,7 @@
 - Sharing light rigs through the Community (2026-11-17): rigs are saved on the device and passed on as files for now; a shared library of rigs (and later tools and materials) needs server work.
 Ideas Vidar has raised that are not being built yet.
 
-- 2026-11-12: The Material tab as a material library: the materials in the scene as a list with thumbnails (rendered spheres), and a library to pick from. Assigning stays in the Scene tab for now.
+- 2026-11-12: The Material tab as a material library: the materials in the scene as a list with thumbnails (rendered spheres), and a library to pick from. Assigning stays in the Scene tab for now. Decided 2026-11-18: a material library in the same way as the tool library, opening as a floating window over the view (sketch in docs/plans/tool-library-and-nodes.md, section 3). To be designed and built after the tool library's first steps.
 
 ## Notes for Bozzetto Studio
 
