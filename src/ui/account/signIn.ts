@@ -391,7 +391,12 @@ class Dialog {
       return asking;
     };
     const autofill = (): void => {
-      if (!options || !alive) return;
+      // Not under a prompt: a request begun now would end the button's own
+      // ceremony (one runs at a time), and the press would come to nothing,
+      // with the dialog left open and silent. The press can land between the
+      // options arriving and the autofill check answering; the next
+      // prepare(), after the prompt, starts the autofill again.
+      if (!options || !alive || prompting) return;
       inField = document.activeElement === address;
       passkeySignIn(options, { autofill: true }).then(
         (me) => this.signedIn(me, 'passkey'),
