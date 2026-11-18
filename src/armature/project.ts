@@ -112,6 +112,8 @@ export function sanitizeArmatureState(raw: unknown, figure: string): ArmatureSta
   if (isRec(s.pins)) state.pins = table(s.pins, (x) => triple(x, MAX_COORD));
   if (isRec(s.aims)) state.aims = table(s.aims, (x) => (finite(x, 1e6) ? x : null));
   if (typeof s.plant === 'boolean') state.plant = s.plant;
+  const look = triple(s.look, MAX_COORD);
+  if (look) state.look = look;
   return state;
 }
 

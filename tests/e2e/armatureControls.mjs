@@ -312,6 +312,8 @@ async function armatureControls(page, base, t) {
     const p = await page.evaluate(() => window.__armature.picked());
     t.eq(p, 'root', `a press ${label} of the box takes the root`);
   }
+  // The two presses above were taps, which select the hips: let them go, so the drag is the plain one.
+  await page.evaluate(() => window.__armature.select(null));
   // Where the box and the root are now, just before the drag.
   const start = await page.evaluate(() => ({ at: window.__armature.onScreen(...window.__armature.rootBox().centre), root: window.__armature.state().root.position }));
   edge.centre = start.at;

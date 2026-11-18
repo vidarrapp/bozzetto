@@ -29,7 +29,7 @@ A posable figure, for reference or as the start of a sculpt. Pick **Create → N
 
 - **Figures.** Four mannequins, male and female in realistic and stylized proportions, plus two block figures. You can also load your own rigged `.glb`.
 - **Pose.** Tap a part to turn its joint, held within the joint's limits. Symmetry (`X`) mirrors the pose to the other side.
-- **Reach.** Drag the ring at a hand or a foot and the limb follows. Pin a ring to hold it in place while the rest of the figure moves. An arrowhead out from each knee and elbow aims the bend, and the one in front of the face makes the head, neck and a little of the back look at it.
+- **Reach.** Drag the ring at a hand or a foot and the limb follows. Pin a ring (a double-click, or hold it) to hold it in place while the rest of the figure moves. An arrowhead out from each knee and elbow aims the bend, and the one in front of the face is a point the head keeps looking at.
 - **Feet on the floor.** Feet stand flat on the floor and stay planted through a crouch or a lean.
 - **Proportions.** Change the size and length of each part.
 - **Send to Sculpt.** Turns the posed figure into one clay object and opens it in Sculpt.
@@ -117,9 +117,12 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 | Input | Action |
 | --- | --- |
 | Tap a part | Select it and turn its joint |
-| Drag a ball | Reach with that hand, foot or head |
-| Drag a small ball | Aim that knee or elbow |
-| Drag the ball in the hips | Move the whole figure |
+| Drag a ring | Reach with that hand or foot |
+| Double-click or hold a ring | Pin it, or let it go |
+| Drag the arrowhead at a knee or elbow | Aim that knee or elbow |
+| Drag the arrowhead in front of the face | Move the point the head looks at |
+| Tap the box round the hips | Select the hips, to move and turn them |
+| Drag the box round the hips | Move the whole figure |
 | `X` | Symmetry on or off |
 | `W` / `E` / `R` | Move the pelvis / rotate the selection / scale the selected part |
 | `Shift`+`R` | Reset the pose |
@@ -171,6 +174,13 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 | `L`, held while dragging | Move the key light |
 
 ## Changelog
+
+### Unreleased
+
+- **The head looks at a point.** The arrowhead in front of the face is now a point in the scene that you drag anywhere on the screen. The head keeps facing it however the figure moves, and it is drawn dimmer when the head cannot turn that far.
+- **Knee and elbow targets follow the pointer.** On a straight leg or arm the target no longer sticks, and the knee or elbow keeps pointing where you left it.
+- **The hips are one box.** The box round the hips is the box the hips show when selected. Tap it to select the hips and turn them with the rings, drag it to move the whole figure.
+- **Pin a hand or foot with a double-click or a long press.** On a ring, a double-click or double-tap, or holding it still for a moment, pins it or lets it go.
 
 ### v0.7.9
 

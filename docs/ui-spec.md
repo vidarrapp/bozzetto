@@ -691,18 +691,37 @@ under it (`--bz-view-shade-line`, no hard dark border) so it reads over pale cla
 each has an invisible pick circle 44 px across.
 
 - **Reach** (hands, feet): a ring that faces the camera, 22 px in radius (RING_RADIUS). Pinned, a small
-  dot in its middle. A tap selects it, with the move gizmo.
-- **Root**: a wire box (12 edges) around the pelvis part, in the pelvis's own frame, so it turns with the hips; drag it and the whole figure moves.
-  It is orange while dragged or while the pelvis is selected.
+  dot in its middle. A tap selects it, with the move gizmo. A double-click or double-tap, or a press held
+  still for LONG_PRESS_MS (600 ms, by the events' own times; a second finger, or travel past the tap
+  distance, cancels it), pins it or frees it, one undo step; the long press acts while the press is still
+  down, and its lift does nothing more. The double-tap window is 350 ms and 24 px (6 px for a mouse).
+  The pole targets, the look-at target and the hip box do not pin.
+- **Root**: a wire box (12 edges), the same box the pelvis part shows when it is selected (the part's own
+  box, 8 mm off its faces, with the pelvis's proportions and turn), so the two never disagree. It is orange
+  while dragged or while the pelvis is selected. A tap or click on it (travel within the tap distance)
+  selects the hips and brings up the move arrows and the turn rings together, at the box's middle; the hips
+  turn about that middle, and pinned and planted feet hold. A press that drags moves the whole figure in the
+  screen plane and leaves the selection as it was. The box takes the press before the part under it.
 - **Pole** (knee, elbow): an arrowhead out from the joint along the way it
   points, half the limb segment above it away (in front of a knee, behind
   an elbow), pointing away from the joint, the way it aims, joined to it by a thin dashed
   line. Dragging it turns the joint toward it.
-- **Look-at** (head): the same arrowhead and dashed line, a head and a
-  half in front of the face. Dragging it turns the head to face it, the
-  neck about half as far and the chest and spine a little (about 12 and 6
-  percent), measured from the chest: up to 80 degrees to a side and 60 up
-  or down, past which the head holds at the limit. The hips never move.
+- **Look-at** (head): the same arrowhead and dashed line, to a point in the
+  scene (kept in the record, in every undo step, mirrored by Mirror pose and
+  put back a head and a half in front of the face by Reset pose; a record with
+  none gets it there). Dragging it moves it in the plane that faces the camera
+  through where it is, anywhere on the screen, under the pointer. The head
+  faces it all the time, after anything that changes the figure: the head and
+  the neck are worked out from the chest as it stands, as a turn and a tilt
+  with no roll, so they are a function of the body's pose and the point (the
+  hips away and back leave the head as it was). The neck takes about half the
+  turn; while the point is dragged the chest and spine take a little (about
+  12 and 6 percent), from where they stood as the drag began, and keep it.
+  Up to 80 degrees to a side and 60 up or down from the chest; past that the
+  head holds at the limit, the point stays where it was put, and the point and
+  its line are drawn dimmer. Turning the head or the neck by hand carries the
+  point out along the head's new facing at its distance; turning the chest or
+  spine leaves it. The hips never move.
 - **Floor ring** under a planted foot: a flat ring, neutral.
 
 ## 9. Windows, notices and progress
