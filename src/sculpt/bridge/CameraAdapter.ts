@@ -40,6 +40,26 @@ export class CameraAdapter {
     mat4.invert(this.screenToWorld, this.worldToScreen);
   }
 
+  /** The world-to-screen matrix as it stands now (column-major, device px, y up: the caller flips y with `canvasHeight`). */
+  screenMatrix(): Float32Array {
+    this.compute();
+    return Float32Array.from(this.worldToScreen);
+  }
+
+  canvasWidth(): number {
+    return this.canvas.width;
+  }
+
+  canvasHeight(): number {
+    return this.canvas.height;
+  }
+
+  /** The camera's place in world space. */
+  eye(): vec3 {
+    const e = this.camera.matrixWorld.elements;
+    return vec3.fromValues(e[12], e[13], e[14]);
+  }
+
   /** Screen (device px, y-down) + depth z in [0..1] to a world-space point. */
   unproject(mouseX: number, mouseY: number, z: number): vec3 {
     this.compute();

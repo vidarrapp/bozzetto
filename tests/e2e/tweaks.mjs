@@ -315,7 +315,7 @@ export const suites = {
     await viewModel(page, base, painted, { ...look });
     rows = await materialRows(page);
     t.ok(rows.colour === 'plain' && rows.albedo && bluish(await middle(page)), `a project saved on Plain colour opens on it, in its albedo (${rows.colour})`);
-    const { vertexColors: _gone, ...older } = look;
+    const { vertexColors: _gone, colourSource: _gone2, ...older } = look;
     await viewModel(page, base, painted, older);
     t.ok((await materialRows(page)).colour === 'sculpt' && reddish(await middle(page)), 'one saved before the choice opens on its own colours');
     // Nothing to choose between without paint.
@@ -359,9 +359,9 @@ export const suites = {
       window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
     });
     await page.waitForTimeout(300);
-    t.ok(reddish(await middle(page)), 'and still red under a look saying Plain colour');
+    t.ok(!reddish(await middle(page)), 'and shows the albedo, not the paint, under a look saying Albedo only (the choice holds in Sculpt now)');
     await openPanel(page, 'Material');
-    t.eq((await materialRows(page)).colour, null, 'its Material panel offers no switch');
+    t.eq((await materialRows(page)).colour, 'albedo', 'its Material panel offers the Colour choice, on Albedo only');
   },
 
   // The eyedropper drag on the background's and the lights' swatches, as
@@ -418,7 +418,7 @@ export const suites = {
     // The paint brush's swatch, on the same implementation: in the Paint workspace's Tool panel.
     await page.evaluate(() => window.__sculpt.present.leave());
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 10_000 });
-    await page.keyboard.press('Shift+B');
+    await page.keyboard.press('Shift+3');
     await page.waitForFunction(() => document.body.classList.contains('paint-ws'), null, { timeout: 10_000 });
     t.ok(await openPanel(page, 'Tool'), 'the Tool panel opens on the Paint brush in the Paint workspace');
     const paintAt = await swatchOf(page, 'Tool', 'Colour');

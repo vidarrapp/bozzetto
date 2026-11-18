@@ -116,7 +116,7 @@ export const suites = {
       await page.setViewportSize(size);
       await openSculpt(page, base);
       ok(`Sculpt at ${at}`, await measure(page, null), false);
-      await page.keyboard.press('Shift+P');
+      await page.keyboard.press('Shift+4');
       await page.waitForFunction(() => document.querySelector('.bz-ws__step--on')?.textContent?.includes('Present'), null, { timeout: 8000 }).catch(() => {});
       ok(`Present at ${at}`, await measure(page, null), false);
       await openArmature(page, base);

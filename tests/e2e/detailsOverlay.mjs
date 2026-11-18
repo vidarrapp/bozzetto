@@ -289,6 +289,28 @@ export const suites = {
       session.layers.setActive(session.getMesh(), null);
     });
     t.ok(await waitFact(page, 'layer', 'v === "Base"'), 'and Base when the base is active');
+    // In Paint the Layer line is the active paint layer (or group), not the sculpt layer.
+    await page.evaluate(() => window.__sculpt.paintWorkspace.enter());
+    await page.waitForFunction(() => window.__sculpt.paintWorkspace.isOn(), null, { timeout: 5000 });
+    t.ok(await waitFact(page, 'layer', 'v === null'), 'in Paint there is no Layer line while the object has no paint layers (the sculpt layer is not shown there)');
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.paint.add(session.getMesh(), 'Cheeks');
+    });
+    t.ok(await waitFact(page, 'layer', 'v === "Cheeks"'), `in Paint, Layer names the active paint layer (${await fact(page, 'layer')})`);
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.paint.setActive(session.getMesh(), session.paint.addGroup(session.getMesh(), 'Skin'));
+    });
+    t.ok(await waitFact(page, 'layer', 'v === "Skin"'), 'and the group when a group is active');
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.paint.setActive(session.getMesh(), null);
+    });
+    t.ok(await waitFact(page, 'layer', 'v === "Base"'), 'and Base when the base is active');
+    await page.evaluate(() => window.__sculpt.paintWorkspace.leave());
+    await page.waitForFunction(() => !window.__sculpt.paintWorkspace.isOn(), null, { timeout: 5000 });
+    t.ok(await waitFact(page, 'layer', 'v === "Base"'), "back in Sculpt it is the sculpt layer's again");
   },
 
   async detailsTab(page, base, t) {

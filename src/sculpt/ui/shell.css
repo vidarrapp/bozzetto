@@ -75,7 +75,7 @@ body:is(.bz-shell, .bz-page) .bz-strip {
   /* The menus and the path keep their full width; the readout gives way. */
   grid-template-columns: minmax(min-content, 1fr) auto minmax(min-content, 1fr);
   align-items: center;
-  background: var(--bz-strip);
+  background: var(--bz-bar);
   color: var(--bz-text);
   font: 400 13px/var(--bz-strip-h) var(--bz-font);
   user-select: none;
@@ -2542,6 +2542,11 @@ body.bz-shell .panel--layers {
   padding: 4px 16px;
   color: var(--bz-text-3);
   font: 13px/16px var(--bz-font);
+}
+
+.layers-note__btn {
+  display: block;
+  margin-top: 8px;
 }
 
 .layers-foot {

@@ -12,7 +12,7 @@ export interface StatusToast {
    * How it went wrong. Given a button (Sign in again), the notice carries
    * it and stays long enough to be used, with a way to dismiss it sooner.
    */
-  fail(text: string, button?: HTMLButtonElement): void;
+  fail(text: string, button?: HTMLButtonElement, ms?: number): void;
 }
 
 /** How long a failure stays: long enough to be read, and to act on. */
@@ -37,12 +37,12 @@ export function statusToast(text: string): StatusToast {
       el.textContent = t;
     },
     done: (t) => finish(t, 'done', 2400),
-    fail: (t, button) => {
+    fail: (t, button, ms) => {
       if (!button) {
         finish(t, 'failed', FAIL_MS);
         return;
       }
-      finish(t, 'failed', ACTION_MS);
+      finish(t, 'failed', ms ?? ACTION_MS);
       // The words in a span of their own, so the notice still reads as one
       // line of text beside its buttons.
       const words = document.createElement('span');
@@ -61,6 +61,6 @@ export function statusToast(text: string): StatusToast {
 }
 
 /** A notice on its own, for an outcome with no progress before it. */
-export function failNotice(text: string, button?: HTMLButtonElement): void {
-  statusToast('').fail(text, button);
+export function failNotice(text: string, button?: HTMLButtonElement, ms?: number): void {
+  statusToast('').fail(text, button, ms);
 }

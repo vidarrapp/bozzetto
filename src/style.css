@@ -779,8 +779,7 @@ html.is-page body {
 }
 
 /* #app and #admin are fixed to the whole window by their id; the scroller
-   rule must outrank that, and carry the page's ground so the logotype's
-   lighten blend has something to blend with. */
+   rule must outrank that, and carry the page's ground. */
 html.is-page :is(#app, #admin, .page-scroll).page-scroll {
   background: var(--bz-strip);
   position: fixed;
@@ -4222,8 +4221,6 @@ body.is-sampling * {
   display: block;
   height: 64px;
   width: auto;
-  mix-blend-mode: lighten;
-  filter: grayscale(1);
 }
 
 /* The device question is above everything, Preferences (200) included. */
@@ -6783,14 +6780,12 @@ progress {
   line-height: 0;
 }
 
-/* The hand-drawn logotype: its picture carries a ground of its own, which
-   the lighten blend lets drop into the page's. */
+/* The hand-drawn logotype, drawn on no ground of its own (bozzetto-logotype.svg),
+   so it sits on whatever the page's is. */
 .landing__logo {
   display: block;
   height: 64px;
   width: auto;
-  mix-blend-mode: lighten;
-  filter: grayscale(1);
 }
 
 .landing__tagline,

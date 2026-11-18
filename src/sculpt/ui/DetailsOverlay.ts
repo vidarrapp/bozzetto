@@ -98,9 +98,11 @@ interface GroupCache {
  * the mesh, the size off its octree's bound, the hidden groups are counted
  * only when the groups record moved, and the mask is one pass over the
  * vertices' mask values (no allocation), made when the overlay asks - the
- * mode asks on its events and twice a second, never per frame.
+ * mode asks on its events and twice a second, never per frame. In Paint the
+ * Layer line names the active paint layer (or group), as in Sculpt it names
+ * the active sculpt layer.
  */
-export function makeSculptDetails(session: SculptSession): () => DetailLine[] {
+export function makeSculptDetails(session: SculptSession, inPaint: () => boolean = () => false): () => DetailLine[] {
   const groups: GroupCache = { mesh: null, version: -1, hidden: 0 };
   return () => {
     const mesh = session.getMesh();
@@ -146,8 +148,9 @@ export function makeSculptDetails(session: SculptSession): () => DetailLine[] {
       groups.hidden = n;
     }
     if (groups.hidden > 0) lines.push({ id: 'hidden', key: 'Hidden groups', value: String(groups.hidden) });
-    if (session.layers.has(mesh)) {
-      lines.push({ id: 'layer', key: 'Layer', value: session.layers.active(mesh)?.name ?? 'Base' });
+    const layers = inPaint() ? session.paint : session.layers;
+    if (layers.has(mesh)) {
+      lines.push({ id: 'layer', key: 'Layer', value: layers.active(mesh)?.name ?? 'Base' });
     }
     return lines;
   };

@@ -29,9 +29,23 @@ export interface MaterialState {
    * Sculpt mode) shows them - "Sculpt colours", true - or the albedo over
    * the whole of it - "Plain colour", false. Absent from looks saved
    * before the choice existed, which mean the model's own colours.
+   * Written alongside `colourSource`: true for Albedo and paint and for Paint
+   * only, false for Albedo only, so a build from before the third choice reads
+   * a look sensibly (it has two: the paint, or the albedo alone).
    */
   vertexColors?: boolean;
+  /**
+   * What an object in Sculpt shows: the albedo times the paint ('both', the
+   * default), the albedo alone ('albedo') or the paint alone ('paint', as
+   * under a white albedo, with the albedo unchanged). A look without it takes
+   * it from `vertexColors` (true is 'both', false is 'albedo').
+   */
+  colourSource?: ColourSource;
 }
+
+/** What a sculpt shows: albedo times paint, the albedo alone, the paint alone. */
+export type ColourSource = 'both' | 'albedo' | 'paint';
+export const isColourSource = (v: unknown): v is ColourSource => v === 'both' || v === 'albedo' || v === 'paint';
 
 interface MatcapConfig {
   id: string;
@@ -123,6 +137,21 @@ export class Materials {
    */
   private readonly maskDarkenU = uniform(MASK_DARKEN_DEFAULT);
   private maskTintOn = false;
+  /**
+   * The mask tint's switch as a value (1 on, 0 off) the colour node multiplies the mask by,
+   * so turning the tint on or off is a uniform and not a different shader: Present puts it
+   * away and brings it back at every switch, and a rebuilt shader there was a stall each way.
+   */
+  private readonly maskTintU = uniform(0);
+  /**
+   * What a sculpt shows, as values the colour node mixes by: the albedo's share (0 under
+   * 'paint') and the paint's (0 under 'albedo'), so the Colour choice is a value and not a
+   * different shader; and whether the poly group colours show (never in Present). A look that
+   * comes back is the shader it was, with nothing to build.
+   */
+  private readonly albedoU = uniform(1);
+  private readonly paintU = uniform(1);
+  private readonly groupU = uniform(0);
   /** Read albedo from the painted `color` attribute while sculpting. */
   private sculptVertexColor = false;
   /** The viewer's model carries painted colours (a published sculpt's COLOR_0). */
@@ -131,7 +160,7 @@ export class Materials {
    * The look's Plain colour: a painted model shows the albedo instead of
    * its paint. Never while sculpting, where the paint is the work.
    */
-  private plainColor = false;
+  private source: ColourSource = 'both';
   /** Read roughness/metalness from materialsPBR.x/.y - sculpt only: a
       published model has a colour attribute but no materialsPBR, and a
       shader reading a missing attribute is not an error you get to see. */
@@ -162,6 +191,7 @@ export class Materials {
 
   setSculptMaskTint(on: boolean): void {
     this.maskTintOn = on;
+    this.maskTintU.value = on ? 1 : 0;
     this.rebuildSculptColor();
   }
 
@@ -219,23 +249,74 @@ export class Materials {
     this.rebuildSculptColor();
   }
 
-  /** Plain colour (true) or the model's own paint (false); see MaterialState.vertexColors. */
-  setPlainColor(plain: boolean): void {
-    if (plain === this.plainColor) return;
-    this.plainColor = plain;
+  /**
+   * Several colour-state changes as one: the colour node is composed once, for
+   * where they end, not once for each step on the way (Present's entry turns
+   * the mask tint off and presenting on, and a state in between is a shader
+   * nobody sees).
+   */
+  batch(change: () => void): void {
+    this.batching++;
+    try {
+      change();
+    } finally {
+      this.batching--;
+      if (!this.batching && this.batchDirty) {
+        this.batchDirty = false;
+        this.rebuildSculptColor();
+      }
+    }
+  }
+  private batching = 0;
+  private batchDirty = false;
+
+  /**
+   * What a sculpt shows (see MaterialState.colourSource): which of the two
+   * factors, the albedo and the paint, the shader uses. Nothing is rewritten.
+   * A published model has two choices, its colours or its albedo alone
+   * ('albedo'); 'paint' is its colours too.
+   */
+  setColourSource(source: ColourSource): void {
+    if (source === this.source) return;
+    this.source = source;
     this.rebuildSculptColor();
   }
 
-  /**
-   * Whether the Lit colour reads the `color` attribute: always while
-   * sculpting, and for a painted model unless the look says Plain colour.
-   */
-  private readsVertexColor(): boolean {
-    if (this.sculptVertexColor) return !(this.presenting && this.plainColor);
-    return this.modelVertexColor && !this.plainColor;
+  getColourSource(): ColourSource {
+    return this.source;
   }
 
+  /** Plain colour (true) or the model's own paint (false): the viewer's two choices. */
+  setPlainColor(plain: boolean): void {
+    this.setColourSource(plain ? 'albedo' : 'both');
+  }
+
+  /** Whether the Lit colour reads the `color` attribute (the albedo alone does not). */
+  private readsVertexColor(): boolean {
+    if (this.sculptVertexColor) return this.source !== 'albedo';
+    return this.modelVertexColor && this.source !== 'albedo';
+  }
+
+  /**
+   * The colour nodes composed for each state (see rebuildSculptColor), kept so
+   * a state that comes back is the same graph and the renderer finds its
+   * shader again instead of building one: Present and back is two states, not
+   * a rebuild each way.
+   */
+  private readonly colorGraphs = new Map<string, { color: unknown; rough: unknown; metal: unknown }>();
+
+  /** The state key each colour material was last composed for. */
+  private readonly appliedKey = new Map<string, string>();
+
   private rebuildSculptColor(): void {
+    this.albedoU.value = this.source === 'paint' ? 0 : 1;
+    this.paintU.value = this.source === 'albedo' ? 0 : 1;
+    this.groupU.value = this.groupColorsOn && this.sculptVertexColor && !this.presenting ? 1 : 0;
+    if (this.batching) {
+      this.batchDirty = true;
+      return;
+    }
+    let changed = false;
     for (const id of ['lit', 'matcap']) {
       const m = this.registry.get(id) as MeshStandardNodeMaterial;
       // Roughness and metalness are per-vertex too - SculptGL keeps them in
@@ -243,6 +324,23 @@ export class Materials {
       // is what lets one object be matte clay and the next one polished
       // without a second three.js material. Lit only: a matcap bakes its
       // own shading and has nothing to do with either.
+      const stateKey = [id, this.sculptVertexColor, this.sculptVertexColor ? '' : this.readsVertexColor(), this.sculptVertexColor ? '' : this.source, this.sculptVertexPBR, this.groupColorsOn && this.sculptVertexColor, this.sculptVertexPBR || this.maskTintOn].join('|');
+      // The state this material already shows: nothing to rebuild (a rebuild is a shader, and a switch of workspace must not cost one).
+      if (this.appliedKey.get(id) === stateKey) continue;
+      this.appliedKey.set(id, stateKey);
+      changed = true;
+      const kept = this.colorGraphs.get(stateKey);
+      if (kept) {
+        if (id === 'lit') {
+          m.roughnessNode = kept.rough as MeshStandardNodeMaterial['roughnessNode'];
+          m.metalnessNode = kept.metal as MeshStandardNodeMaterial['metalnessNode'];
+        }
+        m.colorNode = kept.color as MeshStandardNodeMaterial['colorNode'];
+        m.needsUpdate = true;
+        continue;
+      }
+      let rough: unknown = null;
+      let metal: unknown = null;
       if (id === 'lit') {
         type FloatNode = ReturnType<typeof float>;
         const pbr = attribute('materialsPBR', 'vec3') as unknown as {
@@ -250,8 +348,10 @@ export class Materials {
           y: FloatNode;
         };
         const on = this.sculptVertexPBR;
-        m.roughnessNode = (on ? pbr.x : null) as MeshStandardNodeMaterial['roughnessNode'];
-        m.metalnessNode = (on ? pbr.y : null) as MeshStandardNodeMaterial['metalnessNode'];
+        rough = on ? pbr.x : null;
+        metal = on ? pbr.y : null;
+        m.roughnessNode = rough as MeshStandardNodeMaterial['roughnessNode'];
+        m.metalnessNode = metal as MeshStandardNodeMaterial['metalnessNode'];
       }
       // The TSL runtime hands back fluent proxies; the published typings
       // for attribute()/materialColor lag behind, hence the casts.
@@ -275,7 +375,8 @@ export class Materials {
       if (id === 'lit') {
         if (this.sculptVertexColor) {
           const albedo = userData('albedo', 'color') as unknown as Vec3Node;
-          node = this.readsVertexColor() ? albedo.mul(attribute('color', 'vec3')) : albedo;
+          // Both factors always, each mixed to white by its value (see albedoU): Albedo, Paint and Both are one shader.
+          node = mix(vec3(1, 1, 1), albedo, this.albedoU).mul(mix(vec3(1, 1, 1), attribute('color', 'vec3'), this.paintU));
         } else if (this.readsVertexColor()) {
           node = attribute('color', 'vec3');
         }
@@ -285,8 +386,9 @@ export class Materials {
       // Flat: each triangle takes its provoking corner's colour, which
       // GeometrySync turns the triangles to make its face's group's, so a
       // border between groups is crisp along the face edges.
-      if (this.groupColorsOn && this.sculptVertexColor && !this.presenting) {
-        node = varying(attribute('groupColor', 'vec3')).setInterpolation('flat', 'first');
+      if (this.groupColorsOn && this.sculptVertexColor) {
+        const flat = varying(attribute('groupColor', 'vec3')).setInterpolation('flat', 'first');
+        node = mix((node ?? materialColor) as unknown as Vec3Node, flat as unknown as Vec3Node, this.groupU);
       }
       // How much of the surface counts as masked: the vertex mask when the
       // tint is on, and the whole object when it is locked (owner call: a
@@ -295,9 +397,9 @@ export class Materials {
       // mesh's userData - the one material serves every sculpt object.
       type FloatNode = ReturnType<typeof float>;
       let covered: FloatNode | null = null;
-      if (this.maskTintOn) {
+      if (this.sculptVertexPBR || this.maskTintOn) {
         const materialsPBR = attribute('materialsPBR', 'vec3') as unknown as Vec3Node;
-        covered = materialsPBR.z.clamp(0, 1).oneMinus() as unknown as FloatNode;
+        covered = materialsPBR.z.clamp(0, 1).oneMinus().mul(this.maskTintU) as unknown as FloatNode;
       }
       if (this.sculptVertexPBR) {
         const locked = userData('locked', 'float') as unknown as FloatNode;
@@ -310,9 +412,10 @@ export class Materials {
       // Same cast rationale as above: the published node typings are
       // narrower than what the TSL runtime actually accepts here.
       m.colorNode = node as unknown as MeshStandardNodeMaterial['colorNode'];
+      this.colorGraphs.set(stateKey, { color: node, rough, metal });
       m.needsUpdate = true;
     }
-    this.onColorNodeChange?.();
+    if (changed) this.onColorNodeChange?.();
     this.onChange?.();
   }
 
@@ -430,7 +533,8 @@ export class Materials {
       metalness: lit.metalness,
       flatShading: this.flatShading,
       matcapIndex: this.matcapIndex,
-      vertexColors: !this.plainColor,
+      vertexColors: this.source !== 'albedo',
+      colourSource: this.source,
     };
   }
 
@@ -443,7 +547,9 @@ export class Materials {
     if (finite(state.metalness)) this.setMetalness(Math.min(1, Math.max(0, state.metalness)));
     if (typeof state.matcapIndex === 'number') this.setMatcapIndex(state.matcapIndex);
     if (typeof state.flatShading === 'boolean') this.setFlatShading(state.flatShading);
-    if (typeof state.vertexColors === 'boolean') this.setPlainColor(!state.vertexColors);
+    // The third choice where the look has it; an older look has the boolean alone.
+    if (isColourSource(state.colourSource)) this.setColourSource(state.colourSource);
+    else if (typeof state.vertexColors === 'boolean') this.setPlainColor(!state.vertexColors);
   }
 
   dispose(): void {

@@ -233,6 +233,7 @@ place, each only where the place has it.
   the panel toggles for the tabs the place has, then Hide interface; then
   Armature, Sculpt, Paint and Present where the place has the workspace path,
   the one you are in and any that cannot be reached greyed out with the reason.
+  On the Sculpt page each shows its key (Shift+1 to 4, `ws.*`).
   In Paint the panel toggles are Scene, Layers, Material, Tool and Reference.
   In the viewer there is one subject, so one Frame all, on F. Cycle ground
   is G only, and stays in the hotkey guide.
@@ -297,7 +298,8 @@ place, each only where the place has it.
 - Move light
 - Hide interface
 
-- Paint workspace (Shift+B) and Present mode
+- Armature (Shift+1), Sculpt (Shift+2), Paint (Shift+3) and Present (Shift+4)
+  (see "The three workspaces as tabs")
 
 Every toggle in View carries a check, so the menu keeps a check column.
 
@@ -391,7 +393,7 @@ document itself scrolls, and there is no CSS switch to turn that off.
 
 ### Details overlay
 
-- Plain text at the top left of the 3D view in Sculpt and Armature: no box,
+- Plain text at the top left of the 3D view in Sculpt, Paint and Armature: no box,
   no background, only the view's faint soft shade under the letters (no outline), 11 to 13px, Familjen Grotesk for names and labels and Martian
   Mono for numbers; values in the light text colour, names in the second one. One fact a line, only those that
   apply. Sculpt: the active object's name, Tris, Quads (when the mesh has
@@ -399,7 +401,9 @@ document itself scrolls, and there is no CSS switch to turn that off.
   selected" when more than one is), Size height by width by depth in cm
   (real units only), Symmetry X, Y or Z when on, Masked n% when anything is
   masked, Hidden groups n, and Layer (the active layer's name, Base when the
-  base is active) when the object has layers. Armature: the figure's name,
+  base is active) when the object has layers; in Paint the Layer line is the
+  active paint layer (or group), Base when Base is active, when the object has
+  paint layers. Armature: the figure's name,
   Height, Tris, the selected joint or handle, Symmetry when on.
 - It stands under the strip and the tab row. With a left panel open it moves
   to the right of the panel. Tab hides it with the left side of the interface.
@@ -761,12 +765,46 @@ byte a vertex of the highest level (255 shows the layer, 0 hides it where the
 working mask protected), saved run-length; records are version 2 and old
 records open.
 
+## The three workspaces as tabs
+
+Sculpt, Paint and Present are tabs of one mode (owner, 2026-11-18): from any
+of them to any other in one step, and each keeps its own panels and tool.
+
+- **Keys.** `ws.armature` Shift+1, `ws.sculpt` Shift+2, `ws.paint` Shift+3,
+  `ws.present` Shift+4 (rebindable, in the View menu and the hotkey guide),
+  each straight to that workspace from any other; the one you are in does
+  nothing. These are the only workspace keys: Shift+B and Shift+P are gone
+  (`ui.paint` and `ui.present` no longer exist; a rebind of either made in
+  Preferences carries over to `ws.paint` / `ws.present` when the keymap
+  loads). Esc does not leave Present (owner, 2026-11-18): it closes the
+  menu, window or field that is open and shows a hidden interface, as
+  everywhere. A chord is Shift and the
+  digit's physical key (`event.code`, `Digit1` to `Digit4`), so a Swedish keyboard (Shift+2 types
+  `"`) and a US one (`@`) agree; where a keyboard sends no `code` the key does
+  not match (nothing guesses from the character).
+- **Panels.** Each workspace keeps which panel is open on each side (at most
+  one a side), on the device (`bz.panels.sculpt`, `.paint`, `.present`).
+  Entering opens what it last had and puts the other's away. First visit:
+  Sculpt as it always began; Paint with Layers at the left and Tool at the
+  right; Present with Output at the right and nothing at the left. Present of
+  a published project (the owner's Frames and Project tabs) is another page
+  with its own memory in the page only; it does not share Present's.
+- **Tool.** Paint comes back to the paint tool it last had (kept on the
+  device); Sculpt to the one it left.
+- **Nothing stops a switch.** It is refused only mid-stroke or mid-drag. No
+  question is asked on the way between the three (Armature's step asks, as it
+  leaves the page). Kept across a switch: the camera, the active object and
+  selection, the undo history, symmetry and the scene's look. Present entered
+  from Paint is left by a key or the path to the workspace asked for (the
+  turntable stopped, a clip being saved cancelled), landing on that
+  workspace's own panels and tool.
+
 ## The Paint workspace
 
 A workspace of the Sculpt page, as Present from Sculpt is: **Armature ›
-Sculpt › Paint › Present**. Shift+B (the keymap's `ui.paint`, rebindable)
-toggles it; View, Paint and the path's Paint step go in, the path's Sculpt
-step and Shift+B come out. The page's address has `paint=1` while it is up
+Sculpt › Paint › Present**. Shift+3 (the keymap's `ws.paint`, rebindable)
+goes in; View, Paint and the path's Paint step go in too, and Shift+2, the
+path's Sculpt step and View, Sculpt come out. The page's address has `paint=1` while it is up
 (`/?sculpt=1&paint=1` opens in it). The body carries `paint-ws`.
 
 - **Bar.** Select on q, then Paint, Erase, Blur, Fill, Pick and Project on 1
@@ -777,24 +815,51 @@ step and Shift+B come out. The page's address has `paint=1` while it is up
   over any other Paint tool it does nothing.
 - **Tabs.** Left: Scene, Layers (paint layers here, sculpt layers in Sculpt).
   Right: Tool, Material, Reference. Model and Render are not Paint's (Render
-  returns in Present, entered from Paint).
-- **Present from Paint** returns to Paint (Esc, Shift+P). The View menu's panel
+  returns in Present, entered from Paint). Paint keeps its own open panels
+  (first visit: Layers and Tool) and comes back to its last paint tool.
+- **Present from Paint** is left by Shift+3 to Paint (or any other). The View menu's panel
   items are the workspace's own.
 - **Colour.** Nothing to switch on: paint shows in Sculpt, Paint and Present
   from Sculpt whatever the look says, so entering Paint neither changes
-  Colour nor says anything. Colour (Present from Sculpt, Render panel) is
-  **Albedo and paint** (the albedo times the paint) or **Albedo only**; over a
-  published model with colours it stays Sculpt colours (the model's own
-  colours) or Plain colour (its albedo).
+  Colour nor says anything. Colour is one control, in the Material tab's
+  Display section after Mode, in Sculpt, Paint and Present from Sculpt (and not
+  in the Render tab): **Albedo and paint** (the albedo times the paint, the
+  default), **Albedo only** or **Paint only** (the paint as picked, as under a
+  white albedo; the object's albedo is not changed). It chooses which factor
+  the shader uses and rewrites nothing. It is stored in the look as
+  `colourSource` ('both', 'albedo', 'paint') beside `vertexColors`, which is
+  true for the first and last and false for Albedo only, so a look from
+  before opens right (false is Albedo only, true Albedo and paint) and a
+  build from before reads a new one sensibly. A publish writes what is seen:
+  the product, the paint alone for Paint only, and for Albedo only the product
+  with the look saying Plain colour. Over a published model with colours the
+  viewer keeps its two choices, Sculpt colours (the model's own colours) and
+  Plain colour (its albedo).
 - **Paint layers** use `ui/layerList.ts` with a reorder handle (a 44px grip at
   the row's left, `touch-action: none`, a line shows the drop place), a blend
   mode select (`ui/blendModes.ts`, 27 modes in Photoshop's six groups, a
   disabled line between groups) and an Opacity slider (0 to 100%). Menu:
   Rename, Duplicate, Merge down, Clear, Delete (red). Base's menu: Clear (back
   to white, one undo step; nothing happens while Base holds no paint) and Flatten
-  all. Base at the bottom is paintable. A stroke on a layer that is hidden or
+  all. Merge down composes the layer, with its own blend mode, opacity and
+  mask, onto the stored colours of the layer below (Base for the lowest
+  layer); the lower layer keeps its own mode, opacity and mask, so the result
+  equals merging two Normal layers and then setting the mode. Base at the
+  bottom is paintable. A stroke on a layer that is hidden or
   at 0% does not start and says why; Erase with Base picked says to pick a
   layer (Base is opaque).
+- **Dynamic topology.** An object with it on has no paint layers (the Layers
+  tab says "Paint layers need dynamic topology off." with a plain button,
+  Turn off dynamic topology; Sculpt's Layers tab has the same with "Layers need
+  dynamic topology off."). It can be painted without layers, the vendor's own
+  way, in white or the paint blended with white under the brush (new
+  triangles never get the albedo, which is not in the colours). On entering
+  Paint with an active object that has it on, and when the active object
+  changes to one in Paint, a notice (statusToast, about 8 s, not blocking) says
+  `Paint layers need dynamic topology off for "Sphere".` with a Turn off
+  button, once for each object a visit to the page; nothing holds up the
+  switch. Turn off is the Model panel's switch for that object: one undo step,
+  the shape and colours stay, the surface is triangles.
 - **The albedo multiplies the paint.** The shown colour is the object's
   material albedo times its paint, in linear space, per object and always.
   Base is white and opaque until painted, so an unpainted object is its

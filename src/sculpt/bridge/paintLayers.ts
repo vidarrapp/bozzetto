@@ -904,10 +904,13 @@ export class PaintLayers {
 
   /**
    * Join a layer into the one below it in its container, or into Base when
-   * it is the lowest in the stack. Into Base the result is exact. Into a
-   * layer, the lower layer keeps its own blend mode and opacity (a fill layer
-   * under it becomes an ordinary layer) and takes the upper one's colour by the
-   * layer-over-layer arithmetic (exact when the lower is Normal at 100%).
+   * it is the lowest in the stack. The upper layer, with its own blend mode,
+   * opacity and mask, is composed onto the lower layer's own stored colours
+   * (not onto the picture under both). The lower layer keeps its blend mode,
+   * opacity and mask, and its mask counts once, afterwards. Its mode plays no
+   * part, so the result equals merging two Normal layers and then setting the
+   * mode. A fill layer below becomes an ordinary layer. A hidden upper layer
+   * adds nothing.
    */
   mergeDown(mesh: SculptMesh, layer: PaintLayer): void {
     const p = this.per.get(mesh);
@@ -929,9 +932,15 @@ export class PaintLayers {
         for (const i of was) {
           const bi = i * 3;
           const below: [number, number, number] = [encodeSrgb(base[bi]), encodeSrgb(base[bi + 1]), encodeSrgb(base[bi + 2])];
-          src[0] = upper[i * 4] / 255;
-          src[1] = upper[i * 4 + 1] / 255;
-          src[2] = upper[i * 4 + 2] / 255;
+          if (layer.fill) {
+            src[0] = layer.fill[0];
+            src[1] = layer.fill[1];
+            src[2] = layer.fill[2];
+          } else {
+            src[0] = upper[i * 4] / 255;
+            src[1] = upper[i * 4 + 1] / 255;
+            src[2] = upper[i * 4 + 2] / 255;
+          }
           composite(layer.mode, below, src, (upper[i * 4 + 3] / 255) * this.maskAt(layer, i), layer.opacity, dissolveThreshold(i), tmp);
           base[bi] = decodeSrgb(tmp[0]);
           base[bi + 1] = decodeSrgb(tmp[1]);
@@ -945,8 +954,9 @@ export class PaintLayers {
       const out = lowerBytes ? new Uint8Array(lowerBytes) : new Uint8Array(p.n * 4);
       if (upper && layer.visible) {
         for (const i of was) {
-          const ab = (out[i * 4 + 3] / 255) * this.maskAt(lower, i);
-          const as = (upper[i * 4 + 3] / 255) * layer.opacity * this.maskAt(layer, i);
+          const ab = out[i * 4 + 3] / 255;
+          let as = (upper[i * 4 + 3] / 255) * layer.opacity * this.maskAt(layer, i);
+          if (layer.mode === 'dissolve') as = dissolveThreshold(i) < as ? 1 : 0;
           const ar = ab + as * (1 - ab);
           if (ar <= 0) continue;
           const cb: [number, number, number] = [out[i * 4] / 255, out[i * 4 + 1] / 255, out[i * 4 + 2] / 255];
@@ -960,8 +970,6 @@ export class PaintLayers {
       lower.rgba = out;
       lower.fill = null;
       lower.kind = 'layer';
-      // The lower layer's mask was applied into the bytes above.
-      lower.mask = null;
     }
     p.list = p.list.filter((x) => x !== layer);
     p.active = at > 0 ? peers[at - 1] : (p.list[0] ?? null);

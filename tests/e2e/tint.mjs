@@ -223,6 +223,334 @@ export const suites = {
     t.ok(first[2] > first[1] || first[0] > 30, `and the first its own (${first})`);
   },
 
+  // The Colour choice (owner, 2026-11-18): albedo and paint, albedo only, paint only. Which of the two
+  // factors the shader uses; nothing is rewritten. In the Material tab, in Sculpt, Paint and Present.
+  async tintColour(page, base, t) {
+    mkdirSync(SHOTS, { recursive: true });
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await ready(page, base);
+    await setAlbedo(page, '#c46a3a');
+    t.ok(await page.evaluate(() => window.__pt.stroke(window.__pt.T.PAINT, [1, 0, 0], 0, 0, 90, 1)), 'a red stroke over a clay albedo');
+    await page.evaluate(() => window.__sculpt.library.markPainted(window.__pt.mesh()));
+    await openPanel(page, 'Material');
+    const where = () =>
+      page.evaluate(() => {
+        const has = (el) => !!el && [...el.querySelectorAll('select')].some((s) => [...s.options].some((o) => o.textContent === 'Paint only'));
+        const panels = [...document.querySelectorAll('.panel')].filter((p) => has(p)).map((p) => p.dataset.panel);
+        const sel = [...document.querySelectorAll('.panel--material select')].find((s) => [...s.options].some((o) => o.textContent === 'Paint only'));
+        const order = sel ? [...sel.closest('.section').children].map((c) => c.firstElementChild?.textContent ?? c.querySelector('h3')?.textContent) : [];
+        return { panels, options: sel ? [...sel.options].map((o) => o.textContent).join(' / ') : null, value: sel?.value ?? null, order: order.join() };
+      });
+    let w = await where();
+    t.eq(JSON.stringify(w.panels), '["Material"]', 'the Colour choice is in the Material tab alone (Paint)');
+    t.eq(w.options, 'Albedo and paint / Albedo only / Paint only', 'with three choices');
+    t.eq(w.value, 'both', 'albedo and paint is the default');
+    t.ok(/Mode,Colour/.test(w.order), `after Mode in the Display section (${w.order})`);
+    const pick = (v) =>
+      page.evaluate((v) => {
+        const sel = [...document.querySelectorAll('.panel--material select')].find((s) => [...s.options].some((o) => o.textContent === 'Paint only'));
+        sel.value = v;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }, v);
+    const before = await colours(page);
+    const both = await centre(page);
+    const bothOut = await centre(page, 0, 190);
+    await pick('albedo');
+    const albedo = await centre(page);
+    const albedoOut = await centre(page, 0, 190);
+    await pick('paint');
+    const paint = await centre(page);
+    const paintOut = await centre(page, 0, 190);
+    await openPanel(page, 'Material');
+    await page.screenshot({ path: join(SHOTS, 'paint-only.png') });
+    const after = await colours(page);
+    t.ok(before.length === after.length && before.every((v, i) => v === after[i]), 'switching the choice leaves the colour array exactly as it was');
+    t.ok(both[0] > both[1] * 2 && bothOut[0] > bothOut[2], `Albedo and paint: red times clay over the stroke, clay beside it (${both}, ${bothOut})`);
+    t.ok(!(albedo[0] > albedo[1] * 2.2) && albedo[0] > albedo[2] * 1.3 && albedoOut[0] > albedoOut[2] * 1.3, `Albedo only: clay everywhere, the stroke not shown (${albedo}, ${albedoOut})`);
+    t.ok(paint[0] > 150 && paint[0] > paint[1] * 2 && paint[0] > paint[2] * 2, `Paint only: red as picked over the stroke (${paint})`);
+    t.ok(Math.min(...paintOut) > 120 && Math.max(...paintOut) - Math.min(...paintOut) < 40, `and white where nothing was painted (${paintOut})`);
+    t.eq(await page.evaluate(() => window.__sculpt.library.list()[0].albedo), '#c46a3a', 'the albedo is unchanged');
+    const st = await page.evaluate(() => window.__sculpt.viewer.materials.getMaterialState());
+    t.ok(st.colourSource === 'paint' && st.vertexColors === true, `stored as colourSource "paint" with vertexColors true, which a build before it reads as the paint (${st.colourSource}, ${st.vertexColors})`);
+    await pick('albedo');
+    t.ok((await page.evaluate(() => window.__sculpt.viewer.materials.getMaterialState())).vertexColors === false, 'Albedo only writes vertexColors false, as Plain colour did');
+
+    // Pick returns the stored paint colour in every mode.
+    await page.evaluate(() => {
+      const c = window.__sculpt.session.getSculptManager().getTool(8)._color;
+      c[0] = c[1] = c[2] = 0.5;
+    });
+    t.ok(await page.evaluate(() => window.__pt.stroke(window.__pt.T.PICK)), 'a press with Pick lands under Albedo only');
+    const picked = await page.evaluate(() => [...window.__sculpt.session.getSculptManager().getTool(8)._color]);
+    t.ok(picked[0] > 0.99 && picked[1] < 0.01, `Pick returns the stored paint (${picked.map((v) => v.toFixed(3))})`);
+
+    // An old look: the boolean alone.
+    const looks = await page.evaluate(async () => {
+      const m = window.__sculpt.viewer.materials;
+      const out = [];
+      for (const material of [{ vertexColors: false }, { vertexColors: true }, { colourSource: 'paint', vertexColors: true }, { colourSource: 'sparkle', vertexColors: false }]) {
+        await window.__sculpt.viewer.applyLook({ material });
+        out.push(m.getColourSource());
+      }
+      return out.join();
+    });
+    t.eq(looks, 'albedo,both,paint,albedo', 'an old look with the boolean opens right (false is albedo only, true albedo and paint), the new value wins, a bad one falls back to the boolean');
+
+    // Publish writes what is seen.
+    const pubOf = async (v) => {
+      await pick(v);
+      return page.evaluate(() => {
+        const c = window.__sculpt.publishColours();
+        const top = window.__pt.colours();
+        for (let i = 0; i < top.length / 3; i++) if (top[i * 3] > 0.99 && top[i * 3 + 1] < 0.01 && top[i * 3 + 2] < 0.01) return [c[i * 3], c[i * 3 + 1], c[i * 3 + 2]];
+        return null;
+      });
+    };
+    const k = [0.5521, 0.1441, 0.0423];
+    const pBoth = await pubOf('both');
+    const pAlb = await pubOf('albedo');
+    const pPaint = await pubOf('paint');
+    t.ok(pBoth && Math.abs(pBoth[0] - k[0]) < 0.01 && pBoth[1] < 0.01, `Albedo and paint publishes the product (${pBoth})`);
+    t.ok(pAlb && Math.abs(pAlb[0] - k[0]) < 0.01, `Albedo only publishes the product too, and the look says Plain colour (${pAlb})`);
+    t.ok(pPaint && pPaint[0] > 0.99 && pPaint[1] < 0.01, `Paint only publishes the paint alone (${pPaint})`);
+
+    // Save and reopen keeps it; it is there in Sculpt and in Present, and not in the Render tab.
+    await pick('paint');
+    await page.evaluate(async () => {
+      window.__bytes = await window.__sculpt.file.pack();
+    });
+    await page.evaluate(async () => {
+      await window.__sculpt.file.open(window.__bytes);
+    });
+    await page.waitForTimeout(500);
+    t.eq(await page.evaluate(() => window.__sculpt.viewer.materials.getColourSource()), 'paint', 'save and reopen keeps Paint only');
+    await page.evaluate(() => window.__sculpt.paintWorkspace.leave());
+    await openPanel(page, 'Material');
+    w = await where();
+    t.ok(JSON.stringify(w.panels) === '["Material"]' && w.value === 'paint', `in Sculpt it is in the Material tab, on Paint only (${JSON.stringify(w)})`);
+    await page.evaluate(() => window.__sculpt.present.enter());
+    await page.waitForTimeout(500);
+    await openPanel(page, 'Material');
+    w = await where();
+    t.ok(JSON.stringify(w.panels) === '["Material"]' && w.value === 'paint', `and in Present (${JSON.stringify(w)})`);
+  },
+
+  // Objects with dynamic topology on: the tint rule holds on them (white colours, the albedo times the
+  // paint, refinement under the brush making white or interpolated colours), they have no paint layers,
+  // and in Paint a notice offers to turn it off (without ever holding the switch).
+  async tintDynamic(page, base, t) {
+    mkdirSync(SHOTS, { recursive: true });
+    await page.setViewportSize({ width: 1180, height: 820 });
+    const asked = [];
+    page.on('dialog', (d) => {
+      asked.push(d.message());
+      void d.accept();
+    });
+    const notices = () => page.evaluate(() => [...document.querySelectorAll('.sculpt-toast')].map((e) => e.textContent).filter((s) => /dynamic topology off/.test(s)));
+    const clearToasts = () => page.evaluate(() => document.querySelectorAll('.sculpt-toast').forEach((e) => e.remove()));
+    await openForInput(page, base);
+    await page.evaluate(install);
+
+    // A static object: entering Paint says nothing.
+    await page.evaluate(() => window.__sculpt.paintWorkspace.enter());
+    await page.waitForTimeout(400);
+    t.eq((await notices()).length, 0, 'entering Paint with a static object shows no notice');
+    await page.evaluate(() => window.__sculpt.paintWorkspace.leave());
+
+    // Dynamic topology on: white colours, the albedo shows.
+    await page.evaluate(() => window.__sculpt.session.toggleDynamicTopology());
+    t.ok(await page.evaluate(() => window.__sculpt.session.isDynamicTopology()), 'dynamic topology is on for the object');
+    await setAlbedo(page, '#c46a3a');
+    const white = await page.evaluate(() => {
+      const m = window.__sculpt.session.getMesh();
+      const c = m.getColors();
+      let off = 0;
+      for (let i = 0; i < m.getNbVertices() * 3; i++) if (c[i] !== 1) off++;
+      return off;
+    });
+    t.eq(white, 0, 'an unpainted dynamic object holds white colours');
+    const clay = await centre(page);
+    t.ok(clay[0] > clay[2] * 1.3, `and shows its albedo (${clay})`);
+
+    // Entering Paint: the workspace first, then the notice; the button is there.
+    await page.evaluate(() => window.__sculpt.paintWorkspace.enter());
+    const at = await page.evaluate(() => ({ paint: document.body.classList.contains('paint-ws'), on: window.__sculpt.paintWorkspace.isOn() }));
+    t.ok(at.paint && at.on, 'the switch to Paint was not held up');
+    await page.waitForTimeout(300);
+    const first = await notices();
+    t.eq(first.length, 1, 'a notice shows for the dynamic object');
+    t.ok(first[0].startsWith('Paint layers need dynamic topology off for "Sphere".') && first[0].includes('Turn off'), `with its words and a Turn off button (${first[0]})`);
+    t.eq(asked.length, 0, 'and no question window');
+    await clearToasts();
+    await page.evaluate(() => window.__sculpt.paintWorkspace.leave());
+    await page.evaluate(() => window.__sculpt.paintWorkspace.enter());
+    await page.waitForTimeout(300);
+    t.eq((await notices()).length, 0, 'it is not shown twice for the same object');
+
+    // The Layers panel's sentence and button.
+    await openPanel(page, 'Layers');
+    const panel = await page.evaluate(() => {
+      const n = document.querySelector('.layers-paint .layers-note');
+      return { shown: !!n && !n.hidden, text: n?.textContent ?? '' };
+    });
+    t.ok(panel.shown && /^Paint layers need dynamic topology off\./.test(panel.text) && /Turn off dynamic topology/.test(panel.text), `the Layers panel has the sentence and the button (${panel.text})`);
+
+    // A red stroke: pure red stored, new vertices made of white and red, no albedo fill, render red times clay.
+    await page.evaluate(() => {
+      window.__nBefore = window.__sculpt.session.getMesh().getNbVertices();
+    });
+    t.ok(await page.evaluate(() => window.__pt.stroke(window.__pt.T.PAINT, [1, 0, 0], 0, 0, 90, 1)), 'a red stroke on the dynamic object');
+    await page.evaluate(() => window.__sculpt.library.markPainted(window.__sculpt.session.getMesh()));
+    const stored = await page.evaluate(() => {
+      const m = window.__sculpt.session.getMesh();
+      const c = m.getColors();
+      const n = m.getNbVertices();
+      let red = 0;
+      let odd = 0;
+      for (let i = 0; i < n; i++) {
+        const r = c[i * 3];
+        const g = c[i * 3 + 1];
+        const b = c[i * 3 + 2];
+        if (r > 0.99 && g < 0.01 && b < 0.01) red++;
+        // Everything else is white, or white blended toward red: r stays 1 and g equals b.
+        if (Math.abs(r - 1) > 1e-3 || Math.abs(g - b) > 1e-3) odd++;
+      }
+      return { red, odd, n, grew: n - window.__nBefore };
+    });
+    t.ok(stored.red > 10, `it stores pure red (${stored.red} vertices)`);
+    t.eq(stored.odd, 0, `and every other vertex is white or white blended with red, new ones included: no albedo fill (${stored.n} vertices, ${stored.grew} new)`);
+    const both = await centre(page);
+    t.ok(both[0] > both[1] * 2, `it renders red times the albedo (${both})`);
+    const arrBefore = await page.evaluate(() => Float32Array.from(window.__sculpt.session.getMesh().getColors()));
+    await openPanel(page, 'Material');
+    const pick = (v) =>
+      page.evaluate((v) => {
+        const sel = [...document.querySelectorAll('.panel--material select')].find((s) => [...s.options].some((o) => o.textContent === 'Paint only'));
+        sel.value = v;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }, v);
+    await pick('paint');
+    const paint = await centre(page);
+    const paintOut = await centre(page, 0, 190);
+    await pick('albedo');
+    const albedo = await centre(page);
+    await pick('both');
+    t.ok(paint[0] > 150 && paint[0] > paint[1] * 2 && Math.min(...paintOut) > 120, `Paint only shows red as picked and white elsewhere (${paint}, ${paintOut})`);
+    t.ok(albedo[0] > albedo[2] * 1.3 && !(albedo[0] > albedo[1] * 2.2), `Albedo only shows the clay (${albedo})`);
+    const arrAfter = await page.evaluate(() => Float32Array.from(window.__sculpt.session.getMesh().getColors()));
+    t.ok(arrBefore.length === arrAfter.length && arrBefore.every((v, i) => v === arrAfter[i]), 'switching the choice leaves the colours as they were');
+    await page.evaluate(() => {
+      const c = window.__sculpt.session.getSculptManager().getTool(8)._color;
+      c[0] = c[1] = c[2] = 0.5;
+    });
+    await page.evaluate(() => window.__pt.stroke(window.__pt.T.PICK));
+    const picked = await page.evaluate(() => [...window.__sculpt.session.getSculptManager().getTool(8)._color]);
+    t.ok(picked[0] > 0.99 && picked[1] < 0.02, `Pick returns the paint (${picked.map((v) => v.toFixed(3))})`);
+
+    // An old scene (version 4) with a painted dynamic object opens as the static object it saves as, looking the same.
+    const old = await page.evaluate(async () => {
+      const { session, library, file } = window.__sculpt;
+      const mesh = session.getMesh();
+      const c = mesh.getColors();
+      const n = mesh.getNbVertices();
+      const sum = (arr, k) => arr.reduce((a, v, i) => a + (i % 3 === k ? v : 0), 0);
+      const before = Float32Array.from(c.subarray(0, n * 3));
+      const rec = session.serializeScene();
+      library.saveInto(rec);
+      rec.v = 4;
+      const bytes = await file.packRecord(rec);
+      await file.open(bytes);
+      const m2 = session.getMesh();
+      const c2 = m2.getColors();
+      let worst = 0;
+      const n2 = m2.getNbVertices();
+      for (let i = 0; i < Math.min(n, n2) * 3; i++) worst = Math.max(worst, Math.abs(c2[i] - before[i]));
+      return { n, n2, worst, albedo: library.materialFor(m2).albedo, dyn: !!m2.isDynamic, sumR: sum(before, 0) };
+    });
+    t.ok(old.n === old.n2 && old.worst < 1e-6, `it opens with its colours as they were (${old.n} vertices, worst ${old.worst})`);
+    t.eq(old.albedo, '#ffffff', 'on a white albedo, as old painted objects do (the colours have the clay in them)');
+    t.ok(!old.dyn, 'as a static object, which is how dynamic objects are saved');
+
+    // Turn it on again, paint, then use the notice's button: the colours stay, a layer can be made.
+    await page.evaluate(() => window.__sculpt.paintWorkspace.leave());
+    await clearToasts();
+    await page.evaluate(() => window.__sculpt.session.toggleDynamicTopology());
+    await page.evaluate(() => window.__sculpt.paintWorkspace.enter());
+    await page.waitForTimeout(300);
+    t.eq((await notices()).length, 1, 'a new dynamic object gets its own notice');
+    await page.evaluate(() => {
+      const m = window.__sculpt.session.getMesh();
+      window.__keep = Float32Array.from(m.getColors().subarray(0, m.getNbVertices() * 3));
+    });
+    await page.evaluate(() => document.querySelector('[data-role="turn-off-dynamic"]').click());
+    await page.waitForTimeout(300);
+    const after = await page.evaluate(() => {
+      const m = window.__sculpt.session.getMesh();
+      return { dyn: !!m.isDynamic, notice: document.querySelectorAll('.sculpt-toast [data-role="turn-off-dynamic"]').length };
+    });
+    t.ok(!after.dyn && after.notice === 0, 'the notice\'s Turn off turns dynamic topology off and the notice goes');
+    await page.evaluate(() => window.__pt.undo());
+    t.ok(await page.evaluate(() => window.__sculpt.session.isDynamicTopology()), 'in one undo step');
+    await page.evaluate(() => window.__sculpt.session.redo());
+    const painted = await page.evaluate(() => {
+      const m = window.__sculpt.session.getMesh();
+      const c = m.getColors();
+      let red = 0;
+      for (let i = 0; i < m.getNbVertices(); i++) if (c[i * 3] > 0.99 && c[i * 3 + 1] < 0.01) red++;
+      const layer = window.__sculpt.session.paint.add(m);
+      return { red, made: !!layer, layers: window.__sculpt.session.paint.list(m).length };
+    });
+    t.ok(painted.red > 10 && painted.made, `the painted colours stay, and a layer can be made (${painted.red} red vertices)`);
+
+    // The colours stayed through the switch off.
+    t.ok(await page.evaluate(() => {
+      const m = window.__sculpt.session.getMesh();
+      const c = m.getColors();
+      return m.getNbVertices() * 3 === window.__keep.length && window.__keep.every((v, i) => Math.abs(v - c[i]) < 1e-6);
+    }), 'turning dynamic topology off kept the painted colours');
+
+    // Turning it on again, with a layer present, from the Model panel: it asks as it does today, and the paint stays.
+    await page.evaluate(() => window.__sculpt.paintWorkspace.leave());
+    asked.length = 0;
+    await openPanel(page, 'Model');
+    await page.evaluate(() => {
+      const box = [...document.querySelectorAll('label')].find((l) => /Dynamic topology/.test(l.textContent))?.querySelector('input');
+      box.click();
+    });
+    await page.waitForTimeout(800);
+    t.ok(asked.some((m) => /Turn on dynamic topology/.test(m)), `turning it on asks first (${asked.join(' | ')})`);
+    t.ok(await page.evaluate(() => window.__sculpt.session.isDynamicTopology()), 'and does it');
+    t.ok(await page.evaluate(() => {
+      const m = window.__sculpt.session.getMesh();
+      const c = m.getColors();
+      let red = 0;
+      for (let i = 0; i < m.getNbVertices(); i++) if (c[i * 3] > 0.99 && c[i * 3 + 1] < 0.01) red++;
+      return red > 10 && window.__sculpt.session.paint.list(m).length === 0;
+    }), 'with the paint kept as colours, the paint layer flattened into them');
+
+    // The panel's button, in Paint and in Sculpt.
+    await clearToasts();
+    await page.evaluate(() => window.__sculpt.paintWorkspace.enter());
+    await page.waitForTimeout(300);
+    await openPanel(page, 'Layers');
+    await page.evaluate(() => document.querySelector('.layers-paint .layers-note__btn').click());
+    await page.waitForTimeout(300);
+    t.ok(!(await page.evaluate(() => window.__sculpt.session.isDynamicTopology())), 'the Layers panel\'s button turns it off in Paint');
+    await page.evaluate(() => window.__sculpt.paintWorkspace.leave());
+    await clearToasts();
+    await page.evaluate(() => window.__sculpt.session.toggleDynamicTopology());
+    await openPanel(page, 'Layers');
+    const sculptNote = await page.evaluate(() => {
+      const n = document.querySelector('.layers-sculpt .layers-note');
+      return { shown: !!n && !n.hidden, text: n?.textContent ?? '' };
+    });
+    t.ok(sculptNote.shown && /^Layers need dynamic topology off\./.test(sculptNote.text), `Sculpt's Layers panel has the sentence and the button (${sculptNote.text})`);
+    await page.evaluate(() => document.querySelector('.layers-sculpt .layers-note__btn').click());
+    await page.waitForTimeout(300);
+    t.ok(!(await page.evaluate(() => window.__sculpt.session.isDynamicTopology())), 'its button turns it off in Sculpt');
+    t.eq(await page.evaluate(() => (document.querySelector('.sculpt-toast [data-role="turn-off-dynamic"]') ? 1 : 0)), 0, 'and entering Sculpt asked nothing');
+  },
+
   async tintOld(page, base, t) {
     const want = JSON.parse(readFileSync(join(FIX, 'old-scene.json'), 'utf8'));
     const bytes = [...readFileSync(join(FIX, 'old-scene.bozz'))];
