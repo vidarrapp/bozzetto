@@ -13,6 +13,7 @@ import type { SavedGroups } from './groupsRecord';
 import type { SavedLayers } from './layers';
 import type { SavedPaintLayers } from './paintLayersRecord';
 import type { SavedMeasure } from './measure';
+import type { SavedToolTable } from '../tools/toolSettings';
 import type { FileReferences } from '../../reference/board';
 import { deviceStore, mayStore, onDeviceChoice, DeviceStorageOff } from '../../ui/deviceStorage';
 
@@ -84,6 +85,16 @@ export interface SculptSettings {
    * flag and the active object's axis seed every brush then.
    */
   symmetry?: Record<number, BrushSymmetry>;
+  /**
+   * The same settings by tool id (`bz.clay`), one entry per tool, with the
+   * tool's own knobs (tools/toolSettings.ts). Written beside the numbered
+   * tables above, which stay as they were so an older build reads a newer
+   * scene; reading prefers this and falls back to them. Move's Falloff,
+   * Crease's Pinch and Polish's Plane lock and Build-up are saved here only.
+   */
+  tools?: SavedToolTable;
+  /** The table's revision (TOOLS_REV); a later one is not read. */
+  toolsRev?: number;
 }
 
 /** The tine rake's settings in a scene record (RakeBrush.settings, its preset id). */

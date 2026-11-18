@@ -433,6 +433,9 @@ export const suites = {
     const old = await page.evaluate(async () => {
       const { file, input } = window.__sculpt;
       const rec = await file.unpack(await file.pack());
+      // An older scene has no table by tool id (settings.tools): drop the one this build wrote, so the numbered curves set here are what opens.
+      delete rec.settings.tools;
+      delete rec.settings.toolsRev;
       const medium = input.toolCurve(6).presets.find((p) => p.id === 'medium').legacy.map((q) => [q.t, q.v]);
       rec.settings.curves = { 0: [[0, 1], [0.3, 0.9], [0.7, 0.2], [1, 0]], 6: medium };
       rec.settings.curvesRev = 1;
@@ -447,6 +450,8 @@ export const suites = {
     const legacy = await page.evaluate(async () => {
       const { file, input } = window.__sculpt;
       const rec = await file.unpack(await file.pack());
+      delete rec.settings.tools;
+      delete rec.settings.toolsRev;
       delete rec.settings.curves;
       delete rec.settings.curvesRev;
       rec.settings.alphas = { 0: 'clay01', 13: 'rake06' };

@@ -15,13 +15,15 @@
  */
 
 import { deviceStore, onDeviceChoice } from './deviceStorage';
+import { legacyKeyMoves, PLACE_COUNT, placeOfAction, slotAction, toolBars } from '../sculpt/tools/bars';
+import { toolById } from '../sculpt/tools/registry';
 
 export type KeyMode = 'sculpt' | 'view' | 'armature' | 'paint';
 
 /**
- * What the Paint workspace leaves out of Sculpt's keys: the sculpting
- * brushes (its bar has the paint tools on 1 to 6), Calipers and the
- * transform gizmo. Everything else in Sculpt's table answers there as it
+ * What the Paint workspace leaves out of Sculpt's keys: Calipers and the
+ * transform gizmo (the tool bar's places answer there too, and pick what
+ * Paint's bar holds). Everything else in Sculpt's table answers there as it
  * does in Sculpt: undo, size and strength, symmetry, masks, the levels, the
  * scene and the view.
  */
@@ -100,22 +102,10 @@ export const ACTIONS: ActionDef[] = [
   // --- sculpt: brushes ---
   { id: 'tool.select', label: 'Select tool (click; Shift adds, Ctrl+drag removes, Ctrl+Shift+drag adds; drag a marquee)', group: 'Brushes', mode: 'sculpt', chord: 'q' },
   { id: 'tool.calipers', label: 'Calipers (tap the model twice to measure; drag an end to move it)', group: 'Brushes', mode: 'sculpt', chord: 'c' },
-  { id: 'tool.crease', label: 'Crease', group: 'Brushes', mode: 'sculpt', chord: '1' },
-  { id: 'tool.move', label: 'Move', group: 'Brushes', mode: 'sculpt', chord: '2' },
-  { id: 'tool.clay', label: 'Standard (clay)', group: 'Brushes', mode: 'sculpt', chord: '3' },
-  { id: 'tool.inflate', label: 'Inflate', group: 'Brushes', mode: 'sculpt', chord: '4' },
-  { id: 'tool.pinch', label: 'Pinch', group: 'Brushes', mode: 'sculpt', chord: '5' },
-  { id: 'tool.flatten', label: 'Flatten', group: 'Brushes', mode: 'sculpt', chord: '6' },
-  { id: 'tool.rake', label: 'Rake (Shift still smooths)', group: 'Brushes', mode: 'sculpt', chord: '7' },
-  { id: 'tool.drag', label: 'Drag', group: 'Brushes', mode: 'sculpt', chord: '8' },
-  { id: 'tool.polish', label: 'Polish (flattens, keeps edges sharp)', group: 'Brushes', mode: 'sculpt', chord: '9' },
-  // The Paint workspace's tools, on the digits in the bar's order (Select stays on q).
-  { id: 'paint.paint', label: 'Paint (Alt + click samples a colour; Shift blurs)', group: 'Paint tools', mode: 'paint', chord: '1' },
-  { id: 'paint.erase', label: 'Erase (lowers the layer\'s alpha)', group: 'Paint tools', mode: 'paint', chord: '2' },
-  { id: 'paint.blur', label: 'Blur (softens the layer\'s colour and alpha)', group: 'Paint tools', mode: 'paint', chord: '3' },
-  { id: 'paint.fill', label: 'Fill (the layer, or the part that is not masked, with the colour)', group: 'Paint tools', mode: 'paint', chord: '4' },
-  { id: 'paint.pick', label: 'Pick (takes a colour from the model)', group: 'Paint tools', mode: 'paint', chord: '5' },
-  { id: 'paint.project', label: 'Project (paints a reference picture in the view onto the model)', group: 'Paint tools', mode: 'paint', chord: '6' },
+  // The ten number keys pick what sits in that place of the current workspace's
+  // tool bar (Sculpt's brushes, Paint's six tools). Their labels name the tool
+  // in the place when they are drawn (Keymap.labelFor).
+  ...Array.from({ length: PLACE_COUNT }, (_, i): ActionDef => ({ id: slotAction(i + 1), label: `Tool bar, place ${i + 1}`, group: 'Tool bar', mode: 'sculpt', chord: String((i + 1) % PLACE_COUNT) })),
   // --- sculpt: subdivision ---
   { id: 'subdiv.add', label: 'Subdivide', group: 'Subdivision', mode: 'sculpt', chord: 'ctrl+d' },
   { id: 'subdiv.up', label: 'Subdivision level up', group: 'Subdivision', mode: 'sculpt', chord: 'd' },
@@ -315,6 +305,24 @@ export class Keymap {
     return this.byId.get(key)?.chord ?? null;
   }
 
+  /**
+   * The words a row is listed by in a mode: its label, and for a place on the
+   * tool bar the tool that holds the place in that mode's bar ("Tool bar,
+   * place 3: Standard clay", or "...: empty").
+   */
+  labelFor(a: ActionDef, mode: KeyMode = 'sculpt'): string {
+    const place = placeOfAction(a.id);
+    if (!place) return a.label;
+    const id = toolBars.idAt(mode === 'paint' ? 'paint' : 'sculpt', place);
+    return `${a.label}: ${(id && toolById(id)?.name) || 'empty'}`;
+  }
+
+  /** Whether a place of a mode's tool bar holds a tool (the guide leaves the others out). */
+  placeFilled(a: ActionDef, mode: KeyMode = 'sculpt'): boolean {
+    const place = placeOfAction(a.id);
+    return !place || !!toolBars.idAt(mode === 'paint' ? 'paint' : 'sculpt', place);
+  }
+
   isOverridden(id: string): boolean {
     return this.overrides.has(this.keyOwner(id));
   }
@@ -432,6 +440,10 @@ export class Keymap {
       const parsed = JSON.parse(raw) as Record<string, string | null>;
       // Present and Paint had keys of their own (ui.present, ui.paint): a rebind carries over to the workspace keys.
       for (const [from, to] of [['ui.present', 'ws.present'], ['ui.paint', 'ws.paint']]) {
+        if (from in parsed && !(to in parsed)) parsed[to] = parsed[from];
+      }
+      // The tool keys became places on the bar (tool.crease, paint.erase ...): a rebind carries to the place that tool holds by default. Sculpt's go first, so where Paint's tool on the same place was rebound too, Sculpt's wins.
+      for (const [from, to] of legacyKeyMoves()) {
         if (from in parsed && !(to in parsed)) parsed[to] = parsed[from];
       }
       for (const [id, chord] of Object.entries(parsed)) {

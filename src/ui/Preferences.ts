@@ -233,7 +233,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
   };
   const beginCapture = (a: ActionDef): void => {
     capturing = a;
-    captureText.textContent = `Press a key for "${a.label}"`;
+    captureText.textContent = `Press a key for "${keymap.labelFor(a, mode)}"`;
     capture.hidden = false;
     window.addEventListener('keydown', onCaptureKey, true);
   };
@@ -253,8 +253,8 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
       const target = capturing;
       endCapture();
       void askWindow({
-        title: `Take ${chordParts(chord).join(' + ')} from ${taken.label}?`,
-        text: `${chordParts(chord).join(' + ')} is now "${taken.label}". It would be "${target.label}" instead.`,
+        title: `Take ${chordParts(chord).join(' + ')} from ${keymap.labelFor(taken, mode)}?`,
+        text: `${chordParts(chord).join(' + ')} is now "${keymap.labelFor(taken, mode)}". It would be "${keymap.labelFor(target, mode)}" instead.`,
         yes: 'Take it',
       }).then((yes) => {
         if (!yes) {
@@ -288,7 +288,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
       const r = div('prefs__row');
       const label = document.createElement('span');
       label.className = 'prefs__label';
-      label.textContent = a.label;
+      label.textContent = keymap.labelFor(a, mode);
       const key = document.createElement('button');
       key.type = 'button';
       key.className = 'prefs__key';
@@ -310,7 +310,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
       reset.className = 'prefs__reset';
       reset.textContent = '↺';
       reset.title = 'Back to the default';
-      reset.setAttribute('aria-label', `Reset ${a.label} to its default key`);
+      reset.setAttribute('aria-label', `Reset ${keymap.labelFor(a, mode)} to its default key`);
       reset.hidden = !keymap.isOverridden(a.id);
       reset.addEventListener('click', () => {
         keymap.reset(a.id);

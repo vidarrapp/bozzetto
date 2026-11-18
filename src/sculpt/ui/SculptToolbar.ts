@@ -1,4 +1,3 @@
-import Enums from '@sculpt-vendor/misc/Enums';
 // Flaticon uicons, solid straight (fi-ss-*), for the brushes and for the
 // Negative button (circle-half-stroke: one style for every icon, owner
 // call). Whole style sheets are imported
@@ -7,6 +6,9 @@ import Enums from '@sculpt-vendor/misc/Enums';
 import '../../ui/icons';
 import type { InputShell } from '../bridge/InputShell';
 import { liftedOn, onTap, TAP_CLICK_MS } from '../../ui/dom';
+import { chordLabel, keymap } from '../../ui/keymap';
+import { slotAction, toolBars } from '../tools/bars';
+import { toolById, type ToolDef, type Workspace } from '../tools/registry';
 
 // Inline-SVG overrides: an ./icons/<slot>.svg (slots below, e.g. flatten.svg
 // or negative.svg) replaces that button's font glyph at build time. This is
@@ -38,46 +40,13 @@ function eventTime(e: Event): number {
 }
 
 /**
- * The Calipers button's icon: the Flaticon uicons glyph below, unless an
- * `icons/calipers.svg` exists (the slot, see icons/README.md), which takes
- * its place with no code change. This is the one place to swap it.
- */
-const CALIPERS_SLOT = 'calipers';
-const CALIPERS_ICON = 'fi-ss-ruler-combined';
-
-/**
- * Palette-heading names per tool: the Sculpt panel's top section is named
- * for the ACTIVE brush ("Polish", not "Brush"), so it is clear whose
- * settings the sliders drive. Kept beside the toolbar's own tuple list -
- * whose labels double as tooltips and carry hints ("alt: pick colour")
- * that a heading should not.
- */
-export const TOOL_NAMES: Record<number, string> = {
-  [Enums.Tools.CREASE]: 'Crease',
-  [Enums.Tools.MOVE]: 'Move',
-  [Enums.Tools.BRUSH]: 'Standard clay',
-  [Enums.Tools.INFLATE]: 'Inflate',
-  [Enums.Tools.PINCH]: 'Pinch',
-  [Enums.Tools.FLATTEN]: 'Flatten',
-  [Enums.Tools.SMOOTH]: 'Smooth',
-  [Enums.Tools.RAKE]: 'Rake',
-  [Enums.Tools.PAINT_BLUR]: 'Paint blur',
-  [Enums.Tools.DRAG]: 'Drag',
-  [Enums.Tools.TWIST]: 'Polish',
-  [Enums.Tools.PAINT]: 'Paint',
-  [Enums.Tools.PAINT_ERASE]: 'Erase',
-  [Enums.Tools.BLUR]: 'Blur',
-  [Enums.Tools.FILL]: 'Fill',
-  [Enums.Tools.PICK]: 'Pick',
-  [Enums.Tools.PROJECT]: 'Project',
-  [Enums.Tools.MASKING]: 'Mask',
-};
-
-/**
- * The tool bar: the Select tool, the digit brushes and Transform in one
- * box at the bottom centre, each showing its icon with its hotkey digit
+ * The tool bar: the Select tool, the brushes and Transform in one
+ * box at the bottom centre, each showing its icon with its hotkey
  * as a corner badge (View > Hotkeys on tools shows or hides the digits)
- * and its name, with the hotkey, in a tooltip above it. Most iPads have
+ * and its name, with the hotkey, in a tooltip above it. The tools and
+ * their order are the registry's and the bars' (tools/registry.ts,
+ * tools/bars.ts); a brush's key is its place on the bar, read from the
+ * keymap, so a rebind shows here. Most iPads have
  * no keyboard, so this is the native way to swap brushes; buttons and
  * hotkeys stay in sync.
  *
@@ -122,9 +91,8 @@ export class SculptToolbar {
   }
   private readonly root: HTMLDivElement;
   private readonly negativeBtn: HTMLButtonElement;
-  private readonly brushBtns = new Map<number, HTMLButtonElement>();
-  /** The Paint workspace's tool buttons, hidden outside it. */
-  private readonly paintBtns = new Map<number, HTMLButtonElement>();
+  /** The buttons by tool id: Sculpt's brushes, the Paint workspace's tools once it has been entered, and the three modes. */
+  private readonly btns = new Map<string, HTMLButtonElement>();
   private paintOn = false;
   /** The Negative button, for the edge controls to stand. */
   get negativeEl(): HTMLButtonElement {
@@ -276,51 +244,17 @@ export class SculptToolbar {
 
     const center = document.createElement('div');
     center.className = 'sculpt-toolbar__group sculpt-toolbar__brushes';
-    const tools = Enums.Tools;
-    // Icon picks are Vidar's where the pack ships them in solid straight;
-    // the rest are the closest fi-ss matches (see the WS2b results note).
-    // The slot name (column 4) doubles as the inline-SVG override filename.
-    const brushes: Array<[number, string, string, string, string, string]> = [
-      [tools.CREASE, '1', 'Crease', 'crease', 'fi-ss-scalpel', 'Crease'],
-      [tools.MOVE, '2', 'Move', 'move', 'fi-ss-arrows', 'Move'],
-      [tools.BRUSH, '3', 'Standard (clay)', 'standard', 'fi-ss-screwdriver', 'Standard clay'],
-      [tools.INFLATE, '4', 'Inflate', 'inflate', 'fi-ss-expand-arrows-alt', 'Inflate'],
-      [tools.PINCH, '5', 'Pinch', 'pinch', 'fi-ss-compress', 'Pinch'],
-      [tools.FLATTEN, '6', 'Flatten', 'flatten', 'fi-ss-arrows-to-line', 'Flatten'],
-      // Smooth lost the digit to the Rake (owner call) but not the tool:
-      // holding shift still smooths, from any brush.
-      [tools.RAKE, '7', 'Rake (shift still smooths)', 'smooth', 'fi-ss-shredder', 'Rake'],
-      [tools.DRAG, '8', 'Drag', 'drag', 'fi-ss-hand-back-fist', 'Drag'],
-      [tools.TWIST, '9', 'Polish', 'polish', 'fi-ss-broom', 'Polish'],
-    ];
-    // Select at the far left, Transform at the far right (owner call): the
-    // two tools that are not brushes bracket the row.
-    this.selectBtn = toolButton('q', 'Select (q): click, shift adds, ctrl+drag removes, drag a marquee', 'select', 'fi-ss-cursor', 'Select');
-    onTap(this.selectBtn, () => this.onToggleSelect?.());
-    center.appendChild(this.selectBtn);
-    for (const [id, key, name, slot, icon, tip] of brushes) {
-      const btn = toolButton(key, name, slot, icon, tip);
-      onTap(btn, () => this.input.selectBrush(id));
-      this.brushBtns.set(id, btn);
-      center.appendChild(btn);
-    }
-
-    // Transform is not a brush: it has letter keys (t, and w/e/r for one
-    // kind of handle) and a gizmo instead of strokes, so it keeps its own
-    // button and active state rather than a digit slot. Its key shows as a
-    // badge like every other tool's (owner request).
-    this.transformBtn = toolButton('t', 'Transform (t): move, rotate and scale; w/e/r show one kind', 'transform', 'fi-ss-transformation-block', 'Transform');
-    onTap(this.transformBtn, () => this.onToggleTransform?.());
-    center.appendChild(this.transformBtn);
-
-    // Calipers measure and edit nothing, so like Select and Transform it
-    // is not a brush. Its glyph is the uicons ruler until a drawn one is
-    // dropped in as icons/calipers.svg (the slot name below is the swap).
-    this.measureBtn = toolButton('c', 'Calipers (c): tap the model twice to measure between the points', CALIPERS_SLOT, CALIPERS_ICON, 'Calipers');
-    onTap(this.measureBtn, () => this.onToggleMeasure?.());
-    center.appendChild(this.measureBtn);
-
     this.center = center;
+    // Select at the far left, Transform at the far right (owner call): the
+    // two tools that are not brushes bracket the row. They are not brushes:
+    // Transform has letter keys (t, and w/e/r for one kind of handle) and a
+    // gizmo instead of strokes, Calipers measures and edits nothing, and
+    // each keeps a button and an active state of its own rather than a
+    // place on the bar. Their keys show as badges like every other tool's.
+    this.selectBtn = this.modeButton('bz.select', () => this.onToggleSelect?.());
+    this.transformBtn = this.modeButton('bz.transform', () => this.onToggleTransform?.());
+    this.measureBtn = this.modeButton('bz.calipers', () => this.onToggleMeasure?.());
+    this.layout();
 
     this.root.append(center);
     document.body.appendChild(this.root);
@@ -331,51 +265,133 @@ export class SculptToolbar {
     this.input.onToolChange = () => this.refresh();
     // The arm clears when its stroke ends, which the shell sees first.
     this.input.onNegativeChange = () => this.refresh();
+    // A rebound key and a changed order both show on the badges and the tips.
+    this.offKeys = keymap.onChange(() => this.paintKeys());
+    this.offBars = toolBars.onChange(() => {
+      this.layout();
+      this.refresh();
+    });
     this.refresh();
   }
 
   /** The bar's own box of buttons, which the Paint workspace adds its tools to. */
   private center!: HTMLDivElement;
+  private offKeys: (() => void) | null = null;
+  private offBars: (() => void) | null = null;
 
-  /**
-   * The Paint workspace's own tools, made the first time Paint is entered
-   * (Sculpt's bar has nothing of them): the Select tool stays, on q, and the
-   * six tools follow on 1 to 6.
-   */
-  private buildPaintButtons(): void {
-    if (this.paintBtns.size) return;
-    const tools = Enums.Tools;
-    const paintTools: Array<[number, string, string, string, string, string]> = [
-      [tools.PAINT, '1', 'Paint (alt: pick colour, shift: blur)', 'paint', 'fi-ss-palette', 'Paint'],
-      [tools.PAINT_ERASE, '2', "Erase: lowers the layer's alpha", 'erase', 'fi-ss-eraser', 'Erase'],
-      [tools.BLUR, '3', 'Blur: softens the layer', 'blur', 'fi-ss-raindrops', 'Blur'],
-      [tools.FILL, '4', 'Fill: the layer, or the part that is not masked', 'fill', 'fi-ss-fill', 'Fill'],
-      [tools.PICK, '5', 'Pick: takes a colour from the model', 'pick', 'fi-ss-eye-dropper-half', 'Pick'],
-      [tools.PROJECT, '6', 'Project: paints a reference picture onto the model', 'project', 'fi-ss-projector', 'Project'],
-    ];
-    for (const [id, key, name, slot, icon, tip] of paintTools) {
-      const btn = toolButton(key, name, slot, icon, tip);
+  /** A button for Select, Transform or Calipers: the registry's icon and words, the tool's own key. */
+  private modeButton(id: string, onPress: () => void): HTMLButtonElement {
+    const btn = this.toolButtonFor(toolById(id) as ToolDef);
+    onTap(btn, onPress);
+    return btn;
+  }
+
+  /** A button for a registry tool: its icon, its name, and data-tool for whoever has to find it by name. */
+  private toolButtonFor(def: ToolDef): HTMLButtonElement {
+    const btn = toolButton('', def.label, def.slot ?? def.id, def.icon ?? '', def.name);
+    btn.dataset.tool = def.id;
+    this.btns.set(def.id, btn);
+    return btn;
+  }
+
+  /** The button of a brush on a workspace's bar, made on first need. */
+  private brushButton(id: string, ws: Workspace): HTMLButtonElement | null {
+    const have = this.btns.get(id);
+    if (have) return have;
+    const def = toolById(id);
+    if (!def || def.kind !== 'brush' || def.engine === null || !def.icon) return null;
+    const engine = def.engine;
+    const btn = this.toolButtonFor(def);
+    if (ws === 'paint') {
       btn.classList.add('sculpt-toolbar__btn--paint');
       btn.hidden = true;
-      onTap(btn, () => this.input.selectBrush(id));
-      this.paintBtns.set(id, btn);
-      this.center.appendChild(btn);
+    }
+    onTap(btn, () => this.input.selectBrush(engine));
+    return btn;
+  }
+
+  /**
+   * Put the buttons in the bars' order: Select, Sculpt's brushes, Transform,
+   * Calipers, then the Paint workspace's tools once they exist. The order
+   * is the bars' (tools/bars.ts); nothing here names a tool.
+   */
+  private layout(): void {
+    const ordered: HTMLButtonElement[] = [this.selectBtn];
+    for (const id of toolBars.order('sculpt')) {
+      const b = this.brushButton(id, 'sculpt');
+      if (b) ordered.push(b);
+    }
+    ordered.push(this.transformBtn, this.measureBtn);
+    // Paint's buttons wait for the first time Paint is entered; after that they follow the bar too.
+    if (this.paintBuilt) {
+      for (const id of toolBars.order('paint')) {
+        const b = this.brushButton(id, 'paint');
+        if (b) ordered.push(b);
+      }
+    }
+    // Buttons of a tool taken off a bar go away; they come back by being put on one again.
+    const keep = new Set(ordered);
+    for (const [id, b] of this.btns) {
+      if (!keep.has(b)) {
+        b.remove();
+        this.btns.delete(id);
+      }
+    }
+    this.center.append(...ordered);
+    this.applyVisibility();
+    this.paintKeys();
+  }
+
+  private paintBuilt = false;
+
+  /** Which workspace a button belongs to, for hiding it outside it. */
+  private applyVisibility(): void {
+    const paint = this.paintOn;
+    for (const [id, btn] of this.btns) {
+      const def = toolById(id);
+      if (!def) continue;
+      if (def.kind === 'mode') btn.hidden = paint && id !== 'bz.select';
+      else btn.hidden = toolBars.placeOf('paint', id) > 0 ? !paint : paint;
+    }
+  }
+
+  /**
+   * Badges, tips and accessible names from the keymap: a brush's key is its
+   * place on the bar, so what a person bound in Preferences is what shows.
+   */
+  private paintKeys(): void {
+    for (const [id, btn] of this.btns) {
+      const def = toolById(id);
+      if (!def) continue;
+      let action: string | null = null;
+      let place = 0;
+      if (def.kind === 'mode') action = def.keyAction ?? null;
+      else {
+        const own: Workspace = toolBars.placeOf('paint', id) > 0 ? 'paint' : 'sculpt';
+        place = toolBars.placeOf(own, id);
+        action = place >= 1 && place <= 10 ? slotAction(place) : null;
+      }
+      const chord = action ? keymap.chordFor(action) : null;
+      setButtonKey(btn, chord);
+      if (place) btn.dataset.place = String(place);
+      else delete btn.dataset.place;
+      btn.setAttribute('aria-label', keyedName(def.label, chord));
     }
   }
 
   /**
    * The Paint workspace's bar, or Sculpt's: in Paint the Select tool and the
-   * six paint tools stand (1 to 6 and q), and the brushes, Transform and
-   * Calipers are put away; Sculpt has the brushes, Transform and Calipers
-   * and no paint tool.
+   * paint tools stand, and the brushes, Transform and Calipers are put away;
+   * Sculpt has the brushes, Transform and Calipers and no paint tool. The
+   * Paint buttons are made the first time Paint is entered.
    */
   setWorkspace(paint: boolean): void {
-    if (paint) this.buildPaintButtons();
+    if (paint && !this.paintBuilt) {
+      this.paintBuilt = true;
+      this.layout();
+    }
     this.paintOn = paint;
-    for (const b of this.brushBtns.values()) b.hidden = paint;
-    for (const b of this.paintBtns.values()) b.hidden = !paint;
-    this.transformBtn.hidden = paint;
-    this.measureBtn.hidden = paint;
+    this.applyVisibility();
     this.root.classList.toggle('sculpt-toolbar--paint', paint);
     this.refresh();
     window.dispatchEvent(new Event('bozzetto:shell-layout'));
@@ -384,13 +400,15 @@ export class SculptToolbar {
   /** Reflect the active brush, and Negative's arm or latch, on the buttons. */
   private refresh(): void {
     const active = this.input.currentToolIndex();
-    for (const [id, btn] of this.brushBtns) {
+    for (const [id, btn] of this.btns) {
+      const def = toolById(id);
+      if (!def || def.kind !== 'brush') continue;
+      const onPaint = toolBars.placeOf('paint', id) > 0;
       // With the Select tool up no brush is the active one, whatever the
-      // vendor's current tool index still says.
-      btn.classList.toggle('sculpt-toolbar__btn--active', id === active && !this.selectOn && !this.measureOn);
-    }
-    for (const [id, btn] of this.paintBtns) {
-      btn.classList.toggle('sculpt-toolbar__btn--active', this.paintOn && id === active && !this.selectOn);
+      // vendor's current tool index still says (nor with the Calipers up,
+      // on Sculpt's bar).
+      const on = def.engine === active && !this.selectOn && (onPaint ? this.paintOn : !this.measureOn);
+      btn.classList.toggle('sculpt-toolbar__btn--active', on);
     }
     // Latched fills the button like any active tool; armed is the lighter
     // look, since it lasts one stroke.
@@ -417,6 +435,8 @@ export class SculptToolbar {
     window.removeEventListener('blur', this.onNegativeBlur);
     this.input.onToolChange = null;
     this.input.onNegativeChange = null;
+    this.offKeys?.();
+    this.offBars?.();
     this.root.remove();
   }
 }
@@ -470,4 +490,42 @@ function toolButton(key: string, title: string, slot: string, icon: string, tip?
     btn.title = title;
   }
   return btn;
+}
+
+/** What a key looks like on a badge and in a tip: a plain key as it is, a named key spelt out; a chord with a modifier is not a badge's. */
+function keyText(chord: string | null): { badge: string | null; tip: string | null } {
+  if (!chord) return { badge: null, tip: null };
+  const plain = chord.length === 1 ? chord : chordLabel(chord);
+  return { badge: chord.includes('+') ? null : plain, tip: plain };
+}
+
+/** A button's name with its key in it where the label says `{key}`, and without the brackets when it has none. */
+function keyedName(label: string, chord: string | null): string {
+  const tip = keyText(chord).tip;
+  return tip ? label.replace('{key}', tip) : label.replace(' ({key})', '');
+}
+
+/** Show, change or remove a button's key: the corner badge, and the key beside the name in the tip. */
+function setButtonKey(btn: HTMLElement, chord: string | null): void {
+  const { badge: badgeText, tip: tipText } = keyText(chord);
+  const box = btn.querySelector<HTMLElement>('.bz-tip');
+  let badge = btn.querySelector<HTMLElement>('.sculpt-toolbar__key');
+  if (badgeText) {
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'sculpt-toolbar__key';
+      btn.insertBefore(badge, box);
+    }
+    badge.textContent = badgeText;
+  } else badge?.remove();
+  if (!box) return;
+  let k = box.querySelector<HTMLElement>('.bz-tip__key');
+  if (tipText) {
+    if (!k) {
+      k = document.createElement('kbd');
+      k.className = 'bz-tip__key';
+      box.appendChild(k);
+    }
+    k.textContent = tipText;
+  } else k?.remove();
 }

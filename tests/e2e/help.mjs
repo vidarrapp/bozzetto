@@ -140,6 +140,7 @@ export const suites = {
       [...document.querySelectorAll('.sculpt-toolbar__btn')].map((b) => ({
         title: b.getAttribute('aria-label') ?? b.title,
         key: b.querySelector('.sculpt-toolbar__key')?.textContent ?? '',
+        place: b.dataset.place ?? '',
       })),
     );
     t.ok(tools.length >= 12, `the toolbar has its buttons (${tools.length})`);
@@ -158,7 +159,9 @@ export const suites = {
       if (!tool.key) continue;
       await page.click(`.help-win__item[data-topic="${topic.id}"]`);
       const text = (await win(page)).text.toLowerCase();
-      if (!text.includes(`default hotkey: ${tool.key.toLowerCase()}`)) noKey.push(`${tool.title} wants "Default hotkey: ${tool.key}"`);
+      // A brush's key is its place on the bar (its topic says which place it holds on the default bar); Select, Transform and Calipers keep a key of their own.
+      const want = tool.place ? `on the default bar it is ${tool.key.toLowerCase()}` : `default hotkey: ${tool.key.toLowerCase()}`;
+      if (!text.includes(want)) noKey.push(`${tool.title} wants "${want}"`);
     }
     t.ok(!unnamed.length, `every toolbar button has a topic${unnamed.length ? `: ${unnamed.join('; ')}` : ''}`);
     t.ok(!noKey.length, `each tool's topic states the hotkey its button shows${noKey.length ? `: ${noKey.join('; ')}` : ''}`);

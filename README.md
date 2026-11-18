@@ -172,6 +172,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **Four tool settings are kept with the scene.** Move's Falloff, Crease's Pinch, and Polish's Plane lock and Build-up used to go back to their defaults when the scene was opened again. A key you set for a tool in Preferences now shows on its button and its tooltip, and Help says a tool's key is its place on the tool bar.
+
 ### v0.7.5
 
 - **Workspace keys.** `Shift`+`1` to `4` go to Armature, Sculpt, Paint and Present from any of them, replacing `Shift`+`B` and `Shift`+`P`. `Esc` no longer leaves Present. Each workspace remembers its own open panels, and Paint its tool, and changing workspace asks nothing.

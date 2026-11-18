@@ -2,7 +2,7 @@
 // armatureProjects.mjs's, armatureSuspend.mjs's, askWindow.mjs's, sculptLayers.mjs's, detailsOverlay.mjs's, workspaceTabs.mjs's, wireAo.mjs's, latency.mjs's, shadows.mjs's, shadowsGroups.mjs's, hardening.mjs's,
 // tweaks.mjs's, units.mjs's, viewerFrame.mjs's, viewerTools.mjs's, passkeyCheck.mjs's, present.mjs's, presentEdges.mjs's,
 // reference.mjs's, deviceStorage.mjs's, objNumbering.mjs's, shell.mjs's, brushCaps.mjs's, clayTabPen.mjs's, channelBox.mjs's,
-// material.mjs's, calipers.mjs's, paint.mjs's, profileCurves.mjs's, tineRake.mjs's, quadRemesh.mjs's, surfaceSmooth.mjs's, strengthCm.mjs's, loopMask.mjs's, polyGroups.mjs's, zoomFocus.mjs's, webgpuHang.mjs's, and accounts.mjs's, community.mjs's, pages.mjs's and framePresent.mjs's (which start the
+// material.mjs's, calipers.mjs's, toolNames.mjs's, paint.mjs's, profileCurves.mjs's, tineRake.mjs's, quadRemesh.mjs's, surfaceSmooth.mjs's, strengthCm.mjs's, loopMask.mjs's, polyGroups.mjs's, zoomFocus.mjs's, webgpuHang.mjs's, and accounts.mjs's, community.mjs's, pages.mjs's and framePresent.mjs's (which start the
 // real Functions of their own, with wrangler, beside the static server the
 // rest use).
 //
@@ -70,6 +70,7 @@ import { suites as webgpuHang } from './webgpuHang.mjs';
 import { suites as zoomFocus } from './zoomFocus.mjs';
 import { suites as lookTabs } from './lookTabs.mjs';
 import { suites as tint } from './tint.mjs';
+import { suites as toolNames } from './toolNames.mjs';
 import { suites as workspaceTabs } from './workspaceTabs.mjs';
 
 // One suite file per line, so two branches adding a file do not collide.
@@ -128,6 +129,7 @@ const suites = {
   ...sculptLayers,
   ...lookTabs,
   ...tint,
+  ...toolNames,
   ...workspaceTabs,
   ...detailsOverlay,
 };

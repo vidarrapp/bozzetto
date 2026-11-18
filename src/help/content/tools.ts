@@ -1,4 +1,15 @@
+import { DEFAULT_BARS } from '../../sculpt/tools/bars';
 import { h, list, options, p, type Topic } from '../types';
+
+/**
+ * The line that says what a tool's key is. A brush's key is its place on its
+ * workspace's tool bar (the number keys follow the bar), so the line gives
+ * the place it holds on the default bar, which is today's order.
+ */
+function placeKey(id: string): string {
+  const place = DEFAULT_BARS.sculpt.includes(id) ? DEFAULT_BARS.sculpt.indexOf(id) + 1 : DEFAULT_BARS.paint.indexOf(id) + 1;
+  return `Its key is its place on the tool bar; on the default bar it is **${place % 10}**.`;
+}
 
 const G = 'Sculpt tools';
 
@@ -38,7 +49,7 @@ export const TOOLS: Topic[] = [
     group: G,
     tools: ['Crease'],
     blocks: [
-      p('Cuts a sharp groove and gathers the surface toward it. Use it for folds, wrinkles and lines between forms. Default hotkey: **1**.'),
+      p('Cuts a sharp groove and gathers the surface toward it. Use it for folds, wrinkles and lines between forms. ' + placeKey('bz.crease')),
       options(
         ['Profile', 'The shape of the cut across the stroke, with the presets Sharp, Medium and Soft. See Profile curves in the Brush settings topic.'],
         ['Pinch', 'How much the surface is gathered in toward the groove, from 0 to 2.5. At 0 the stroke only carves a groove.'],
@@ -52,7 +63,7 @@ export const TOOLS: Topic[] = [
     group: G,
     tools: ['Move'],
     blocks: [
-      p('Moves the surface inside the brush along with the pointer. Use it to push a form to a new place without adding or removing material. Default hotkey: **2**.'),
+      p('Moves the surface inside the brush along with the pointer. Use it to push a form to a new place without adding or removing material. ' + placeKey('bz.move')),
       options(['Falloff (sharp-soft)', 'How the pull fades toward the rim of the brush. Sharp, on the left, moves the middle of the brush almost as one piece and lets go quickly at the rim. Soft, on the right, is a smooth bell.']),
       p('**Strength** runs from 0 to 1.'),
     ],
@@ -63,7 +74,7 @@ export const TOOLS: Topic[] = [
     group: G,
     tools: ['Standard (clay)'],
     blocks: [
-      p('Builds the surface up, as if you laid strips of clay on it. It follows the form under the brush, so strokes blend instead of stamping flat facets. Default hotkey: **3**. The Tool panel names this brush "Standard clay".'),
+      p('Builds the surface up, as if you laid strips of clay on it. It follows the form under the brush, so strokes blend instead of stamping flat facets. ' + placeKey('bz.clay') + ' The Tool panel names this brush "Standard clay".'),
       options(
         ['Profile', 'The shape of the strip, with the presets Plateau, Soft, Flat and Round. **Plateau**, the default, keeps a flat-topped strip with a firm edge. **Soft** gives a rounded build that goes about half as high for the same Strength.'],
       ),
@@ -77,7 +88,7 @@ export const TOOLS: Topic[] = [
     group: G,
     tools: ['Inflate'],
     blocks: [
-      p('Pushes the surface out along its own direction, so a region swells like a balloon. Carve (Alt, or the Carve button) deflates it. Default hotkey: **4**.'),
+      p('Pushes the surface out along its own direction, so a region swells like a balloon. Carve (Alt, or the Carve button) deflates it. ' + placeKey('bz.inflate')),
       p('**Strength** is a length in centimetres. It has no settings of its own beyond the shared brush rows.'),
     ],
   },
@@ -87,7 +98,7 @@ export const TOOLS: Topic[] = [
     group: G,
     tools: ['Pinch'],
     blocks: [
-      p('Draws the surface toward the middle of the stroke, which sharpens ridges and tightens creases. Default hotkey: **5**.'),
+      p('Draws the surface toward the middle of the stroke, which sharpens ridges and tightens creases. ' + placeKey('bz.pinch')),
       p('**Strength** runs from 0 to 1. It has no settings of its own beyond the shared brush rows.'),
     ],
   },
@@ -97,7 +108,7 @@ export const TOOLS: Topic[] = [
     group: G,
     tools: ['Flatten'],
     blocks: [
-      p('Planes the surface under the brush toward a flat level. Use it for flat faces and cuts. Default hotkey: **6**.'),
+      p('Planes the surface under the brush toward a flat level. Use it for flat faces and cuts. ' + placeKey('bz.flatten')),
       p('**Strength** runs from 0 to 1. It has no settings of its own beyond the shared brush rows.'),
     ],
   },
@@ -107,7 +118,7 @@ export const TOOLS: Topic[] = [
     group: G,
     tools: ['Rake'],
     blocks: [
-      p('Cuts a row of parallel grooves with tines across the stroke, like a comb or a toothed chisel. Use it for hair, fur, fabric and texture. Default hotkey: **7**. **Shift** still smooths while the Rake is in hand.'),
+      p('Cuts a row of parallel grooves with tines across the stroke, like a comb or a toothed chisel. Use it for hair, fur, fabric and texture. ' + placeKey('bz.rake') + ' **Shift** still smooths while the Rake is in hand.'),
       h('Presets'),
       p('**Fine**, **Comb**, **Coarse**, **Chisel** and **Scraper** set all the rows below, the Strength included. Any row can be changed after. The preset lights up while the settings are still exactly the preset\'s.'),
       h('Rows'),
@@ -129,7 +140,7 @@ export const TOOLS: Topic[] = [
     group: G,
     tools: ['Drag'],
     blocks: [
-      p('Pulls the surface along behind the pointer as you drag, and the area it works on follows the pointer. Use it for large, quick changes of shape. Default hotkey: **8**.'),
+      p('Pulls the surface along behind the pointer as you drag, and the area it works on follows the pointer. Use it for large, quick changes of shape. ' + placeKey('bz.drag')),
       p('Drag has no Strength row and no pressure rows. Only the brush size matters.'),
     ],
   },
@@ -139,7 +150,7 @@ export const TOOLS: Topic[] = [
     group: G,
     tools: ['Polish'],
     blocks: [
-      p('Flattens and cleans up small bumps while keeping edges sharp. Use it to prepare a surface or to finish a hard-surface form. Default hotkey: **9**.'),
+      p('Flattens and cleans up small bumps while keeping edges sharp. Use it to prepare a surface or to finish a hard-surface form. ' + placeKey('bz.polish')),
       options(
         ['Plane lock (follow-flatten)', 'From 0 to 0.95. High values flatten the surface hardest and remove chatter. Low values follow gentle curves without flattening them.'],
         ['Profile', 'The shape of the polish across the brush, with the presets Default, Wide and Narrow.'],
@@ -153,7 +164,7 @@ export const TOOLS: Topic[] = [
     group: 'Paint tools',
     tools: ['Paint'],
     blocks: [
-      p('Paints colour onto the model, in the **Paint** workspace (**Shift+3**), into the layer you have picked in the Layers panel, or into Base. Default hotkey: **1**. The paint tools are the first of six: Paint, Erase, Blur, Fill, Pick and Project, on **1** to **6**; **Q** is still Select.'),
+      p('Paints colour onto the model, in the **Paint** workspace (**Shift+3**), into the layer you have picked in the Layers panel, or into Base. ' + placeKey('bz.paint') + ' The paint tools are the first of six: Paint, Erase, Blur, Fill, Pick and Project, on **1** to **6**; **Q** is still Select.'),
       options(
         ['Colour', 'The colour swatch opens a colour picker. Drag the swatch over the view to pick a colour off the screen.'],
         ['Fill', 'The button beside the swatch covers the layer, or the part that is not masked, in the colour, in one undo step.'],
@@ -169,7 +180,7 @@ export const TOOLS: Topic[] = [
     group: 'Paint tools',
     tools: ['Erase'],
     blocks: [
-      p('Lowers the alpha of the layer you have picked under the brush, so the colour under the layer shows through. Default hotkey: **2**. It works on a layer, not on Base: with Base picked it says to add a layer or tap one first. Size, Strength and Profile are Paint\'s.'),
+      p('Lowers the alpha of the layer you have picked under the brush, so the colour under the layer shows through. ' + placeKey('bz.erase') + ' It works on a layer, not on Base: with Base picked it says to add a layer or tap one first. Size, Strength and Profile are Paint\'s.'),
     ],
   },
   {
@@ -178,7 +189,7 @@ export const TOOLS: Topic[] = [
     group: 'Paint tools',
     tools: ['Blur'],
     blocks: [
-      p('Softens the colour and the alpha of the layer you have picked, pulling each point toward the average of its neighbours, so a hard edge between two colours softens the more you stroke it. Default hotkey: **3**. It works on Base too. Holding **Shift** with Paint does the same with Paint\'s size and strength.'),
+      p('Softens the colour and the alpha of the layer you have picked, pulling each point toward the average of its neighbours, so a hard edge between two colours softens the more you stroke it. ' + placeKey('bz.blur') + ' It works on Base too. Holding **Shift** with Paint does the same with Paint\'s size and strength.'),
     ],
   },
   {
@@ -187,7 +198,7 @@ export const TOOLS: Topic[] = [
     group: 'Paint tools',
     tools: ['Fill'],
     blocks: [
-      p('Tap the model to fill the layer you have picked (or Base) with the colour, as much as the mask lets it, in one undo step. Hidden poly groups are left out. Default hotkey: **4**.'),
+      p('Tap the model to fill the layer you have picked (or Base) with the colour, as much as the mask lets it, in one undo step. Hidden poly groups are left out. ' + placeKey('bz.fill')),
     ],
   },
   {
@@ -196,7 +207,7 @@ export const TOOLS: Topic[] = [
     group: 'Paint tools',
     tools: ['Pick'],
     blocks: [
-      p('Tap or drag on the model to take its colour, as it shows with every layer in it, as the paint colour. Nothing is changed and there is no undo step. It is what **Alt** and click does with Paint. Default hotkey: **5**.'),
+      p('Tap or drag on the model to take its colour, as it shows with every layer in it, as the paint colour. Nothing is changed and there is no undo step. It is what **Alt** and click does with Paint. ' + placeKey('bz.pick')),
     ],
   },
   {
@@ -205,7 +216,7 @@ export const TOOLS: Topic[] = [
     group: 'Paint tools',
     tools: ['Project'],
     blocks: [
-      p('Paints a reference picture that is in the view onto the model under the brush. For each point under the brush, the pixel of the picture where that point stands on the screen goes through the brush\'s falloff and strength into the layer you have picked. Only points that face the camera and that the camera sees, near where the pen touches the model, take colour: a point hidden behind a nearer part of the model, or behind another object you can see, keeps its colour. Default hotkey: **6**.'),
+      p('Paints a reference picture that is in the view onto the model under the brush. For each point under the brush, the pixel of the picture where that point stands on the screen goes through the brush\'s falloff and strength into the layer you have picked. Only points that face the camera and that the camera sees, near where the pen touches the model, take colour: a point hidden behind a nearer part of the model, or behind another object you can see, keeps its colour. ' + placeKey('bz.project')),
       p('With no picture in the view it says "Drag a reference into the view first." Put a picture there from the Reference panel, and lock the pictures so the brush reaches the model (it also works while they are being arranged). The picture\'s own blend mode and opacity do not change what is projected; its mirror and greyscale do.'),
     ],
   },

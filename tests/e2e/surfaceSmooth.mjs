@@ -677,20 +677,26 @@ export const suites = {
       const back = tool.smoothSettings();
       // A scene from before the mode: Average and the default relax.
       tool.setSmooth({ mode: 'surface', relax: 0.9 });
-      const old = structuredClone(rec);
+      // An older scene has no table by tool id (settings.tools): the ones made from this build's record drop it, so the numbered record set here is what opens.
+      const noTools = (r) => {
+        delete r.settings.tools;
+        delete r.settings.toolsRev;
+        return r;
+      };
+      const old = noTools(structuredClone(rec));
       delete old.settings.smooth;
       delete old.settings.smoothRev;
       await file.open(await file.packRecord(old));
       const legacy = tool.smoothSettings();
       // A later revision than this build reads: left alone.
       tool.setSmooth({ mode: 'surface', relax: 0.4 });
-      const later = structuredClone(rec);
+      const later = noTools(structuredClone(rec));
       later.settings.smoothRev = 99;
       later.settings.smooth = { mode: 'average', relax: 0.1 };
       await file.open(await file.packRecord(later));
       const kept = tool.smoothSettings();
       // A bad value sanitizes away.
-      const bad = structuredClone(rec);
+      const bad = noTools(structuredClone(rec));
       bad.settings.smooth = { mode: 'sideways', relax: 7, strength: -2 };
       await file.open(await file.packRecord(bad));
       const mended = tool.smoothSettings();
