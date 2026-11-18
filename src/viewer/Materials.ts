@@ -169,13 +169,12 @@ export class Materials {
   onChange: (() => void) | null = null;
 
   /**
-   * Sculpt mode paints per-vertex, so albedo comes from the `color`
-   * attribute rather than the material uniform. Vertex colours start white
-   * and are filled from the material albedo when an object is created or
-   * recoloured, so an unpainted object reads as its material exactly; once
-   * painted, the attribute IS the colour, which is why it replaces the
-   * uniform here instead of multiplying it (a multiply would tint every
-   * painted stroke by the material underneath it).
+   * Sculpt mode shows the object's albedo times its paint: the `color`
+   * attribute holds the paint exactly as picked (white until painted) and the
+   * albedo is the object's own, per display mesh (`userData.albedo`, see
+   * Viewer.setSculptAlbedo). White paint under an albedo is that albedo, so an
+   * unpainted object reads as its material, and a white albedo shows paint as
+   * picked.
    *
    * The mask tint composes on top either way, and off sculpt mode both
    * drop away - a viewer subject has no mask, and only a painted one has
@@ -266,8 +265,21 @@ export class Materials {
       // fill rendered the blue-grey matcap brown (measured against the
       // source PNGs). The mask darken below still applies in both modes:
       // masks must stay visible while sculpting.
-      let node: unknown =
-        this.readsVertexColor() && id === 'lit' ? attribute('color', 'vec3') : null;
+      // Lit while sculpting: the shown colour is the object's albedo times its
+      // paint (the `color` attribute, white until painted). The albedo is the
+      // object's own, read off each display mesh's userData (the scene can hold
+      // objects with different materials), so a change of it is a value, never
+      // a rewrite of the colours. A published model (no sculpt) carries the
+      // product already: its colours replace the albedo, as they always did.
+      let node: unknown = null;
+      if (id === 'lit') {
+        if (this.sculptVertexColor) {
+          const albedo = userData('albedo', 'color') as unknown as Vec3Node;
+          node = this.readsVertexColor() ? albedo.mul(attribute('color', 'vec3')) : albedo;
+        } else if (this.readsVertexColor()) {
+          node = attribute('color', 'vec3');
+        }
+      }
       // The poly group colours, while they show (never in Present, which
       // shows the model as it will be published).
       // Flat: each triangle takes its provoking corner's colour, which

@@ -157,7 +157,7 @@ export const PANELS: Topic[] = [
       options(
         ['Mode', '**Lit (PBR)** shades with the lights. **Matcap** shades with a picture of a lit sphere and ignores the lights.'],
         ['Matcap', 'In Matcap mode, a thumbnail gallery of matcaps to choose from.'],
-        ['Colour', 'While you present a sculpt, or over a published model with painted colours, **Sculpt colours** keeps the paint and **Plain colour** covers the object in its albedo.'],
+        ['Colour', 'While you present a sculpt, or over a published model with painted colours, **Albedo and paint** (in a sculpt) shows the albedo times the paint and **Albedo only** the albedo alone; over a published model with painted colours, **Sculpt colours** keeps its colours and **Plain colour** covers it in its albedo.'],
         ['Albedo, Roughness, Metalness', 'In Present for a published project, in Lit (PBR), the model\'s own values (with Plain colour, if it has painted colours).'],
         ['Smooth shading', 'On by default. Off, the surface shows its flat facets.'],
         ['Wireframe', 'Draws the triangle edges over the model. Its hotkey, **Shift + W** by default, is in the **View** menu and in the tooltip.'],

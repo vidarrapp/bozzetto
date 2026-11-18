@@ -57,7 +57,7 @@ export interface LayerListHooks {
   toggleOpen?(id: LayerId): void;
   /** A fill layer's colour is being picked (`live`), or the picker closed (`commit`): `#rrggbb`. */
   swatch?(id: LayerId, hex: string, phase: 'live' | 'commit'): void;
-  /** The base row's menu (just Flatten all); none leaves the base row bare. */
+  /** The base row's menu (Flatten all, and in Paint Clear); none leaves the base row bare. */
   baseMenu?(): RowMenuItem[];
 }
 

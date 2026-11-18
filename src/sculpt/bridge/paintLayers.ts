@@ -15,7 +15,9 @@ export { MAX_PAINT_LAYERS, MAX_PAINT_NAME };
  * (the colour sRGB-encoded, so the modes work on the values Photoshop's do,
  * and straight alpha), allocated on the layer's first stroke; Base is the
  * colour the object had when layers were first used, linear floats as the
- * mesh keeps them. The mesh's own colour array is the COMPOSITE, bottom to
+ * mesh keeps them. It starts white and opaque, so an object nobody has
+ * painted shows its material's albedo alone (the albedo multiplies the
+ * paint when the object is drawn; nothing here is altered by it). The mesh's own colour array is the COMPOSITE, bottom to
  * top: `blend(mode, below, layer.rgb)` mixed in by `layer.alpha * opacity`,
  * a vertex no layer has colour on keeping its Base exactly. Publishing,
  * export and every other reader of the mesh's colours see the composite.
@@ -186,7 +188,7 @@ export class PaintLayers {
 
   /** Anything about the layers changed (list, active, an opacity, an undo): the panel and the autosave follow. */
   onChange: (() => void) | null = null;
-  /** The first layer on an object: its colours are its own from here on (the material must not recolour them). */
+  /** The first layer on an object: its colours are paint from here on (the material no longer writes white over them). */
   onFirstUse: ((mesh: SculptMesh) => void) | null = null;
 
   constructor(private readonly host: PaintHost) {}
@@ -1144,7 +1146,7 @@ export class PaintLayers {
     return last;
   }
 
-  /** The material filled an object that has layers with its colour: that is Base now. */
+  /** The object was set to white (no paint): that is Base now. */
   baseFilled(mesh: SculptMesh, rgb: [number, number, number]): void {
     const p = this.per.get(mesh);
     if (!p) return;
@@ -1154,6 +1156,54 @@ export class PaintLayers {
       p.base[i * 3 + 2] = rgb[2];
     }
     this.recomposite(mesh, null);
+  }
+
+  /** Whether Base holds paint: any colour but white (an object with no layers is its mesh's colours). */
+  baseHasPaint(mesh: SculptMesh | null): boolean {
+    if (!mesh) return false;
+    const p = this.per.get(mesh);
+    const c = p ? p.base : mesh.getColors().subarray(0, mesh.getNbVertices() * 3);
+    for (let i = 0; i < c.length; i++) if (c[i] !== 1) return true;
+    return false;
+  }
+
+  /**
+   * Clear on Base: back to white, one undo step. With layers they stay and
+   * lie over the white; without, the object's colours (every level's) go white.
+   */
+  clearBase(mesh: SculptMesh): void {
+    if (!this.baseHasPaint(mesh)) return;
+    const p = this.per.get(mesh);
+    if (p && p.list.length) {
+      const before = this.snap(p);
+      p.base = new Float32Array(p.n * 3).fill(1);
+      const after = this.snap(p);
+      this.recomposite(mesh, null);
+      this.pushSnap(mesh, p, before, after);
+      this.host.render();
+      this.changed();
+      return;
+    }
+    const st = stackOf(mesh);
+    const levels: SculptMesh[] = st ? st._meshes : [mesh];
+    const was = levels.map((l) => new Float32Array(l.getColors().subarray(0, l.getNbVertices() * 3)));
+    const set = (white: boolean): void => {
+      levels.forEach((l, k) => {
+        const c = l.getColors();
+        if (white) c.fill(1, 0, l.getNbVertices() * 3);
+        else c.set(was[k]);
+        l.updateDuplicateColorsAndMaterials();
+      });
+      mesh.updateColorBuffer();
+      this.host.setMesh(mesh);
+      this.changed();
+    };
+    set(true);
+    this.sm.pushStateCustom(
+      () => set(false),
+      () => set(true),
+    );
+    this.host.render();
   }
 
   // --- strokes ---------------------------------------------------------------

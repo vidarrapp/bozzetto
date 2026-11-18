@@ -334,7 +334,7 @@ export const suites = {
     );
     const plain = await page.evaluate(async () => {
       const mats = window.__sculpt.viewer.materials;
-      const sel = [...document.querySelectorAll('.panel--material select')].find((x) => [...x.options].some((o) => o.textContent === 'Plain colour'));
+      const sel = [...document.querySelectorAll('.panel--material select')].find((x) => [...x.options].some((o) => o.textContent === 'Albedo only'));
       if (!sel) return null;
       sel.value = 'plain';
       sel.dispatchEvent(new Event('change', { bubbles: true }));

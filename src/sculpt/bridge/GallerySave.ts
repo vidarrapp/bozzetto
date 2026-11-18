@@ -1,6 +1,7 @@
 import { api, memberProjects, type ProjectsClient, type Visibility } from '../../admin/api';
 import { mergeSceneArrays } from './SceneFile';
 import { encodeMesh } from '../../admin/convert';
+import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { SculptSession } from './SculptSession';
 import { aoWithoutCavity, type LookState } from '../../viewer/Viewer';
 import type { Units } from '../../viewer/units';
@@ -45,6 +46,8 @@ export interface GalleryHooks {
   presented?(): boolean;
   /** The scene's units, which the project's manifest carries (src/viewer/units.ts). */
   units?(): Units | null;
+  /** An object's albedo, linear: a model is published as it is seen, its vertex colours the albedo times the paint. */
+  albedoOf?(mesh: SculptMesh): [number, number, number];
 }
 
 /**
@@ -153,7 +156,7 @@ export async function saveModelToGallery(
 ): Promise<string> {
   // With colours: a painted model publishes as painted (owner decision).
   if (!session.getMeshes().length) throw new Error('The scene is empty: add an object (Scene panel, Create) before publishing.');
-  const merged = mergeSceneArrays(session, true);
+  const merged = mergeSceneArrays(session, true, hooks.albedoOf);
   if (!merged) throw new Error('Nothing to save');
   if (target.to === 'gallery' && !PROJECT_SLUG.test(target.id)) throw new Error('Id must be a-z, 0-9, hyphens');
   onProgress('Encoding model...');

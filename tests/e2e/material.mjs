@@ -91,8 +91,9 @@ export const suites = {
       page.evaluate(() => {
         const { session, library } = window.__sculpt;
         const m = library.materialFor(session.getMesh());
-        const colors = session.getMesh().getColors();
-        return { albedo: m.albedo, rough: m.roughness, metal: m.metalness, c0: [...colors.subarray(0, 3)].map((v) => Math.round(v * 255)) };
+        // The object's colours are its paint (white); its albedo is what the shader multiplies them by, held on its display mesh.
+        const k = window.__sculpt.viewer.display.userData.albedo;
+        return { albedo: m.albedo, rough: m.roughness, metal: m.metalness, c0: [k.r, k.g, k.b].map((v) => Math.round(v * 255)) };
       });
     const before = await surface();
     await page.click('.panel--material .cpick__swatch');

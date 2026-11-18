@@ -1,4 +1,5 @@
 import type { SavedScene } from './ScenePersist';
+import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import { validSavedScene } from './ScenePersist';
 import type { SculptSession } from './SculptSession';
 import { sanitizeScene } from './sanitize';
@@ -304,6 +305,8 @@ function fmt(n: number): string {
 export function mergeSceneArrays(
   session: SculptSession,
   withColors = false,
+  /** An object's albedo, linear: the colours are then the product of it and the paint, as the object is seen. */
+  albedoOf?: (mesh: SculptMesh) => [number, number, number],
 ): {
   positions: Float32Array;
   indices: Uint32Array;
@@ -325,7 +328,7 @@ export function mergeSceneArrays(
   if (nbV === 0 || nbT === 0) return null;
   const positions = new Float32Array(nbV * 3);
   const indices = new Uint32Array(nbT * 3);
-  // Colours need no transform - they ride along per vertex as they are.
+  // Colours need no transform - they ride along per vertex (times the object's albedo where one is given).
   const colors = withColors ? new Float32Array(nbV * 3) : undefined;
   let vOff = 0;
   let iOff = 0;
@@ -341,7 +344,17 @@ export function mergeSceneArrays(
       positions[(vOff + i) * 3 + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
       positions[(vOff + i) * 3 + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
     }
-    if (colors) colors.set(mesh.getColors().subarray(0, nb * 3), vOff * 3);
+    if (colors) {
+      const own = mesh.getColors();
+      const k = albedoOf?.(mesh);
+      if (k) {
+        for (let i = 0; i < nb; i++) {
+          colors[(vOff + i) * 3] = own[i * 3] * k[0];
+          colors[(vOff + i) * 3 + 1] = own[i * 3 + 1] * k[1];
+          colors[(vOff + i) * 3 + 2] = own[i * 3 + 2] * k[2];
+        }
+      } else colors.set(own.subarray(0, nb * 3), vOff * 3);
+    }
     const tris = mesh.getTriangles();
     const nbTris = mesh.getNbTriangles();
     if (mirrors(m)) {
