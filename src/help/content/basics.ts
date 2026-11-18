@@ -36,7 +36,7 @@ export const BASICS: Topic[] = [
       h('Typing a value into a slider'),
       p('Every slider shows its value while you drag it. Double-click a slider (double-tap on touch) to type a value instead. Enter or a press anywhere else applies it, and **Esc** keeps what was there. A typed value may go past the end of the slider. It is held only to what the setting can be, so a strength never goes below zero and an angle wraps round.'),
       h('Your work is kept'),
-      p('Sculpt saves your scene in this browser as you work, and a reload brings it back. To keep it safe, use **File**, then **Save file** or **Save to library**. The word after the name in the top bar says where it is kept. See the Files topic.'),
+      p('Sculpt saves your scene in this browser as you work, at most once a minute and at once when you leave, and a reload brings it back. To keep it safe, use **File**, then **Save file** or **Save to library**. **Ctrl+S** saves to the library when you are signed in, and otherwise keeps the copy in this browser straight away. The word after the name in the top bar says where it is kept. See the Files topic.'),
     ],
   },
   {

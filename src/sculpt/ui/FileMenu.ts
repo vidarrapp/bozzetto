@@ -1,5 +1,6 @@
 import { TopMenu, type MenuItem } from './TopMenu';
 import { fileMenuItems } from './menuShape';
+import { keyFor } from './viewMenu';
 import { recentMenuItem } from './recentMenu';
 import { recordRecent } from '../../ui/recent';
 import { statusToast, type StatusToast } from './statusToast';
@@ -63,6 +64,8 @@ export class FileMenu {
       canPublish: () => boolean;
       /** Whether the board has pictures, for the Include references switch. */
       hasReferences?: () => boolean;
+      /** Write the copy on this device now (the autosave, without its wait); false when saving on this device is off. */
+      keepNow?: () => Promise<boolean>;
     },
   ) {
     // Hidden inputs are how a web page asks for a file.
@@ -181,7 +184,20 @@ export class FileMenu {
         },
       ];
     }
-    return [{ label: 'Save to library', enabled: full, hint: () => this.libraryHint(), action: () => this.saveToLibrary() }];
+    return [{ label: 'Save to library', enabled: full, hint: () => this.libraryHint(), key: keyFor('file.save'), action: () => this.saveToLibrary() }];
+  }
+
+  /**
+   * The Save key (Ctrl+S). For whoever saves to a library it is Save to
+   * library, as the menu's row. A guest has no library: the copy on this
+   * device is written at once (it is otherwise written at most once a
+   * minute), and a note says so, or says that saving on this device is off.
+   */
+  async save(): Promise<void> {
+    if (this.actions.isEmpty()) return;
+    if (this.role !== null && this.role !== 'guest') return this.saveToLibrary();
+    const kept = (await this.hooks.keepNow?.()) ?? false;
+    this.menu.note(kept ? 'Kept on this device' : 'Saving on this device is off. File, Save file keeps this work.');
   }
 
   /** File > Rename…: ask for the name, and give it to the scene. */

@@ -101,9 +101,7 @@ export class ArmaturePanel extends SidePanel {
       this.opButton('Copy R → L', () => this.hooks.mirror('R')),
     );
     fig.appendChild(poseRow);
-    const hint = div('sculpt-panel__hint muted');
-    hint.textContent = 'Tap a part to pose its joint, and tap off the figure to let it go: turning the view keeps it. The pelvis moves the whole figure (w).';
-    fig.appendChild(hint);
+    // How to pose is in Help (Armature), not here: the panel holds controls (owner, 2026-11-18).
     // What a loaded model turned out to be, and what had to be guessed
     // about it. Empty, and invisible, until one is loaded.
     this.note = div('sculpt-panel__hint sculpt-panel__note muted');
@@ -129,10 +127,6 @@ export class ArmaturePanel extends SidePanel {
     const plant = checkbox('Plant feet', figure().plantFeet, (on) => this.hooks.plant(on));
     this.plantBox = plant.querySelector('input') as HTMLInputElement;
     reach.appendChild(plant);
-    const pinHint = div('sculpt-panel__hint muted');
-    pinHint.textContent =
-      'Drag a ring and the limb reaches for it, or tap it for a move gizmo; a dot in the ring means it is pinned. Drag an arrowhead beside a knee or elbow and the joint turns toward it. Drag the arrowhead in front of the face and the head looks at it. Drag the frame round the hips and the whole figure moves. A pinned ring stays put while the pelvis moves. Plant feet stands a foot that is on the floor flat on it, marked by a ring on the floor; off, the foot tilts with its shin. Pins, not planting, keep a foot in its place.';
-    reach.appendChild(pinHint);
     for (const c of figure().chains()) {
       const box = checkbox(`Pin ${c.label.toLowerCase()}`, false, (on) => this.hooks.pin(c.id, on));
       this.pinBoxes.set(c.id, box.querySelector('input') as HTMLInputElement);

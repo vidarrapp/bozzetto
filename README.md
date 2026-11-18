@@ -177,6 +177,8 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 - **A reference behind the model is the right way up.** A picture set to Behind the model was drawn upside down, and moved down when its frame was moved up. It now sits under its frame.
 - **One row of tools on a reference.** Opacity is in the row of icons over the picture. The blend mode moved to the picture's card in the Reference panel.
 - **Tapping a body part in Armature.** After a figure was posed or moved, taps on its hands, arms, feet, neck and head often selected nothing. They select the part again.
+- **Ctrl+S saves.** Signed in, it is Save to library, in Sculpt, Paint, Present and Armature. Signed out, it keeps the copy in this browser straight away instead of within the minute.
+- **A shorter Armature panel.** The two long paragraphs on posing and the handles are gone from the panel. They are in Help.
 - **More flexible joints.** The mannequins' joints turn further, most of all the hips, ankles, shoulders and spine, so a leap or a deep back bend can be posed. The forearm also twists further.
 
 ### v0.7.9
