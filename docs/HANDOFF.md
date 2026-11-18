@@ -2,6 +2,7 @@
 
 ## Open questions for Vidar
 
+- [x] 2026-11-18: The version for the paint follow-ups, the workspace keys and the first Armature steps. Decided 2026-11-18: 0.7.5, set when it all goes to main after a clean full test run
 - [x] 2026-11-18: Armature as a workspace (plan: docs/plans/armature-workspace.md), how Armature looks: the same working view as Sculpt with the floor shown, so changing tab changes nothing but the tools (recommended); or today's rendered Armature view, which changes the picture on every switch. Decided 2026-11-18: the same working view as Sculpt
 - [x] 2026-11-18: Armature as a workspace, figures per scene: one armature and one following figure per scene to begin with, saved in a form that allows several later (recommended); or several from the start. Decided 2026-11-18: one for now, several perhaps later; only one is edited at a time
 - [x] 2026-11-18: Armature as a workspace, making the figure: the first time Armature is left the figure is made by itself (recommended); or only on a button. Decided 2026-11-18: a remesh happens only on a button, in Armature or in Sculpt, never by changing tab. Until then the posed mannequin shows in the other workspaces too
