@@ -6,26 +6,21 @@ import type { Viewer } from '../viewer/Viewer';
 import { KEY_DRAG_DEG_PER_PX } from '../viewer/Lighting';
 import { STUDIO_BG } from '../viewer/Environment';
 import { keymap } from '../ui/keymap';
+import { isShowKey } from '../ui/ChromeToggle';
+import { pasteFromClipboard } from '../reference/intake';
+import { Studio, type DetailLine } from '../studio/Studio';
+import { Hidden, watchAdditions } from '../studio/hidden';
 import { isTextEntryTarget } from '../ui/dom';
-import { isShowKey, pageChrome } from '../ui/ChromeToggle';
-import { helpMenuItems } from '../help/menu';
 import { settings } from '../ui/settings';
 import { mayStore, onDeviceChoice } from '../ui/deviceStorage';
 import { requireSaving } from '../ui/deviceChoice';
-import { beforeLeaving } from '../ui/leaving';
 import { downloadBlob } from '../ui/download';
-import { TopMenu } from '../sculpt/ui/TopMenu';
-import { TitleStrip } from '../sculpt/ui/TitleStrip';
-import { mountAccountHandle } from '../ui/account/menu';
 import { keyFor, viewMenuItems } from '../sculpt/ui/viewMenu';
 import { editMenuItems, fileMenuItems } from '../sculpt/ui/menuShape';
 import type { MenuItem } from '../sculpt/ui/TopMenu';
 import { recentMenuItem } from '../sculpt/ui/recentMenu';
 import { recordRecent } from '../ui/recent';
-import type { PathStep, Workspace } from '../sculpt/ui/TitleStrip';
-import { rememberPanels } from '../sculpt/ui/panelMemory';
 import '../sculpt/ui/shell.css';
-import { DetailsOverlay, type DetailLine } from '../sculpt/ui/DetailsOverlay';
 import { formatLength } from '../viewer/units';
 import { Armature, buildArmature, importArmature, SCENE_SCALE, type ArmatureState } from './Armature';
 import { ARROW_TIP, HandleKit, RING_RADIUS, type HandleShape, type HandleState, type HandleView } from './handleViews';
@@ -35,18 +30,11 @@ import { fetchFigure, figureById, tuneRig } from './figures';
 import { rigFromGLTF } from './glbRig';
 import { getGLTFLoader } from '../loaders/gltf';
 import { ArmaturePanel, prettyName } from './ArmaturePanel';
-import { MaterialPanel } from '../ui/MaterialPanel';
-import { ReferenceBoard } from '../reference/board';
-import { ReferencePanel } from '../reference/ReferencePanel';
-import { ReferenceView } from '../reference/ReferenceView';
-import { installIntake, pasteFromClipboard } from '../reference/intake';
-import { ArrangeButton } from '../reference/ArrangeButton';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { boxOfPositions, checkRemesh, RemeshTooLarge } from '../sculpt/bridge/remeshBudget';
 import { statusToast } from '../sculpt/ui/statusToast';
 import { armatureStamp, packArmature, unpackArmature } from './file';
 import { loadArmature, saveArmature, saveHandoff, type ArmatureFile } from './persist';
-import { HistoryButtons } from '../sculpt/ui/BrushSliders';
 import { AuthExpiredError, checkSignIn, failureText, roleOf, type Role } from '../admin/api';
 import { suspensionText } from '../net/account';
 import { isProjectId } from '../net/ids';
@@ -69,7 +57,6 @@ import {
 } from './project';
 import { askText, askWindow, tellWindow } from '../ui/askWindow';
 import { viewerNeeds } from './viewerNeeds';
-import { Hidden, panelListeners, watchAdditions } from './suspend';
 
 /** Undo steps kept (owner call), the oldest let go past it. */
 const HISTORY_LIMIT = 100;
@@ -1433,26 +1420,19 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     undoStack.push(last);
     void applyState(next);
   };
-  // The title strip, and the undo and redo buttons where Sculpt has them,
-  // at the foot of the left edge.
+  // The page's shell (studio/Studio.ts): the title strip, the four menus, the edge column with
+  // the undo and redo buttons, the details overlay, the Material and Reference panels and the
+  // page's one reference board. Armature is the one workspace it hosts here, registered below.
+  const studio = new Studio(viewer, { referenceScope: 'armature', material: { sculpting: true } });
   // The mode's own pieces of the page, found by what the next stretch puts there (ownedDom, below).
   const addedToPage = watchAdditions([document.body, canvas.parentElement]);
-  const strip = new TitleStrip();
-  mountAccountHandle(strip);
-  const chrome = pageChrome();
-  strip.onToggleChrome = () => chrome.toggle();
-  hooks.chromeChanged = (hidden) => strip.setChromeHidden(hidden);
-  const histButtons = new HistoryButtons({
-    undo,
-    redo,
-    canUndo: () => undoStack.length > 0 || pendingStep !== 0,
-    canRedo: () => redoStack.length > 0,
-  });
+  const strip = studio.strip;
+  hooks.chromeChanged = studio.chromeChanged;
+  const histButtons = studio.edge.history;
   histButtons.el.classList.add('armature-hist');
-  const edge = document.createElement('div');
-  edge.className = 'bz-edge';
-  edge.appendChild(histButtons.el);
-  document.body.appendChild(edge);
+  const referenceBoard = studio.reference.board;
+  const referencePanel = studio.reference.panel;
+  const referenceView = studio.reference.view;
 
   /**
    * The gallery card's picture. It is taken on the way out, and carried by
@@ -1569,16 +1549,6 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
       window.location.href = originOf().href;
     });
   };
-  // Signing in again and reloading onto an update leave the page and come
-  // back (ui/leaving): the figure is saved and pictured first, as leaving
-  // for the gallery does.
-  subscribe(() =>
-    beforeLeaving(async () => {
-      await snapshot();
-      return true;
-    }),
-  );
-
   // --- the figure: presets and files ----------------------------------------------
   /**
    * Swap the figure: a different preset, a file being opened, or a fresh
@@ -1835,38 +1805,15 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     },
     viewer,
   );
-  // How the figure is drawn (mode, matcap, shading, wireframe): the Material tab beside Armature's.
-  const materialPanel = new MaterialPanel(viewer, { sculpting: true });
-  // The reference pictures: on this device only (reference/board.ts), and not in the .armature file.
-  const referenceBoard = new ReferenceBoard('armature');
+  // The Material tab beside Armature's, and the Reference panel, are the shell's. The reference
+  // pictures stay on this device (reference/board.ts), and are not in the .armature file.
   if (openedProject) {
     if (bootLink) void referenceBoard.restore({ project: bootLink.id });
     else void referenceBoard.clear();
   } else {
     void referenceBoard.restore({ current: true }).then(() => referenceBoard.bindProject(bootLink?.id ?? null));
   }
-  const referencePanel = new ReferencePanel(referenceBoard);
   referencePanel.setLinked(() => !!link);
-  const referenceView = new ReferenceView(referenceBoard, viewer);
-  // The Arrange button stands in the left edge column beside Undo and Redo, as Solo does in Sculpt.
-  const referenceArrange = new ArrangeButton(referenceBoard);
-  referenceArrange.mount(edge);
-  referencePanel.setPlacer((id, x, y) => referenceView.placeAt(id, x, y));
-  subscribe(() =>
-    installIntake(referenceBoard, () => referencePanel.isOpen(), (items, x, y) => {
-      let n = 0;
-      for (const item of items) if (referenceView.placeAt(item.id, x + n * 24, y + n * 24)) n++;
-      return n > 0;
-    }),
-  );
-  // The panels hear the other panels (and the Tab key) on the window; suspended, they hear none of it.
-  const panelEvents = [panel, materialPanel, referencePanel].map(panelListeners);
-  subscribe(() => {
-    for (const p of panelEvents) p.start();
-    return () => {
-      for (const p of panelEvents) p.stop();
-    };
-  });
   // What an opened project needed mending, or why it did not open: said
   // now that there is a page to say it on.
   for (const note of bootNotes) {
@@ -1917,8 +1864,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     }
     return role;
   };
-  /** The File menu's rows depend on who is here (set once the menu exists). */
-  let refreshFileMenu: () => void = () => undefined;
+  /** The File menu's rows depend on who is here: the shell reads them again. */
+  const refreshFileMenu = (): void => studio.refreshMenus();
   let roleKnown = probeRole().then((who) => {
     refreshFileMenu();
     return who;
@@ -1947,7 +1894,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     if (!uploads(who)) {
       downloadBlob(packArmature(currentFile()), armatureStamp());
       if (who === 'suspended') statusToast('').fail(`${suspension} The armature was saved as a .armature file instead.`);
-      else fileMenu.note('Saved as a .armature file');
+      else studio.menus.file.note('Saved as a .armature file');
       return null;
     }
     const where = place();
@@ -1956,7 +1903,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
       return null;
     }
     if (librarySaving) {
-      fileMenu.note(`Already saving to ${where}`);
+      studio.menus.file.note(`Already saving to ${where}`);
       return null;
     }
     librarySaving = true;
@@ -2005,17 +1952,6 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     }
   };
 
-  // The workspace path as the strip and the View menu both read it: Sculpt is
-  // File > Send to Sculpt; Present waits for a figure to be sent.
-  const workspaceNow = (): { current: Workspace; steps: Partial<Record<Workspace, PathStep>> } => ({
-    current: 'armature',
-    steps: {
-      sculpt: { action: () => void send(panel.resolution) },
-      // Paint and Present are worked from Sculpt, where the figure's mesh is a sculpt: Sculpt sends it.
-      paint: { unavailable: 'Paint works from Sculpt. Go to Sculpt first.' },
-      present: { unavailable: 'Present works from Sculpt. Go to Sculpt first.' },
-    },
-  });
   /** Give the armature a new name; a project's is renamed too, and saved with the next Save to library. */
   const rename = (next: string): void => {
     const n = next.trim().slice(0, 80);
@@ -2098,10 +2034,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
       ],
       close: leaveForGallery,
     });
-  const fileMenu = new TopMenu('File', fileItems(), 'file-menu--file', strip.menus, true);
-  refreshFileMenu = () => fileMenu.setItems(fileItems());
-  const editMenu = new TopMenu(
-    'Edit',
+  const editItems = (): MenuItem[] =>
     editMenuItems({
       mode: 'armature',
       history: [
@@ -2109,13 +2042,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
         { label: 'Redo', key: keyFor('arm.redo'), action: redo },
       ],
       own: [{ label: 'Paste picture', hint: 'Adds the clipboard\'s picture to the Reference panel', action: () => void pasteFromClipboard(referenceBoard) }],
-    }),
-    'file-menu--edit',
-    strip.menus,
-    true,
-  );
-  const viewMenu = new TopMenu(
-    'View',
+    });
+  const viewItems = (): MenuItem[] =>
     viewMenuItems({
       frameAll: frame,
       wireframe: {
@@ -2141,21 +2069,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
         ['reference', 'Reference'],
       ],
       moveLight: { get: () => lightArmed, toggle: () => armLight(!lightArmed) },
-      hideInterface: () => chrome.set(true),
-      workspace: workspaceNow,
-    }),
-    'file-menu--view',
-    strip.menus,
-    true,
-  );
-  const helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help', strip.menus, true);
-  strip.setWorkspace(workspaceNow().current, workspaceNow().steps);
-  // Which panel was open on each side last time, open again; kept from here on.
-  subscribe(() => rememberPanels('armature'));
-  // The readout: the scene's name and where its work is kept. The figure's numbers are the details overlay's.
-  const details = new DetailsOverlay();
-  const paintDetails = (): void => {
-    if (!details.isOn()) return;
+      hideInterface: () => studio.chrome.set(true),
+      workspace: () => studio.way(),
+    });
+  /** The figure's facts for the details overlay. */
+  const detailLines = (): DetailLine[] => {
     const lines: DetailLine[] = [{ id: 'name', value: link?.title ?? name }];
     lines.push({ id: 'height', key: 'Height', value: formatLength(armature.figureHeight()) });
     const index = armature.mesh.geometry.getIndex();
@@ -2164,23 +2082,44 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     if (selected) lines.push({ id: 'selected', key: 'Joint', value: prettyName(selected) });
     else if (handle) lines.push({ id: 'selected', key: 'Handle', value: handle.label });
     if (armature.symmetry) lines.push({ id: 'symmetry', key: 'Symmetry', value: 'on' });
-    details.set(lines);
+    return lines;
   };
-  subscribe(() => settings.onChange(paintDetails));
-  const paintReadout = (): void => {
-    strip.setReadout({
+  // Armature is the one workspace this page hosts: the shell asks it for its menus, its path
+  // (Sculpt is Send to Sculpt, which changes page; Paint and Present are worked from Sculpt, where
+  // the figure's mesh is a sculpt), its readout (the scene's name and where its work is kept; the
+  // figure's numbers are the details overlay's), its history and its details. Its enter and
+  // leave are resume and suspend (the shell's own put away apart, below).
+  studio.register({
+    id: 'armature',
+    keyMode: 'armature',
+    menus: () => ({ file: fileItems(), edit: editItems(), view: viewItems() }),
+    path: () => ({
+      sculpt: { action: () => void send(panel.resolution) },
+      paint: { unavailable: 'Paint works from Sculpt. Go to Sculpt first.' },
+      present: { unavailable: 'Present works from Sculpt. Go to Sculpt first.' },
+    }),
+    panels: { left: [panel], right: [] },
+    readout: () => ({
       name: link?.title ?? name,
       state: sceneStateWord({ linked: !!link, synced: !!link && syncedAt === edits }),
-    });
-    paintDetails();
-  };
-  paintReadout();
-  subscribe(() => {
-    const timer = window.setInterval(paintReadout, 500);
-    return () => clearInterval(timer);
+    }),
+    details: detailLines,
+    history: {
+      undo,
+      redo,
+      canUndo: () => undoStack.length > 0 || pendingStep !== 0,
+      canRedo: () => redoStack.length > 0,
+    },
+    enter: () => resumeOwn(),
+    leave: () => suspendOwn({ figure: 'show' }),
+    // Signing in again and reloading onto an update leave the page and come back (ui/leaving):
+    // the figure is saved and pictured first, as leaving for the gallery does.
+    beforeLeavingPage: async () => {
+      await snapshot();
+      return true;
+    },
   });
-  // The pieces of the page the strip, the panels, the edge column, the details and the reference
-  // view put there: what suspend takes out of sight.
+  // The pieces of the page the panels and the reference view put there: what suspend takes out of sight.
   const ownedDom = addedToPage();
 
   // --- keys ------------------------------------------------------------------------------
@@ -2235,7 +2174,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
         select(null);
         // Esc is also the way back from a hidden interface (ui.show); claimed
         // here, it would never reach the toggle's own listener.
-        if (isShowKey(e)) pageChrome().set(false);
+        if (isShowKey(e)) studio.chrome.set(false);
         break;
       case 'arm.undo':
         undo();
@@ -2275,7 +2214,6 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
 
   // --- suspend and resume ----------------------------------------------------------
   const hiddenDom = new Hidden();
-  const menus = [fileMenu, editMenu, viewMenu, helpMenu];
   /** The scene things that are the tool's, not the figure's, in the state they should be in while shown. */
   const overlayShown = (): Array<[Object3D, boolean]> => [
     [handleGroup, handlesOn],
@@ -2283,7 +2221,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     ...controls.map((tc): [Object3D, boolean] => [tc.getHelper(), attached.has(tc)]),
     ...(highlight ? ([[highlight, true]] as Array<[Object3D, boolean]>) : []),
   ];
-  const suspend = (opts: SuspendOptions = {}): void => {
+  /**
+   * Armature's own things out of sight and hearing, the viewer given back: what the workspace's
+   * `leave` does. The shell's (strip, menus, edge column, details, the shared panels) is not
+   * Armature's to put away while another workspace is in front, and stays.
+   */
+  const suspendOwn = (opts: SuspendOptions = {}): void => {
     figureShown = opts.figure === 'show';
     if (suspended) {
       armature.mesh.visible = figureShown;
@@ -2316,7 +2259,6 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
       window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
     }
     for (const sub of subscriptions) sub.stop();
-    for (const m of menus) m.close();
     suspended = true;
     for (const [o] of overlayShown()) o.visible = false;
     armature.mesh.visible = figureShown;
@@ -2324,7 +2266,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     needs.undo();
     viewer.invalidate();
   };
-  const resume = (): void => {
+  /** Put its own things back as they were left: what the workspace's `enter` does. */
+  const resumeOwn = (): void => {
     if (!suspended) return;
     needs.apply();
     hiddenDom.show();
@@ -2334,10 +2277,25 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     for (const sub of subscriptions) sub.start();
     // The canvas may have a different size than it had; the shaders measure their pixels against it.
     placeViewport();
-    paintReadout();
     syncPlantMarks();
     viewer.invalidate();
   };
+  /**
+   * The whole page's Armature put away, the shell with it: the page has no other workspace to
+   * show (the tests' hook, and what step B built). A page that hosts several switches by the
+   * shell's `go`, which asks the workspaces' leave and enter and leaves the shell showing.
+   */
+  const suspend = (opts: SuspendOptions = {}): void => {
+    suspendOwn(opts);
+    studio.sleep();
+  };
+  const resume = (): void => {
+    studio.wake();
+    resumeOwn();
+  };
+  // Which panel was open on each side last time, open again; kept from here on. Armature is the front.
+  studio.beginPanels('armature');
+  studio.start('armature');
 
   // Console/test handle.
   const handle = {
@@ -2549,19 +2507,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     viewer.scene.remove(plantGroup);
     kit.dispose();
     panel.dispose();
-    materialPanel.dispose();
-    referenceArrange.dispose();
-    referenceView.dispose();
-    referencePanel.dispose();
-    referenceBoard.dispose();
-    details.dispose();
-    fileMenu.dispose();
-    editMenu.dispose();
-    viewMenu.dispose();
-    helpMenu.dispose();
-    histButtons.dispose();
-    edge.remove();
-    strip.dispose();
+    studio.dispose();
     openInput.remove();
     modelInput.remove();
     delete (window as unknown as { __armature?: object }).__armature;

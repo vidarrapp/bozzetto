@@ -51,47 +51,6 @@ export function storedPanels(mode: string): string[] {
   return out;
 }
 
-/** Open what `mode` last had open, then keep its record current. Returns the way out. */
-export function rememberPanels(mode: string): () => void {
-  const open: Partial<Record<'left' | 'right', string>> = {};
-  for (const id of storedPanels(mode)) open[SIDES[id]] = id;
-  let applying = true;
-  const save = (): void => {
-    if (applying) return;
-    try {
-      const ids = Object.values(open).filter((id): id is string => !!id);
-      if (ids.length) deviceStore.set(key(mode), JSON.stringify(ids));
-      else deviceStore.remove(key(mode));
-    } catch {
-      // The panels still work; they just start closed next time.
-    }
-  };
-  const onOpen = (e: Event): void => {
-    const d = (e as CustomEvent<{ id?: string; side?: string }>).detail;
-    const side = d?.id ? SIDES[d.id] : undefined;
-    if (!d?.id || !side) return;
-    open[side] = d.id;
-    save();
-  };
-  const onClose = (e: Event): void => {
-    const d = (e as CustomEvent<{ id?: string }>).detail;
-    const side = d?.id ? SIDES[d.id] : undefined;
-    if (!d?.id || !side || open[side] !== d.id) return;
-    delete open[side];
-    save();
-  };
-  window.addEventListener('bozzetto:panel-open', onOpen);
-  window.addEventListener('bozzetto:panel-close', onClose);
-  for (const id of Object.values(open)) {
-    if (id) window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id, open: true } }));
-  }
-  applying = false;
-  return () => {
-    window.removeEventListener('bozzetto:panel-open', onOpen);
-    window.removeEventListener('bozzetto:panel-close', onClose);
-  };
-}
-
 /** Open or close a panel by its id: the View menu's panel items. */
 export function setPanel(id: string, open: boolean): void {
   window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id, open } }));
