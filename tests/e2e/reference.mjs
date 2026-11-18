@@ -1163,4 +1163,63 @@ export const suites = {
     }
     t.ok(errors.length === 0, `no page errors on the phone${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   },
+
+  // A finger on a picture's row of buttons while arranging: the frame takes
+  // the touch for its drags, and once cancelled every touch on it, the
+  // buttons' included, so they did nothing on a touch screen (they were only
+  // ever pressed with click() here). Real taps, through the browser's touch.
+  async refTouchBar(page, base, t) {
+    const ctx = await page.context().browser().newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true });
+    const errors = [];
+    try {
+      const p = await ctx.newPage();
+      p.on('pageerror', (e) => errors.push(String(e)));
+      await openSculpt(p, base, '&q=low');
+      await openPanel(p);
+      await addFiles(p, [{ name: 'first.png', mimeType: 'image/png', buffer: await png(p, 400, 300) }]);
+      await p.evaluate(() => {
+        const { board } = window.__sculpt.reference;
+        board.putInView(board.list()[0].id);
+        board.setArranging(true);
+      });
+      await openPanel(p, false);
+      await p.waitForSelector('.ref-frame .ref-frame__btn--flip', { timeout: 10_000 });
+      await p.waitForTimeout(300);
+      const state = () =>
+        p.evaluate(() => {
+          const { board, view } = window.__sculpt.reference;
+          const i = board.list()[0];
+          return { mirror: i.mirror, grey: i.grey, inView: board.inView().length, arranging: view.describe().arranging, look: !!document.querySelector('.ref-look') && document.querySelector('.ref-look').getClientRects().length > 0 };
+        });
+      const tap = async (sel) => {
+        const at = await p.evaluate((s) => {
+          const r = document.querySelector(s).getBoundingClientRect();
+          return [r.left + r.width / 2, r.top + r.height / 2];
+        }, sel);
+        await p.touchscreen.tap(at[0], at[1]);
+        await p.waitForTimeout(350);
+      };
+      const before = await state();
+      await tap('.ref-frame .ref-frame__btn--flip');
+      let s = await state();
+      t.ok(!before.mirror && s.mirror, `a finger's tap on Flip mirrors the picture (${before.mirror} to ${s.mirror})`);
+      await tap('.ref-frame .ref-frame__btn--look');
+      s = await state();
+      t.ok(s.look, 'a tap on Look opens its pop-up');
+      await tap('.ref-look input[type=checkbox]');
+      s = await state();
+      t.ok(s.grey, 'and a tap on Greyscale in it turns the picture grey');
+      await tap('.ref-frame .ref-frame__btn--lock');
+      s = await state();
+      t.ok(!s.arranging && s.inView === 1, 'a tap on Lock ends arranging, the picture still in the view');
+      await p.evaluate(() => window.__sculpt.reference.board.setArranging(true));
+      await p.waitForTimeout(300);
+      await tap('.ref-frame .ref-frame__btn--remove');
+      s = await state();
+      t.eq(s.inView, 0, 'a tap on Remove takes it out of the view');
+    } finally {
+      await ctx.close();
+    }
+    t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
 };

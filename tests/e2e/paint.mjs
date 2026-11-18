@@ -1525,9 +1525,9 @@ Object.assign(suites, {
       const bs = [...document.querySelectorAll('.layers-paint .layer-bar__btn')];
       return bs.map((b) => ({ id: b.dataset.action, label: b.getAttribute('aria-label'), tip: b.querySelector('.bz-tip__name')?.textContent, w: b.getBoundingClientRect().width, h: b.getBoundingClientRect().height, off: b.disabled, icon: b.querySelector('i')?.className, text: b.textContent }));
     });
-    t.eq(bar.map((b) => b.id).join(), 'mask,fill,group,layer,delete', "the foot is a bar of icons: mask, fill layer, group, layer, delete (Photoshop's order)");
+    t.eq(bar.map((b) => b.id).join(), 'layer,fill,mask,group,delete', 'the foot is a bar of icons: layer, fill layer, mask, group, delete');
     t.ok(bar.every((b) => b.label && b.tip === b.label && b.w >= 44 && b.h >= 32 && b.text === b.tip), `each icon has a name and a hit area of at least 44 by 32 (${JSON.stringify(bar.map((b) => [b.id, b.w, b.h]))})`);
-    t.eq(bar.map((b) => b.icon.replace('fi ', '')).join(), 'fi-ss-customize-edit,fi-ss-fill,fi-ss-folder,fi-ss-layers,fi-ss-trash', 'the icons are Uicons solid straight: customize-edit, fill, folder, layers, trash');
+    t.eq(bar.map((b) => b.icon.replace('fi ', '')).join(), 'fi-ss-layers,fi-ss-fill,fi-ss-customize-edit,fi-ss-folder,fi-ss-trash', 'the icons are Uicons solid straight: customize-edit, fill, folder, layers, trash');
     t.ok(bar.find((b) => b.id === 'mask').off && bar.find((b) => b.id === 'delete').off && !bar.find((b) => b.id === 'layer').off, 'with Base active Add mask and Delete are greyed out; the new ones are not');
     t.eq(await page.evaluate(() => document.querySelectorAll('.layers-paint .outliner__btn').length), 0, 'there is no text button in the foot');
     t.eq(await page.evaluate(() => { const b = document.querySelector('.layers-paint .layer-row--base'); return !!b.querySelector('.layer-row__eye') || !!b.querySelector('.layer-row__more') ? 'menu' : 'none'; }), 'menu', 'the Base row has a menu (Flatten all) and no eye');

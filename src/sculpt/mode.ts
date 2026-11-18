@@ -2335,21 +2335,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   worldScale.onChange = noteWorkspace;
   input.onBrushSettingsChange = noteWorkspace;
-  // Only the autosave coming back on its own gets the notice, with Start
-  // fresh as the way out of it. A scene opened from a library card or from
-  // Projects is what was asked for: saying so, with an offer to throw it
-  // away, only got in the way (owner call). The exception is a project
-  // that opened from this device's copy because Projects could not be
-  // reached, which says so, and why, with nothing to press.
+  // The autosave coming back on its own says nothing (owner, 2026-11-18): it
+  // is the work in progress, and File > New sculpt is the way to a clean
+  // start. Nor does a scene opened from a library card or from Projects,
+  // which is what was asked for. The one notice left is for a project that
+  // opened from this device's copy because Projects could not be reached,
+  // which says so, and why, with nothing to press.
   let toast: HTMLDivElement | null = null;
-  if (saved && !openedExplicitly) {
-    toast = bootToast(openedLabel(opened), () => {
-      persist.disable();
-      void clearSavedScene(true).then(() => location.reload());
-    });
-  } else if (saved && opened?.from === 'device') {
-    toast = bootToast(openedLabel(opened));
-  }
+  if (saved && opened?.from === 'device') toast = bootToast(openedLabel(opened));
   // Asked for a project and got neither it nor a device copy, or for a
   // template that could not be had: say why, rather than leave the
   // autosaved scene looking like the answer.
@@ -2815,20 +2808,13 @@ function openError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** The boot notice's words: the autosave back, or a project's device copy and why. */
+/** The boot notice's words: a project's device copy, and why it stood in. */
 function openedLabel(opened: ProjectOpen | null): string {
   // The reason, not a guess at it: offline, signed out and deleted all
   // land here, and each wants a different next step.
-  if (opened?.from === 'device') {
-    return `Opened this device's copy of "${opened.link?.title}": ${opened.error}`;
-  }
-  return 'Restored your last sculpt';
+  return `Opened this device's copy of "${opened?.link?.title}": ${opened?.error}`;
 }
 
-/**
- * The boot notice. With `onFresh` it carries Start fresh, the way out of
- * an autosave nobody asked to resume.
- */
 /**
  * Run `fn` once the boot overlay has gone and a frame has been drawn: a
  * notice made before then could spend its whole life behind the overlay,
@@ -2850,25 +2836,17 @@ function afterBoot(fn: () => void): void {
   watch.observe(document.documentElement, { childList: true, subtree: true });
 }
 
-function bootToast(text: string, onFresh?: () => void): HTMLDivElement {
+/** The boot notice: a line of text, up for ten seconds once it can be seen. */
+function bootToast(text: string): HTMLDivElement {
   const toast = document.createElement('div');
   toast.className = 'sculpt-toast';
   const label = document.createElement('span');
   label.textContent = text;
   toast.append(label);
-  if (onFresh) {
-    const fresh = document.createElement('button');
-    fresh.type = 'button';
-    fresh.className = 'sculpt-toast__btn';
-    fresh.textContent = 'Start fresh';
-    fresh.addEventListener('click', onFresh);
-    toast.append(fresh);
-  }
   document.body.appendChild(toast);
   // Ten seconds of being SEEN, not ten seconds from mount: the boot
   // overlay is still up when this is built, and on a slow device (or a
-  // big restored scene) it could cover most of the toast's life - the
-  // "Start fresh" escape hatch expiring before anyone laid eyes on it.
+  // big restored scene) it could cover most of the toast's life.
   const arm = (): void => {
     window.setTimeout(() => toast.remove(), 10000);
   };

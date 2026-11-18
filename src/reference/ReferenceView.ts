@@ -570,7 +570,18 @@ function bindFrame(el: HTMLElement, id: string, view: ReferenceView): void {
     const v = st.view;
     view.setPlace(id, { x: (left + width / 2 - v.w / 2) / v.u, y: (top + height / 2 - v.h / 2) / v.u, w: width / v.u });
   };
-  el.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+  // No callout, scroll or zoom from a finger on the picture. Not on its row
+  // of buttons or the Look pop-up, which sit inside the frame: a cancelled
+  // touchstart there means no click follows, and the buttons did nothing
+  // under a finger or the Pencil.
+  el.addEventListener(
+    'touchstart',
+    (e) => {
+      if ((e.target as Element).closest('.ref-frame__bar, .ref-look')) return;
+      e.preventDefault();
+    },
+    { passive: false },
+  );
   el.addEventListener('pointerdown', (e) => {
     const target = e.target as Element;
     if (target.closest('.ref-frame__bar, .ref-look')) return;

@@ -1048,7 +1048,7 @@ export const suites = {
     let u = await ui();
     t.ok(u.rows.join('|') === 'Group 50%|  Layer 1' && u.grips === 2 && u.fields === 0, `the list shows the group with its layer indented, a grip on each row, nothing but text in a row (${u.rows.join('|')})`);
     t.eq(u.readout, '50%', "selecting a group shows its own Weight at the top");
-    t.ok(u.bar.join() === 'mask:on:44x32,group:on:44x32,layer:on:44x32,delete:on:44x32', `the foot bar has mask, group, layer, delete, each 44 by 32 (${u.bar.join()})`);
+    t.ok(u.bar.join() === 'layer:on:44x32,mask:on:44x32,group:on:44x32,delete:on:44x32', `the foot bar has layer, mask, group, delete, each 44 by 32 (${u.bar.join()})`);
     await page.evaluate(() => document.querySelector('.panel--layers .layer-row__fold').click());
     u = await ui();
     t.eq(u.rows.join('|'), 'Group 50%', 'folded, a group hides its layers');
