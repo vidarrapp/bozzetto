@@ -36,6 +36,8 @@ export class LayersPanel extends SidePanel {
 
   constructor(private readonly session: SculptSession) {
     super({ id: 'layers', title: 'Layers', side: 'left', variant: 'panel--layers' });
+    // The tab says Layers in both workspaces; the heading says which kind these are.
+    this.setHeading('Sculpt layers');
 
     this.sculptEl = div('layers-sculpt');
     this.body.append(this.sculptEl);
@@ -188,6 +190,7 @@ export class LayersPanel extends SidePanel {
   /** In the Paint workspace the tab shows the paint layers; in Sculpt, the sculpt layers. */
   setPaint(on: boolean): void {
     this.paintOn = on;
+    this.setHeading(on ? 'Paint layers' : 'Sculpt layers');
     this.sculptEl.hidden = on;
     if (on || this.paintViewMade) this.paintView.el.hidden = !on;
     this.refresh();
