@@ -186,6 +186,15 @@ window of the same kind. A sketch, to be designed properly before it is built:
 The light rig library (Lighting tab, built) can move into the same window
 frame later, so all three libraries look and behave alike.
 
+**One window with tabs** (Vidar, 2026-11-18: possibly; recommended here): a
+single Library window with the tabs **Tools**, **Materials** and **Light
+rigs**, in place of one window each. Each Library button opens it on its own
+tab (the Tool panel's on Tools, the Material tab's on Materials, the Lighting
+tab's on Light rigs), a tab shows only in the workspaces where it applies, and
+the window keeps one place and one size. It costs nothing extra if the window
+is built with tabs from the start, so the tool library's first step should
+build the frame that way even while Tools is its only tab.
+
 ---
 
 ## 4. A tool as a record
