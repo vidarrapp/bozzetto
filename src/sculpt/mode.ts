@@ -64,7 +64,7 @@ import { mountAccountHandle } from '../ui/account/menu';
 import { askWindow } from '../ui/askWindow';
 import { keyFor, viewMenuItems } from './ui/viewMenu';
 import { editMenuItems } from './ui/menuShape';
-import { rememberPanels } from './ui/panelMemory';
+import { WorkspacePanels } from './ui/panelMemory';
 import './ui/shell.css';
 import { DetailsOverlay, makeSculptDetails } from './ui/DetailsOverlay';
 import { FileActions, type LookBridge } from './bridge/FileActions';
@@ -636,9 +636,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let present: PresentMode | null = null;
   // The Paint workspace (enterPaint / leavePaint, below): a workspace of this page as Present is.
   let paintOn = false;
+  /** Which panels each workspace had open (Sculpt, Paint, Present): built with the panels, below. */
+  let wsPanels: WorkspacePanels | null = null;
+  /** Where Present goes when it ends, where it is not back to the workspace it began in (a key to another one). */
+  let presentLeavesTo: 'sculpt' | 'paint' | null = null;
+  let goWorkspaceNow: (to: Workspace) => boolean = () => false;
   // In Paint, an object with dynamic topology on gets a notice (once a visit to the page) offering to turn it off: set below.
   let suggestStatic: () => void = () => undefined;
-  let togglePaintWorkspace: () => void = () => undefined;
   let projectPrefetch: (() => void) | null = null;
   let viewItems: () => MenuItem[] = () => [];
   const extras = new Map<
@@ -1246,8 +1250,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     orbitY: (deltaDeg) => turntable(deltaDeg),
     dolly: (factor, at) => viewer.dolly(factor, at),
     toggleChrome: () => chrome.handleTab(),
-    togglePresent: () => present?.toggle(),
-    togglePaint: () => togglePaintWorkspace(),
+    goWorkspace: (to) => void goWorkspaceNow(to),
     togglePlay: () => present?.toggleTurning(),
     extractMasked: () => session.extractMasked(modelPanel?.getExtractThickness() ?? (session.getUnits() ? 0.5 : 1)),
     toggleMaskTint: () => {
@@ -1378,10 +1381,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    */
   const enterPresent = (): (() => void) => {
     // The Material panel stays: it is a Present panel too (its Surface section goes, its Display stays).
-    const sidePanels = [sculptPanel, scenePanel, modelPanel, layersPanel];
     const was = {
       chrome: chrome.isHidden(),
-      open: sidePanels.map((p) => !!p && !p.isCollapsed()),
       select: input.isSelecting(),
       gizmo: gizmo.isActive() ? gizmo.getMode() : null,
       maskTint: viewer.materials.getSculptMaskTint(),
@@ -1389,27 +1390,32 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     input.exitSelect();
     input.exitMeasure();
     exitTransform();
-    for (const p of sidePanels) p?.setCollapsed(true);
-    // The mask's darkening is a working aid, not the look.
-    viewer.materials.setSculptMaskTint(false);
     input.presenting = true;
     presenting = true;
     cursor.hide();
     syncHighlights();
     document.body.classList.add('presenting');
-    viewer.materials.setPresenting(true);
+    // The mask's darkening is a working aid, not the look; both changes are one rebuild of the colour.
+    viewer.materials.batch(() => {
+      viewer.materials.setSculptMaskTint(false);
+      viewer.materials.setPresenting(true);
+    });
+    // The panels Present had open last time (what Sculpt or Paint had is put away, and comes back).
+    wsPanels?.go('present');
     window.dispatchEvent(new CustomEvent('bozzetto:present', { detail: { active: true } }));
     return () => {
       document.body.classList.remove('presenting');
-      viewer.materials.setPresenting(false);
+      viewer.materials.batch(() => {
+        viewer.materials.setPresenting(false);
+        viewer.materials.setSculptMaskTint(was.maskTint);
+      });
+      // The workspace it began in has its own panels back (or the one a key is going to): before the
+      // look panels hear Present end and shut themselves, which would be written down as the person's doing.
+      wsPanels?.go(presentLeavesTo ?? (paintOn ? 'paint' : 'sculpt'));
       window.dispatchEvent(new CustomEvent('bozzetto:present', { detail: { active: false } }));
       input.presenting = false;
       presenting = false;
       chrome.set(was.chrome);
-      sidePanels.forEach((p, i) => {
-        if (was.open[i]) p?.setCollapsed(false);
-      });
-      viewer.materials.setSculptMaskTint(was.maskTint);
       if (was.select) input.enterSelect();
       else if (was.gizmo) enterTransform(was.gizmo);
       syncHighlights();
@@ -1659,7 +1665,29 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // paint tools, the Layers tab the paint layers, and the Sculpt brushes, the transform
   // gizmo and Negative are put away. Present can be entered from it and returns to it.
   /** What Sculpt had up when Paint began, put back when it ends. */
-  let paintWas: { tool: number; model: boolean; select: boolean; gizmo: GizmoMode | null } | null = null;
+  let paintWas: { tool: number; select: boolean; gizmo: GizmoMode | null } | null = null;
+  /** The paint tool Paint last had, kept on this device: Paint comes back to it. */
+  const PAINT_TOOL_KEY = 'bz.paintToolLast';
+  const isPaintTool = (t: number): boolean => t === Enums.Tools.PAINT || (t >= Enums.Tools.PAINT_ERASE && t <= Enums.Tools.PROJECT);
+  let paintToolLast: number = Enums.Tools.PAINT;
+  try {
+    const stored = Number(deviceStore.get(PAINT_TOOL_KEY));
+    if (deviceStore.get(PAINT_TOOL_KEY) !== null && Number.isInteger(stored) && isPaintTool(stored)) paintToolLast = stored;
+  } catch {
+    // A blocked store: Paint begins with the paint brush.
+  }
+  /** The tool just chosen, if Paint's own: what Paint comes back to. */
+  const notePaintTool = (): void => {
+    if (!paintOn || present?.isActive()) return;
+    const t = input.currentToolIndex();
+    if (!isPaintTool(t) || t === paintToolLast) return;
+    paintToolLast = t;
+    try {
+      deviceStore.set(PAINT_TOOL_KEY, String(t));
+    } catch {
+      // Only this visit remembers it, then.
+    }
+  };
   /** The address that reopens Paint: the page's own with `paint=1`, kept while Paint is up. */
   const setPaintAddress = (on: boolean): void => {
     try {
@@ -1676,21 +1704,20 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     if (input.isStroking() || gizmo.isDragging()) return false;
     paintWas = {
       tool: input.currentToolIndex(),
-      model: !!modelPanel && !modelPanel.isCollapsed(),
       select: input.isSelecting(),
       gizmo: gizmo.isActive() ? gizmo.getMode() : null,
     };
     input.exitSelect();
     input.exitMeasure();
     exitTransform();
-    // The Model tab is not Paint's: what they had open is put away until Sculpt is back.
-    modelPanel?.setCollapsed(true);
     paintOn = true;
     input.paintMode = true;
     document.body.classList.add('paint-ws');
     toolbar.setWorkspace(true);
     layersPanel?.setPaint(true);
-    input.selectBrush(Enums.Tools.PAINT);
+    // Paint's own panels (the Model tab is not Paint's: it is put away until Sculpt is back) and its own tool.
+    wsPanels?.go('paint');
+    input.selectBrush(paintToolLast);
     sculptPanel?.refreshBrush();
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true, mode: 'paint' } }));
     setPaintAddress(true);
@@ -1732,7 +1759,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // The tool Sculpt had (never one of Paint's: they are not Sculpt's to carry back).
     const sculptTool = was && was.tool !== Enums.Tools.PAINT && !(was.tool >= Enums.Tools.PAINT_ERASE) ? was.tool : Enums.Tools.BRUSH;
     input.selectBrush(sculptTool);
-    if (was?.model) modelPanel?.setCollapsed(false);
+    wsPanels?.go('sculpt');
     if (was?.select) input.enterSelect();
     else if (was?.gizmo) enterTransform(was.gizmo);
     sculptPanel?.refreshBrush();
@@ -1741,26 +1768,44 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     paintPath();
     window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
   };
-  togglePaintWorkspace = () => (paintOn ? leavePaint() : void enterPaint());
+  const whereNow = (): Workspace => (present?.isActive() ? 'present' : paintOn ? 'paint' : 'sculpt');
+  /**
+   * From any workspace to any other in one step, by the path, the View menu or
+   * Shift+1 to 4. Nothing is asked: it is refused only mid-stroke or mid-drag
+   * (the one thing that cannot be left half done). Leaving Present is as it
+   * always was (the turntable stopped, a clip being saved cancelled), landing on
+   * the workspace asked for with its own panels and tool.
+   */
+  const goWorkspace = (to: Workspace): boolean => {
+    if (to === whereNow()) return false;
+    if (to === 'armature') {
+      void goArmature();
+      return true;
+    }
+    if (input.isStroking() || gizmo.isDragging()) return false;
+    if (to === 'present') return !!present?.enter();
+    if (present?.isActive()) {
+      presentLeavesTo = to;
+      try {
+        present.leave();
+      } finally {
+        presentLeavesTo = null;
+      }
+    }
+    if (to === 'paint') enterPaint();
+    else leavePaint();
+    return true;
+  };
+  goWorkspaceNow = goWorkspace;
   // The workspace path as the strip and the View menu both read it: Sculpt, Paint,
   // or Present while presenting, is where you are.
   const workspaceNow = (): { current: Workspace; steps: Partial<Record<Workspace, PathStep>> } => ({
-    current: present?.isActive() ? 'present' : paintOn ? 'paint' : 'sculpt',
+    current: whereNow(),
     steps: {
-      armature: { action: () => void goArmature() },
-      sculpt: {
-        action: () => {
-          present?.leave();
-          leavePaint();
-        },
-      },
-      paint: {
-        action: () => {
-          present?.leave();
-          enterPaint();
-        },
-      },
-      present: { action: () => void present?.enter() },
+      armature: { action: () => void goWorkspace('armature') },
+      sculpt: { action: () => void goWorkspace('sculpt') },
+      paint: { action: () => void goWorkspace('paint') },
+      present: { action: () => void goWorkspace('present') },
     },
   });
   // The title strip's menus: File, Edit, View and Help, in that order.
@@ -1900,6 +1945,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         moveLight: { get: () => input.isLightArmed(), toggle: () => input.armLight(!input.isLightArmed()) },
         hideInterface: () => chrome.set(true),
         workspace: workspaceNow,
+        workspaceKeys: true,
       });
     viewMenu = new TopMenu('View', viewItems(), 'file-menu--view', strip.menus, true);
     // Help beside them: the topics, the hotkey guide, and who made what.
@@ -2062,7 +2108,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   modelPanel.setMergeEnabled(scenePanel.canMerge());
   // Which panel was open on each side last time, open again; kept from here on.
-  const offPanelMemory = rememberPanels('sculpt');
+  // Sculpt, Paint and Present each keep their own; the page opens in Sculpt.
+  wsPanels = new WorkspacePanels('sculpt');
   // New, Open, a restore and Set scale can each move the scene between
   // real units and the old scale: the floor, the panels' units and the
   // Set scale offer follow.
@@ -2137,6 +2184,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     input.onToolChange = () => {
       prevToolChange?.();
       sculptPanel?.refreshBrush();
+      notePaintTool();
       // Project reads the pictures in the view: have them ready before the first press.
       if (input.currentToolIndex() === Enums.Tools.PROJECT) projectPrefetch?.();
     };
@@ -2519,7 +2567,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     present = null;
     session.onLevelChange = null;
     levelToast.dispose();
-    offPanelMemory();
+    wsPanels?.dispose();
+    wsPanels = null;
     readout.dispose();
     offDetailsSetting();
     details.dispose();

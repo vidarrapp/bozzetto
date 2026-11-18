@@ -7,8 +7,9 @@ import { deviceStore } from '../../ui/deviceStorage';
 /**
  * Present, the third workspace (Armature, Sculpt, Present): the model on its
  * own, for looking at and for showing. The path in the title strip, View >
- * Present and Shift+P (the keymap's ui.present, rebindable, which also
- * leaves) go in; Esc, the path's Sculpt step and Shift+P leave.
+ * Present and Shift+4 (the keymap's ws.present, rebindable) go in; the path's,
+ * the menu's and the keys' other workspaces (Shift+1 to 3) leave it. Esc does
+ * not: it keeps closing what is open and bringing a hidden interface back.
  *
  * Presenting hides what edits - the tool bar, the edge controls and their undo
  * chips, the Scene, Model and Tool panels and their tabs, the brush ring and
@@ -18,9 +19,10 @@ import { deviceStore } from '../../ui/deviceStorage';
  * path showing Present, and Publish at its right (Present only); the notices
  * stay. Material and Output (below) stand at the right, and Lighting, Camera
  * and Render (everything on the look) at the left. Nothing about the scene changes by going in or
- * out, and the autosave carries on. Leaving puts the interface back as it
- * was: which panels were open, the tool, the gizmo or the Select tool, the
- * mask tint, Tab's hidden state.
+ * out, and the autosave carries on. Each workspace keeps its own panels
+ * (panelMemory's WorkspacePanels), so Present opens as it was left and leaving
+ * puts the other's back; leaving also puts back the tool, the gizmo or the
+ * Select tool, the mask tint and Tab's hidden state.
  *
  * Where the tool bar stood, one bar at the bottom centre holds the
  * turntable - a slow turn about the subject's vertical axis, at the speed
@@ -118,15 +120,6 @@ export class PresentMode {
 
   /** Told when Present begins or ends. */
   onChange: ((on: boolean) => void) | null = null;
-
-  /** Esc leaves, unless something nearer the focus took it (a menu, a window, a dialog). */
-  private readonly onKeyDown = (e: KeyboardEvent): void => {
-    if (!this.active || e.key !== 'Escape' || e.defaultPrevented) return;
-    if (document.body.classList.contains('has-modal')) return;
-    const at = e.target as Element | null;
-    if (at?.closest?.('[role="menu"], [role="dialog"], .float-window, input[type="text"], textarea, select')) return;
-    this.leave();
-  };
 
   /** Any press or wheel on the view stops the turn: the hand takes over. */
   private readonly onViewInput = (e: Event): void => {
@@ -226,7 +219,6 @@ export class PresentMode {
     this.paintClip();
     this.paintSpeed();
 
-    window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('pointerdown', this.onViewInput, true);
     window.addEventListener('wheel', this.onViewInput, { capture: true, passive: true });
   }
@@ -254,8 +246,7 @@ export class PresentMode {
     this.restore = this.host.enter();
     this.active = true;
     this.bar.hidden = false;
-    // The Output tab opens; Lighting, Camera and Render wait at the left.
-    this.output.setCollapsed(false);
+    // Which panels stand open is Present's own memory (WorkspacePanels): the first time, Output.
     this.onChange?.(true);
     window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
     return true;
@@ -267,7 +258,6 @@ export class PresentMode {
     this.setTurning(false);
     this.active = false;
     this.bar.hidden = true;
-    this.output.setCollapsed(true);
     const restore = this.restore;
     this.restore = null;
     restore?.();
@@ -398,7 +388,6 @@ export class PresentMode {
 
   dispose(): void {
     this.leave();
-    window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('pointerdown', this.onViewInput, true);
     window.removeEventListener('wheel', this.onViewInput, { capture: true });
     this.output.dispose();

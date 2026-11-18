@@ -153,7 +153,7 @@ export const TOOLS: Topic[] = [
     group: 'Paint tools',
     tools: ['Paint'],
     blocks: [
-      p('Paints colour onto the model, in the **Paint** workspace (**Shift+B**), into the layer you have picked in the Layers panel, or into Base. Default hotkey: **1**. The paint tools are the first of six: Paint, Erase, Blur, Fill, Pick and Project, on **1** to **6**; **Q** is still Select.'),
+      p('Paints colour onto the model, in the **Paint** workspace (**Shift+3**), into the layer you have picked in the Layers panel, or into Base. Default hotkey: **1**. The paint tools are the first of six: Paint, Erase, Blur, Fill, Pick and Project, on **1** to **6**; **Q** is still Select.'),
       options(
         ['Colour', 'The colour swatch opens a colour picker. Drag the swatch over the view to pick a colour off the screen.'],
         ['Fill', 'The button beside the swatch covers the layer, or the part that is not masked, in the colour, in one undo step.'],

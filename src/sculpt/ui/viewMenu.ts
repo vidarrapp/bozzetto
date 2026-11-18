@@ -48,6 +48,8 @@ export interface ViewHooks {
    * show greyed out, with the reason. Left out where the place has no path.
    */
   workspace?: () => { current: Workspace; steps: Partial<Record<Workspace, PathStep>> };
+  /** The workspace keys (ws.*, Shift+1 to 4) are heard here: Sculpt's page; the others' menus show none. */
+  workspaceKeys?: boolean;
 }
 
 /** The panels in tab order (the left side, then the right). */
@@ -134,7 +136,7 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
       const here = (): boolean => way().current === id;
       spaces.push({
         label,
-        key: id === 'present' ? keyFor('ui.present') : id === 'paint' ? keyFor('ui.paint') : undefined,
+        key: h.workspaceKeys ? keyFor(`ws.${id}`) : undefined,
         enabled: () => !here() && 'action' in (step() ?? {}),
         hint: () => {
           if (here()) return 'Where you are';

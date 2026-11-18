@@ -60,7 +60,7 @@ Pick **Create → New Sculpt** in the gallery. No sign-in needed, and nothing le
 
 <!-- Screenshot slot for the owner: docs/screenshots/paint.jpg, 1180x820, Paint with the Layers tab open. -->
 
-Colour the model in layers. Open **Paint** from the path at the top, with **View**, **Paint**, or with `Shift`+`B`; the same scene as Sculpt, so go back and forth freely. Paint adds `?paint=1` to the address, so a reload opens it again.
+Colour the model in layers. Open **Paint** from the path at the top, with **View**, **Paint**, or with `Shift`+`3`; the same scene as Sculpt, so go back and forth freely. Paint adds `?paint=1` to the address, so a reload opens it again.
 
 - **Six tools.** Paint, Erase, Blur, Fill, Pick and Project on `1` to `6`, with Select on `Q`. Paint takes `Alt`+click to pick a colour and `Shift` to blur. The brush's size, strength, falloff, pressure and symmetry, the mask and hidden poly groups work as they do in Sculpt.
 - **Paint layers.** A **Layers** tab with an eye, a name, a blend mode and an opacity a layer, newest on top, over a fixed **Base** (the colour the object had), which you can paint on too. Drag a layer by its handle to reorder; the menu has Rename, Duplicate, Merge down, Clear and Delete, and **Flatten all** is at the foot.
@@ -73,7 +73,7 @@ Colour the model in layers. Open **Paint** from the path at the top, with **View
 
 <img width="1180" height="820" alt="Bozzetto Screenshot - Present mode" src="docs/screenshots/present.jpg" />
 
-Light the piece, render it and publish it. Open **Present** from the path at the top of Sculpt, or with `Shift`+`P`.
+Light the piece, render it and publish it. Open **Present** from the path at the top of Sculpt, or with `Shift`+`4`.
 
 - **Render.** Lights with soft shadows, environment lighting, ten matcaps, tone mapping, ambient occlusion, depth of field, ground and background.
 - **Turntable.** A slow turn around the piece. `Space` starts and stops it.
@@ -145,8 +145,7 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 | `Ctrl`+`D` | Subdivide |
 | `Ctrl`+`M` / `Ctrl`+`J` | Mirror / merge the selected objects |
 | `Shift`+`W` | Wireframe |
-| `Shift`+`B` | Paint |
-| `Shift`+`P` | Present |
+| `Shift`+`1` / `2` / `3` / `4` | Armature / Sculpt / Paint / Present, from any of them |
 
 ### Paint
 
@@ -156,8 +155,7 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 | `Alt`+click | Pick a colour (with Paint) |
 | `Shift`+drag | Blur the paint (with Paint) |
 | `Q` | Select tool |
-| `Shift`+`B` | Back to Sculpt |
-| `Shift`+`P` | Present (and back to Paint) |
+| `Shift`+`1` / `2` / `4` | Armature / Sculpt / Present |
 
 The size and strength keys, symmetry, the mask, undo and redo, subdivision and the view keys are as in Sculpt.
 
@@ -171,12 +169,12 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 | `Shift`+`S` | Shadows on or off |
 | `G` | Cycle the ground |
 | `L`, held while dragging | Move the key light |
-| `Esc` | Leave Present |
 
 ## Changelog
 
 ### Unreleased
 
+- **Sculpt, Paint and Present are tabs of one mode.** `Shift`+`1` to `4` take you to Armature, Sculpt, Paint or Present from any of them (replacing `Shift`+`B` and `Shift`+`P`), without a question, and each workspace remembers its own open panels, and Paint its tool, so tweaking the light is one key there and one key back.
 - **Merge down keeps to the math.** The layer is composed, with its own blend mode, opacity and mask, onto the colours of the layer below, and the layer below keeps its own mode, opacity and mask. Merging into an Overlay layer gives what merging into a Normal layer and then switching to Overlay gives.
 - **Project paints only what the camera sees.** A part of the model behind a nearer part, or behind another object in view, no longer takes projected colour.
 - **The Details overlay names the paint layer.** In Paint its Layer line shows the active paint layer, Base, or the group.

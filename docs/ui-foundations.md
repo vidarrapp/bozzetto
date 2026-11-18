@@ -48,7 +48,8 @@ container scrolls; the document does not, so the strip stays sharp on iPad.
 
 | Name | Value | Used for |
 | --- | --- | --- |
-| Strip | #1b1b1b | The title strip; a tab that is behind |
+| Bar | #141414 | The title strip, a step darker than everything under it |
+| Strip | #1b1b1b | A tab that is behind; the page ground of the gallery and viewer |
 | Viewport | #222222 | The Sculpt and Armature viewport |
 | Panel | #2c2c2c | Panels (at the Panel opacity preference), the tool bar |
 | Raised | #333333 | Menus, tooltips, windows, notices: with a 1px #555555 border and a shadow |

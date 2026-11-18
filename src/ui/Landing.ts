@@ -59,7 +59,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     <div class="landing">
       <header class="landing__head">
         <div>
-          <h1 class="landing__title"><img class="landing__logo" src="/assets/bozzetto-script-ink.svg" alt="Bozzetto" /></h1>
+          <h1 class="landing__title"><img class="landing__logo" src="/assets/bozzetto-logotype.svg" alt="Bozzetto" /></h1>
           <p class="landing__tagline">Pose, sculpt &amp; present</p>
         </div>
 

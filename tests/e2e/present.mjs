@@ -251,12 +251,12 @@ export const suites = {
       const item = [...document.querySelectorAll('.file-menu--view .file-menu__item')].find((b) => b.querySelector('.file-menu__label')?.textContent === 'Present');
       return item ? item.querySelector('.file-menu__key')?.textContent : null;
     });
-    t.ok(presentItem && /Shift \+ P|Shift\+P/.test(presentItem), `View has Present, and shows the hotkey ("${presentItem}")`);
+    t.ok(presentItem && /Shift \+ 4|Shift\+4/.test(presentItem), `View has Present, and shows the hotkey ("${presentItem}")`);
     await press(page, 'Escape');
 
-    await press(page, 'Shift+P');
+    await press(page, 'Shift+4');
     let now = await ui(page);
-    t.ok(now.presenting && now.shown.bar && now.shown.material && now.shown.render && now.shown.output && now.shown.menus, `Shift+P presents: the bar and the Material, Render and Output tabs up (${show(now.shown)})`);
+    t.ok(now.presenting && now.shown.bar && now.shown.material && now.shown.render && now.shown.output && now.shown.menus, `Shift+4 presents: the bar and the Material, Render and Output tabs up (${show(now.shown)})`);
     t.ok(now.open.output && !now.open.render, `the Output panel opens with it (${show(now.open)})`);
     t.eq(now.path, 'Armature > Sculpt > Paint > Present*', 'the path shows Present as the current step');
     t.ok(
@@ -266,9 +266,14 @@ export const suites = {
     t.ok(!now.selecting && now.gizmo === null && !now.open.scene && !now.open.tool, `the Select tool and the side panels are put away (${show(now)})`);
     const highlighted = await page.evaluate(() => window.__sculpt.viewer.isSculptHighlighted('primary'));
     t.ok(!highlighted, 'and no selection outline is drawn');
-    await press(page, 'Shift+P');
-    let after = await ui(page);
-    t.ok(same(after, before), `Shift+P again puts everything back as it was (${show(after)})`);
+    // Esc with nothing open and the interface showing changes nothing: Present is left by a workspace key.
+    const inPresent = await ui(page);
+    await press(page, 'Escape');
+    await page.waitForTimeout(300);
+    t.ok(same(await ui(page), inPresent), 'Esc in Present with nothing open changes nothing');
+    await press(page, 'Shift+2');
+    let after = await uiOnce(page, (u) => !u.presenting && u.shown.toolbar && u.shown.rail);
+    t.ok(same(after, before), `Shift+2 puts everything back as it was (${show(after)})`);
 
     // The chip in, Esc out; then the gizmo, in its mode, comes back too.
     await press(page, 'q');
@@ -281,12 +286,12 @@ export const suites = {
     // The menu shuts as its item runs; Esc must reach Present, not a menu still closing.
     await page.waitForFunction(() => !document.querySelector('.bz-menuname.is-open, .file-menu:not([hidden]) .file-menu__item:focus'), null, { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(150);
-    await press(page, 'Escape');
+    await press(page, 'Shift+2');
     // Leaving takes a few frames on a busy machine (the slide back, the panels coming up).
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(300);
-    after = await ui(page);
-    t.ok(same(after, gizmoBefore) && after.gizmo === 'rotate' && !after.shown.output, `Esc leaves, the rotate gizmo back (${show(after)})`);
+    after = await uiOnce(page, (u) => same(u, gizmoBefore));
+    t.ok(same(after, gizmoBefore) && after.gizmo === 'rotate' && !after.shown.output, `Shift+2 leaves, the rotate gizmo back (${show(after)})`);
     await press(page, '3'); // a brush again: Standard clay
 
     // --- locked: brushes, gizmo and edits; orbit still turns ----------------
@@ -294,7 +299,7 @@ export const suites = {
     await settle(page);
     const [cx, cy] = await screenOf(page, 'Sphere');
     const path = line([cx - 90, cy - 20], [cx + 90, cy + 20]);
-    await press(page, 'Shift+P');
+    await press(page, 'Shift+4');
     const tool = (await ui(page)).tool;
     let sum = await meshSum(page);
     let strokes = await strokeCount(page);
@@ -365,24 +370,32 @@ export const suites = {
     now = await uiOnce(page, allBack);
     t.ok(allBack(now), `as Tab brings it back (${show(now.shown)})`);
     t.ok(now.shown.hide, `the hide button shows in Present (${show(now.shown)})`);
-    await press(page, 'Tab');
-    await press(page, 'Tab');
+    // Tab closes what is open, then hides the interface: up to two presses.
+    for (let i = 0; i < 3 && !(await ui(page)).chrome; i++) {
+      await press(page, 'Tab');
+      await page.waitForTimeout(500);
+    }
+    now = await uiOnce(page, (u) => u.chrome && u.presenting);
+    t.ok(now.chrome && now.presenting, 'hidden again');
     await press(page, 'Escape');
+    now = await uiOnce(page, allBack);
+    t.ok(allBack(now), `Esc brings the hidden interface back and does not leave Present (${show(now.shown)})`);
+    await press(page, 'Shift+2');
     // The interface slides back in: wait for its end.
     now = await uiOnce(page, (u) => !u.presenting && !u.chrome && u.shown.toolbar && u.shown.rail);
-    t.ok(!now.presenting && !now.chrome && now.shown.toolbar && now.shown.rail, `Esc with the interface hidden leaves Present with the interface as it was (${show(now)})`);
+    t.ok(!now.presenting && !now.chrome && now.shown.toolbar && now.shown.rail, `Shift+2 leaves Present with the interface as it was (${show(now)})`);
     // Hidden before Present, hidden after.
     await press(page, 'Tab');
     await press(page, 'Tab');
     const hiddenBefore = await ui(page);
-    await press(page, 'Shift+P');
-    await press(page, 'Shift+P');
+    await press(page, 'Shift+4');
+    await press(page, 'Shift+2');
     after = await ui(page);
     t.ok(hiddenBefore.chrome && after.chrome && !after.presenting, 'Tab-hidden going in, Tab-hidden coming out');
     await press(page, 'Tab');
 
     // --- the turntable -----------------------------------------------------
-    await press(page, 'Shift+P');
+    await press(page, 'Shift+4');
     // The turntable moves the camera only: the autosave counts no edit for it.
     const edits0 = await page.evaluate(() => window.__sculpt.persist.editCount());
     home = await camera(page);
@@ -426,6 +439,8 @@ export const suites = {
 
     // --- Save image ----------------------------------------------------------
     await page.evaluate(() => window.__sculpt.present.setSpeed(12));
+    // Present opens as it was left (the Tab presses above shut its panels): Output is opened for the save.
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'output', open: true } })));
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.click('.present-out__save')]);
     const saved = await page.waitForFunction(() => [...document.querySelectorAll('.file-menu__progress')].some((n) => n.dataset.state === 'done' && /^Saved Sculpt\.png$/.test(n.textContent)), null, { timeout: 10_000 }).then(() => true).catch(() => false);
     t.ok(saved, 'Save image says it saved the file');
@@ -458,7 +473,7 @@ export const suites = {
     t.ok(!near(got[4], got[0], 12), `and the model is in the middle (${show(got[4])})`);
     const live = await page.evaluate(() => ({ w: window.__sculpt.viewer.captureCanvas.width, ratio: window.devicePixelRatio }));
     t.eq(live.w, Math.round(view.w * Math.min(live.ratio, 2)), 'the screen goes back to its own resolution afterwards');
-    await press(page, 'Escape');
+    await press(page, 'Shift+2');
 
     // --- Save turntable --------------------------------------------------------
     await clipChecks(page, base, t);
@@ -550,7 +565,7 @@ async function clipChecks(page, base, t) {
     p.on('pageerror', (e) => errors.push(String(e)));
     await openForInput(p, base);
     await p.addStyleTag({ content: '.panel { transition: none !important; }' });
-    await p.keyboard.press('Shift+P');
+    await p.keyboard.press('Shift+4');
     await p.waitForTimeout(100);
     const turning = () => p.evaluate(() => window.__sculpt.present.isTurning());
     await press(p, 'Space');
@@ -672,7 +687,7 @@ async function publishChecks(page, base, t) {
     t.ok(end.state === 'done' && plainPut.length === 0, `outside Present, Save to library writes no look blocks (${end.text}; ${plainPut.length} updates)`);
 
     // Present, a view of its own and a look: the lens, the grade, the backdrop.
-    await owner.keyboard.press('Shift+P');
+    await owner.keyboard.press('Shift+4');
     await owner.evaluate(() => {
       const v = window.__sculpt.viewer;
       v.setFocalLength(85);
@@ -763,7 +778,7 @@ async function publishChecks(page, base, t) {
       `the viewer opens at the presented camera (${show(opened.cam.position)} vs ${show(look.camera.position)}, ${opened.cam.focalLength} mm)`,
     );
     t.ok(opened.tone === 'agx' && same(opened.env, look.environment), `under its grade and environment (${opened.tone})`);
-    await owner.keyboard.press('Escape');
+    await owner.keyboard.press('Shift+2');
 
     // The gallery: every card's picture frame is 4:5, the shape the pictures are captured at, and the pictures sit in it.
     await owner.evaluate(() => window.__sculpt.persist.flush());
