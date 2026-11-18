@@ -1,4 +1,5 @@
 import { div } from '../../ui/dom';
+import { dynamicNote } from './dynamicNote';
 import { LayerBar, LayerControls, LayerList, type LayerRowData } from '../../ui/layerList';
 import { BLEND_MODES, blendModeById, blendSelect } from '../../ui/blendModes';
 import { isBlendId } from '../../paint/blend';
@@ -40,8 +41,7 @@ export class PaintLayersView {
 
   constructor(private readonly session: SculptSession) {
     this.el = div('layers-paint');
-    this.note = div('layers-note');
-    this.note.hidden = true;
+    this.note = dynamicNote(session, 'Paint layers need dynamic topology off.', () => this.onEdit?.());
     this.el.append(this.note);
 
     // The blend mode and the opacity of the ACTIVE layer, as Photoshop has them at the top of its panel.
@@ -244,7 +244,6 @@ export class PaintLayersView {
     for (const o of this.mode.options) if (o.value === 'pass') o.disabled = active?.kind !== 'group';
     const dynamic = !!mesh?.isDynamic;
     this.note.hidden = !dynamic;
-    this.note.textContent = dynamic ? 'Paint layers need dynamic topology off.' : '';
     this.bar.set({
       mask: !!active && !dynamic,
       fill: !!mesh && !dynamic,

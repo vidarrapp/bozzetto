@@ -336,10 +336,10 @@ export const suites = {
       const mats = window.__sculpt.viewer.materials;
       const sel = [...document.querySelectorAll('.panel--material select')].find((x) => [...x.options].some((o) => o.textContent === 'Albedo only'));
       if (!sel) return null;
-      sel.value = 'plain';
+      sel.value = 'albedo';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
       const set = mats.getMaterialState().vertexColors;
-      sel.value = 'sculpt';
+      sel.value = 'both';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
       return { set, back: mats.getMaterialState().vertexColors };
     });

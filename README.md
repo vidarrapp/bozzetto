@@ -177,7 +177,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ### Unreleased
 
-- **Albedo tints the paint.** An object's material colour now multiplies its paint, as a material does over vertex colours: unpainted objects show their albedo, a red stroke is red times it, and a white albedo shows paint exactly as picked. Changing Albedo is instant on any mesh, Paint no longer switches Colour or shows a notice, and scenes saved before open looking as they did.
+- **Albedo tints the paint.** An object's material colour now multiplies its paint, as a material does over vertex colours: unpainted objects show their albedo, a red stroke is red times it, and a white albedo shows paint exactly as picked. Changing Albedo is instant on any mesh, Paint no longer switches Colour or shows a notice, and scenes saved before open looking as they did. A **Colour** choice in the Material tab shows Albedo and paint, Albedo only or Paint only, in Sculpt, Paint and Present. Entering Paint with dynamic topology on shows a notice to turn it off (paint layers need it off), and the Layers tab has the same button.
 
 ### v0.7.0
 

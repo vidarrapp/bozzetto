@@ -56,7 +56,7 @@ export const MODES: Topic[] = [
         ['Base row', 'Its menu has **Flatten all**, which makes every layer part of the object\'s colour.'],
       ),
       p('Each layer keeps its colour on the object\'s highest subdivision level. You can paint on any level: colour painted on a lower level is carried to the highest, and every level shows the layers. Subdivide carries the layers to the new highest level, and Delete highest carries them down. Voxel remesh, Quad remesh, Merge, splitting into objects and dynamic topology rebuild the surface, so they ask once to flatten both the sculpt layers and the paint layers. Publishing and exporting use the colours as they show. Layers are saved with the project, and Ctrl+Z undoes each stroke and each layer change in one press.'),
-      p('Paint layers need dynamic topology off. Masks, symmetry and hidden poly groups work as they do for painting without layers.'),
+      p('Paint layers need dynamic topology off. With it on you can still paint, but without layers, and painting adds triangles under the brush. Entering Paint with such an object shows a notice with a **Turn off** button (once for each object, for a few seconds, and it never holds up the switch); the Layers tab has the same sentence with a **Turn off dynamic topology** button. Turning it off is the Model panel\'s switch: the shape and colours stay, and Undo brings it back. Masks, symmetry and hidden poly groups work as they do for painting without layers.'),
     ],
   },
   {

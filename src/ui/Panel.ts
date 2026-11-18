@@ -1,4 +1,5 @@
 import { DEFAULT_CAVITY, type Viewer } from '../viewer/Viewer';
+import type { ColourSource } from '../viewer/Materials';
 import { div, labelRow, selectEl } from './dom';
 import { colorPicker, type ColorPickerHandle } from './ColorPicker';
 import { matcapPicker, type MatcapPickerHandle } from './MatcapPicker';
@@ -199,21 +200,16 @@ export class MaterialControls {
   private albedoPicker?: ColorPickerHandle;
   /** The matcap gallery popout's trigger, reused like the colour pickers. */
   private mcPicker?: MatcapPickerHandle;
-  private presenting = false;
   private readonly sculpting: boolean;
   private readonly cavity: boolean;
+  /** Sculpt's Material panel: the Colour choice (albedo and paint, albedo only, paint only) after Mode. */
+  private readonly colour: boolean;
   private cavityHost?: HTMLDivElement;
   /** The cavity strength to come back to after it was switched off (zero is its "off"). */
   private cavityStrength: number = DEFAULT_CAVITY.strength;
 
-  /**
-   * Sculpt's Present mode is up: the section offers the Sculpt colours /
-   * Plain colour switch over the sculpt, as it does over a published model
-   * (Materials.setPresenting).
-   */
-  private readonly onPresent = (e: Event): void => {
-    this.presenting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
-    // Not shown (the Render panel in Sculpt, with the Material panel holding the section): nothing to redraw.
+  /** Present opens or closes over the sculpt: the choices are read again (the Colour choice is there in every workspace). */
+  private readonly onPresent = (): void => {
     if (this.options && this.root.isConnected) this.rebuildOptions();
   };
 
@@ -224,9 +220,10 @@ export class MaterialControls {
    */
   constructor(
     private readonly viewer: Viewer,
-    opts: { sculpting: boolean; heading?: string; cavity?: boolean },
+    opts: { sculpting: boolean; heading?: string; cavity?: boolean; colour?: boolean },
   ) {
     this.sculpting = opts.sculpting;
+    this.colour = !!opts.colour;
     this.cavity = !!opts.cavity;
     this.root = div('section');
     const h = document.createElement('h3');
@@ -358,18 +355,19 @@ export class MaterialControls {
     const mats = this.viewer.materials;
     const state = mats.getMaterialState();
 
-    if (this.viewer.getMaterial() === 'lit' && this.sculpting && this.presenting) {
-      // Presenting a sculpt: the albedo times the paint, or the albedo alone.
-      // The albedo itself stays per object, in the Surface section of the
-      // Material panel. (The stored choice keeps its name, vertexColors.)
+    if (this.viewer.getMaterial() === 'lit' && this.colour) {
+      // A sculpt, in Sculpt, Paint and Present alike: which of the two factors
+      // the shader uses. The albedo itself stays per object, in the Surface
+      // section; nothing about the paint or the material is changed here.
       const source = selectEl(
         [
-          ['sculpt', 'Albedo and paint'],
-          ['plain', 'Albedo only'],
+          ['both', 'Albedo and paint'],
+          ['albedo', 'Albedo only'],
+          ['paint', 'Paint only'],
         ],
-        state.vertexColors === false ? 'plain' : 'sculpt',
+        mats.getColourSource(),
       );
-      source.addEventListener('change', () => mats.setPlainColor(source.value === 'plain'));
+      source.addEventListener('change', () => mats.setColourSource(source.value as ColourSource));
       host.appendChild(labelRow('Colour', source));
     } else if (this.viewer.getMaterial() === 'lit' && !this.sculpting) {
       // In sculpt mode these three are PER-OBJECT material values and live
