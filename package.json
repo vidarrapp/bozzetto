@@ -37,12 +37,12 @@
     "three": "^0.186.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261103.1",
+    "@cloudflare/workers-types": "^5.20261110.1",
     "@flaticon/flaticon-uicons": "^3.3.1",
     "@types/three": "^0.186.0",
     "typescript": "^7.0.2",
-    "vite": "^8.3.5",
+    "vite": "^8.3.7",
     "vite-plugin-pwa": "^2.0.0",
-    "wrangler": "^4.156.2"
+    "wrangler": "^4.159.0"
   }
 }
