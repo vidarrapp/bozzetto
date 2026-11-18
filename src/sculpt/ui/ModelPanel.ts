@@ -22,7 +22,7 @@ import type { Viewer } from '../../viewer/Viewer';
 import { REMESH_LIMITS, RemeshTooLarge } from '../bridge/remeshBudget';
 import { SidePanel } from './SidePanel';
 import { statusToast } from './statusToast';
-import { askFlatten, withLayersFlattened } from './layerGate';
+import { askFlatten, layerWords, layeredMeshes, withLayersFlattened } from './layerGate';
 import { showWhileHeld, VoxelOverlay } from './VoxelOverlay';
 import { formatSceneLength } from '../../viewer/units';
 import { lengthText, type Measure } from '../bridge/measure';
@@ -159,16 +159,21 @@ export class ModelPanel extends SidePanel {
         // Held at off while the window is up; the answer sets it.
         this.dyntopoCheckbox.checked = false;
         void (async () => {
+          // One question: the switch, and the layers it flattens when the object has any.
+          const mesh = this.session.getMesh();
+          const have = mesh ? layeredMeshes(this.session, [mesh]) : [];
+          const flat = have.length
+            ? ` Its ${layerWords(this.session, have)} are flattened into the surface and their masks go.`
+            : '';
           const ok = await askWindow({
             title: 'Turn on dynamic topology?',
             text:
-              'It rebuilds the surface under every stroke, and the subdivision levels are flattened to the current resolution. ' +
-              'Undo reverses the switch.',
-            yes: 'Turn on',
+              'It rebuilds the surface under every stroke, and the subdivision levels are flattened to the current resolution.' +
+              `${flat} Undo reverses the switch.`,
+            yes: have.length ? 'Flatten and turn on' : 'Turn on',
             danger: true,
           });
           if (!ok) return;
-          if (!(await askFlatten(this.session, this.session.getMesh() ? [this.session.getMesh()!] : [], 'switch'))) return;
           this.session.toggleDynamicTopology();
           this.refreshState();
         })();

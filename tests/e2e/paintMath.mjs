@@ -20,7 +20,7 @@
 // paintProjectSpeed: a Project stroke's time per dab with the depth test off
 //   and on, at about 100k and about 1M vertices (the figures go to the output).
 import { mkdirSync } from 'node:fs';
-import { openForInput } from './smoke.mjs';
+import { openForInput, openPanel } from './smoke.mjs';
 import { install } from './paint.mjs';
 
 const SHOTS = '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9835c4/scratchpad/app/pmath';
@@ -570,6 +570,71 @@ export const suites = {
       return { back: !!A1 && !!B1 && same(a0, pm.grab(A1)) && same(b0, pm.grab(B1)), diff: pt.diff('pre') };
     });
     t.ok(undo.back && undo.diff === 0, `one undo step brings back both layers, their bytes, masks and the picture (${show(undo)})`);
+  },
+
+  async paintDynamicAsks(page, base, t) {
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await openForInput(page, base);
+    await page.evaluate(install);
+    await page.evaluate(() => window.__sculpt.paintWorkspace.enter());
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.paint.add(window.__pt.mesh());
+      window.__pt.stroke(window.__pt.T.PAINT, [0.9, 0.2, 0.1], 0, 0, 60, 1);
+    });
+    await page.evaluate(() => window.__sculpt.paintWorkspace.leave());
+    t.ok(await openPanel(page, 'Model'), 'the Model panel opens');
+    const asked = [];
+    let answer = false;
+    page.on('dialog', (d) => {
+      asked.push(d.message());
+      return answer ? d.accept() : d.dismiss();
+    });
+    const state = () =>
+      page.evaluate(() => {
+        const { session } = window.__sculpt;
+        const m = session.getMesh();
+        return { dyn: session.isDynamicTopology(), paint: session.paint.rawList(m).length, sculpt: session.layers.list(m).length };
+      });
+    const flip = async () => {
+      asked.length = 0;
+      await page.evaluate(() => [...document.querySelectorAll('label')].find((l) => /Dynamic topology/.test(l.textContent))?.querySelector('input').click());
+      await page.waitForFunction(() => document.querySelector('.bz-ask') === null, null, { timeout: 20_000 }).catch(() => undefined);
+      await page.waitForTimeout(500);
+    };
+    const round = async (name, words, expect) => {
+      answer = false;
+      await flip();
+      t.eq(asked.length, 1, `${name}: turning dynamic topology on asks once`);
+      t.ok(/flattened/.test(asked[0] ?? ''), `${name}: and the question says it flattens (${(asked[0] ?? '').replace(/\s+/g, ' ')})`);
+      if (words) t.ok(asked[0].includes(words), `${name}: it names "${words}"`);
+      let st = await state();
+      t.ok(!st.dyn && st.paint === expect.paint && st.sculpt === expect.sculpt, `${name}: Cancel leaves the switch off and the layers as they were (${JSON.stringify(st)})`);
+      answer = true;
+      await flip();
+      st = await state();
+      t.eq(asked.length, 1, `${name}: still one question when answered yes`);
+      t.ok(st.dyn && st.paint === 0 && st.sculpt === 0, `${name}: yes turns it on and flattens the layers (${JSON.stringify(st)})`);
+      await page.evaluate(() => window.__sculpt.session.undo());
+      await page.waitForTimeout(300);
+      st = await state();
+      t.ok(!st.dyn && st.paint === expect.paint && st.sculpt === expect.sculpt, `${name}: one undo brings back the static object and its layers (${JSON.stringify(st)})`);
+    };
+    await round('only paint layers', 'paint layers', { paint: 1, sculpt: 0 });
+    // Only sculpt layers.
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const m = session.getMesh();
+      for (const l of [...session.paint.rawList(m)].reverse()) session.paint.remove(m, l);
+      session.layers.add(m);
+    });
+    await round('only sculpt layers', 'sculpt layers', { paint: 0, sculpt: 1 });
+    // Both.
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.paint.add(session.getMesh());
+    });
+    await round('both kinds', 'sculpt and paint layers', { paint: 1, sculpt: 1 });
   },
 
   async paintProjectOwn(page, base, t) {
