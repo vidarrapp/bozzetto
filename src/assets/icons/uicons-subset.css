@@ -9,6 +9,8 @@ i[class^=fi-ss-]:before,i[class*=" fi-ss-"]:before,span[class^=fi-ss-]:before,sp
 .fi-ss-arrows-to-eye:before{content:"\f1cb"}
 .fi-ss-arrows-to-line:before{content:"\f1cc"}
 .fi-ss-broom:before{content:"\f2f4"}
+.fi-ss-camera:before{content:"\f349"}
+.fi-ss-circle-half:before{content:"\f408"}
 .fi-ss-circle-half-stroke:before{content:"\f407"}
 .fi-ss-compress:before{content:"\f4c9"}
 .fi-ss-cross-small:before{content:"\f4f7"}
@@ -37,7 +39,6 @@ i[class^=fi-ss-]:before,i[class*=" fi-ss-"]:before,span[class^=fi-ss-]:before,sp
 .fi-ss-ruler-combined:before{content:"\fb67"}
 .fi-ss-scalpel:before{content:"\fb8b"}
 .fi-ss-screwdriver:before{content:"\fb9a"}
-.fi-ss-settings-sliders:before{content:"\fbc2"}
 .fi-ss-shredder:before{content:"\fbf2"}
 .fi-ss-star:before{content:"\fcd7"}
 .fi-ss-transformation-block:before{content:"\fdd5"}

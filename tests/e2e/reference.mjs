@@ -132,10 +132,9 @@ async function openPanel(page, open = true) {
   await page.waitForTimeout(120);
 }
 
-/** Choose a row-menu action on the nth card (1 is the first, the newest). */
-async function cardAction(page, n, cls) {
-  await page.locator(`.ref-card:nth-child(${n}) .row-more`).click();
-  await page.locator(`.ref-card:nth-child(${n}) .${cls}`).click();
+/** Press one of the icons under the nth card's thumbnail (1 is the first, the newest): view, match, flip, grey, delete. */
+async function cardAction(page, n, id) {
+  await page.locator(`.ref-card:nth-child(${n}) .ref-act--${id}`).click({ force: true }); // Match view is greyed (aria-disabled) until a picture was locked, and a press then does nothing
   await page.waitForTimeout(250);
 }
 
@@ -234,8 +233,13 @@ async function frameButtonOf(page, name, action) {
   await page.waitForTimeout(350);
 }
 
-const setLookBlend = async (page, id) => {
-  await page.selectOption('.ref-look__blend', id);
+/** Choose the blend in the row under a picture (the first one in the view, or the named one). */
+const setLookBlend = async (page, id, name = null) => {
+  const fid = await page.evaluate((name) => {
+    const { board } = window.__sculpt.reference;
+    return (name ? board.list().find((i) => i.name === name) : board.inView()[0]).id;
+  }, name);
+  await page.selectOption(`.ref-frame[data-id="${fid}"] .ref-frame__blend`, id);
   await page.waitForTimeout(450);
 };
 
@@ -374,19 +378,36 @@ export const suites = {
       await page.waitForTimeout(150);
     }
 
-    // The row menu.
-    await page.locator('.ref-card:nth-child(1) .row-more').click();
-    const labels = await page.evaluate(() => [...document.querySelectorAll('.ref-card:nth-child(1) .row-menu .file-menu__item')].map((b) => b.textContent));
-    t.eq(labels.join('|'), 'Remove from view|Match viewLock the picture first|Mirror|Greyscale|Delete', 'the row menu has Remove from view (it is in the view), Match view, Mirror, Greyscale and Delete');
-    await page.keyboard.press('Escape');
+    // The row of icons under the thumbnail (no menu): In view, Match view, Flip, Greyscale, Delete.
+    t.eq(await page.evaluate(() => document.querySelectorAll('.ref-card .row-more').length), 0, 'a card has no More menu');
+    const acts = await page.evaluate(() =>
+      [...document.querySelectorAll('.ref-card:nth-child(1) .ref-act')].map((b) => ({
+        name: b.getAttribute('aria-label'),
+        title: b.title,
+        w: b.getBoundingClientRect().width,
+        h: b.getBoundingClientRect().height,
+        icon: !!b.querySelector('.fi'),
+        tip: b.querySelector('.bz-tip')?.textContent ?? '',
+        pressed: b.getAttribute('aria-pressed'),
+        disabled: b.getAttribute('aria-disabled'),
+      })),
+    );
+    t.eq(acts.map((b) => b.name).join(','), 'In view,Match view,Flip,Greyscale,Delete', 'each card has the icons In view, Match view, Flip, Greyscale and Delete');
+    t.ok(acts.every((b) => b.w >= 44 && b.h >= 44 && b.icon && b.tip && b.title.startsWith(b.name)), `each is an icon of at least 44px with its name (${JSON.stringify(acts.map((b) => [b.w, b.h]))})`);
+    t.ok(acts[0].pressed === 'true' && acts[2].pressed === 'false' && acts[3].pressed === 'false', 'In view is on for a picture in the view; Flip and Greyscale are off');
+    t.ok(acts[1].disabled === 'true' && acts[1].tip.includes('Lock the picture first'.toLowerCase()), `Match view is greyed, with the reason as its tip (${acts[1].tip})`);
+    t.eq(
+      await page.evaluate(() => document.querySelector('.ref-card:nth-child(1) .ref-card__meta').textContent),
+      await page.evaluate(() => `${window.__sculpt.reference.board.list()[0].width} × ${window.__sculpt.reference.board.list()[0].height}`),
+      'the card keeps its size line and no line of flags');
 
     // Delete asks first; Cancel keeps it, Delete removes it.
-    await cardAction(page, 1, 'ref-act-delete');
+    await cardAction(page, 1, 'delete');
     t.ok(await visible(page, '.bz-ask'), 'Delete asks first');
     t.ok(await page.evaluate(() => document.querySelector('.bz-ask-yes').classList.contains('btn--danger')), 'and its button is the red one');
     await page.click('.bz-ask-cancel');
     t.eq(await count(page), 4, 'Cancel keeps the picture');
-    await cardAction(page, 1, 'ref-act-delete');
+    await cardAction(page, 1, 'delete');
     await page.click('.bz-ask-yes');
     await page.waitForTimeout(200);
     t.eq(await count(page), 3, 'Delete removes it');
@@ -502,7 +523,7 @@ export const suites = {
       const cs = getComputedStyle(f);
       return { corners: f.querySelectorAll('.ref-frame__corner').length, border: cs.borderTopWidth, btns };
     });
-    t.eq(arr.btns.map((b) => b.name).join(','), 'Lock,Fit,Flip,Look,Remove from view', 'the row has Lock, Fit, Flip, Look and Remove from view');
+    t.eq(arr.btns.map((b) => b.name).join(','), 'Lock,Fit,Flip,Greyscale,Remove from view', 'the row has Lock, Fit, Flip, Greyscale and Remove from view');
     t.ok(arr.btns.every((b) => b.w >= 44 && b.h >= 44 && b.icon && b.title === b.name), 'each is an icon, 44px, with its name');
     t.ok(arr.corners === 4 && arr.border === '1px', 'a thin outline and four corner marks');
     await shot(page, 'arranging');
@@ -577,12 +598,11 @@ export const suites = {
     await page.waitForTimeout(300);
     t.ok(isBlue(await picPixel(page, 0.2, 0.2)) && isRed(await picPixel(page, 0.8, 0.2)), 'Flip swaps left and right');
 
-    // Look: a pop-up with the blend select (Behind, Normal, the modes in Photoshop's order), Opacity and Greyscale.
-    await frameButton(page, 'look');
-    t.ok(await visible(page, '.ref-look'), 'Look opens a small pop-up');
+    // Under the picture: the blend select (Behind the model, Normal, the modes in Photoshop's order) and Opacity. Greyscale is a button in the row over it.
+    t.ok(await visible(page, '.ref-frame__under'), 'a row under the picture');
     const opts = await page.evaluate(() => {
       const g = [[]];
-      for (const o of document.querySelectorAll('.ref-look__blend option')) {
+      for (const o of document.querySelectorAll('.ref-frame__blend option')) {
         if (o.disabled) g.push([]);
         else g[g.length - 1].push(o.textContent);
       }
@@ -590,11 +610,11 @@ export const suites = {
     });
     t.eq(
       opts,
-      'Behind,Normal|Darken,Multiply,Color Burn|Lighten,Screen,Color Dodge,Linear Dodge (Add)|Overlay,Soft Light,Hard Light|Difference,Exclusion|Hue,Saturation,Color,Luminosity',
-      'the blend select lists Behind, Normal and the CSS-matched modes in Photoshop’s order, groups between lines',
+      'Behind the model,Normal|Darken,Multiply,Color Burn|Lighten,Screen,Color Dodge,Linear Dodge (Add)|Overlay,Soft Light,Hard Light|Difference,Exclusion|Hue,Saturation,Color,Luminosity',
+      'the blend select lists Behind the model, Normal and the CSS-matched modes in Photoshop’s order, groups between lines',
     );
-    t.ok(await page.evaluate(() => !!document.querySelector('.ref-look input[type=range]') && !!document.querySelector('.ref-look input[type=checkbox]')), 'with Opacity and Greyscale');
-    await shot(page, 'look');
+    t.ok(await page.evaluate(() => !!document.querySelector('.ref-frame__under .ref-frame__opacity input[type=range]') && !document.querySelector('.ref-look')), 'with Opacity, and no Look pop-up');
+    await shot(page, 'under-row');
     // Pixels: Normal against Multiply, read from a real screenshot of the view as composed. Locked first, so no outline is in it.
     await setLookBlend(page, 'normal');
     await lock(page);
@@ -602,7 +622,6 @@ export const suites = {
     const normalPx = await shotPixel(page, ...spot);
     t.ok(isBlue(normalPx) || isRed(normalPx), `Normal at full strength shows the picture (${normalPx})`);
     await unlock(page);
-    await frameButton(page, 'look');
     await setLookBlend(page, 'multiply');
     t.eq(await page.evaluate(() => document.querySelector('.ref-pic').style.mixBlendMode), 'multiply', 'Multiply sets the picture’s mix-blend-mode');
     await lock(page);
@@ -610,33 +629,30 @@ export const suites = {
     t.ok(Math.abs(mulPx[0] - normalPx[0]) + Math.abs(mulPx[2] - normalPx[2]) > 60, `Multiply changes the pixels of the view compared with Normal (${normalPx} to ${mulPx})`);
     const mm = await meshCentre(page);
     await unlock(page);
-    await frameButton(page, 'look');
     await setLookBlend(page, 'normal');
     await lock(page);
     const modelNormal = await shotPixel(page, mm[0] - 120, mm[1]);
     await unlock(page);
-    await frameButton(page, 'look');
     await setLookBlend(page, 'screen');
     await lock(page);
     const modelScreen = await shotPixel(page, mm[0] - 120, mm[1]);
     t.ok(modelNormal.some((v, i) => Math.abs(v - modelScreen[i]) > 20), `a mode blends with the model too (${modelNormal} to ${modelScreen})`);
     await unlock(page);
     // Opacity.
-    await frameButton(page, 'look');
     await setLookBlend(page, 'normal');
     await page.evaluate(() => {
-      const s = document.querySelector('.ref-look input[type=range]');
+      const s = document.querySelector('.ref-frame__opacity input[type=range]');
       s.value = '30';
       s.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await page.waitForTimeout(300);
     t.near(Number(await page.evaluate(() => getComputedStyle(document.querySelector('.ref-pic')).opacity)), 0.3, 0.02, 'Opacity sets how strongly it shows');
-    // Greyscale.
-    await page.locator('.ref-look input[type=checkbox]').check();
-    await page.waitForTimeout(300);
+    // Greyscale: a toggle in the row over the picture, orange while on.
+    await frameButton(page, 'grey');
     t.ok(isGrey(await picPixel(page, 0.2, 0.2)) && isGrey(await picPixel(page, 0.8, 0.2)), 'Greyscale takes the colour out');
-    await page.locator('.ref-look input[type=checkbox]').uncheck();
-    await page.waitForTimeout(200);
+    t.eq(await page.evaluate(() => document.querySelector('.ref-frame__btn--grey').getAttribute('aria-pressed')), 'true', 'and the button shows it is on');
+    await frameButton(page, 'grey');
+    t.eq(await page.evaluate(() => document.querySelector('.ref-frame__btn--grey').getAttribute('aria-pressed')), 'false', 'and off again');
     // Behind: under the model, no overlay element; Opacity applies to it too.
     await setLookBlend(page, 'behind');
     const dBehind = await page.evaluate(() => window.__sculpt.reference.view.describe());
@@ -647,7 +663,6 @@ export const suites = {
     const midBehind = await sample(page, mm[0], mm[1]);
     t.ok(!isRed(midBehind) && !isBlue(midBehind), 'the model stands in front of a picture behind it');
     await unlock(page);
-    await frameButton(page, 'look');
     await setLookBlend(page, 'normal');
     t.eq(await page.evaluate(() => window.__sculpt.reference.board.list().find((i) => i.name === 'first').blend), 'normal', 'the blend is kept with the picture');
     await shot(page, 'look-normal');
@@ -660,7 +675,7 @@ export const suites = {
     t.ok(!(await page.evaluate(() => document.querySelector('.ref-card:nth-child(2)').classList.contains('ref-card--on'))), 'and the tile is not grey');
 
     // Place in view (the row menu), for a hand that cannot drag.
-    await cardAction(page, 2, 'ref-act-place');
+    await cardAction(page, 2, 'view');
     t.eq(await inViewNames(page), 'first', 'Place in view puts it in the view');
     t.ok(await page.evaluate(() => window.__sculpt.reference.view.describe().arranging), 'and Arrange turns on');
     // Two pictures at once.
@@ -725,14 +740,14 @@ export const suites = {
     await page.evaluate(() => window.__sculpt.reference.board.clear());
     await page.waitForTimeout(200);
     await addFiles(page, [{ name: 'cam.png', mimeType: 'image/png', buffer: await png(page, 400, 300) }]);
-    await page.locator('.ref-card:nth-child(1) .row-more').click();
     const matchOff = await page.evaluate(() => {
-      const b = document.querySelector('.ref-card:nth-child(1) .ref-act-match');
-      return { disabled: b.disabled, text: b.textContent };
+      const b = document.querySelector('.ref-card:nth-child(1) .ref-act--match');
+      return { disabled: b.getAttribute('aria-disabled') === 'true', text: b.querySelector('.bz-tip').textContent };
     });
-    t.ok(matchOff.disabled && matchOff.text.includes('Match view') && matchOff.text.includes('Lock the picture first'), `Match view is disabled with the hint until a picture is locked (${JSON.stringify(matchOff)})`);
-    await page.keyboard.press('Escape');
-    await cardAction(page, 1, 'ref-act-place');
+    await cardAction(page, 1, 'match'); // greyed: a press does nothing
+    t.ok(await page.evaluate(() => !!window.__sculpt.reference.board.list()[0] && !window.__sculpt.reference.board.list()[0].camera), 'a press on the greyed Match view does nothing');
+    t.ok(matchOff.disabled && matchOff.text.includes('Match view') && matchOff.text.includes('lock the picture first'), `Match view is greyed with the reason as its tip until a picture is locked (${JSON.stringify(matchOff)})`);
+    await cardAction(page, 1, 'view');
     const cam0 = await page.evaluate(() => window.__sculpt.viewer.camera.position.toArray());
     await lock(page);
     t.ok(await page.evaluate(() => !!window.__sculpt.reference.board.list()[0].camera), 'locking keeps the camera with the picture');
@@ -740,7 +755,7 @@ export const suites = {
     await page.waitForTimeout(500);
     const camAway = await page.evaluate(() => window.__sculpt.viewer.camera.position.toArray());
     t.ok(camAway.some((v, i) => Math.abs(v - cam0[i]) > 0.05), 'the camera was moved away');
-    await cardAction(page, 1, 'ref-act-match');
+    await cardAction(page, 1, 'match');
     await page.waitForTimeout(500);
     const camBack = await page.evaluate(() => window.__sculpt.viewer.camera.position.toArray());
     t.ok(camBack.every((v, i) => Math.abs(v - cam0[i]) < 0.02), `Match view puts the camera back (${cam0.map((v) => v.toFixed(2))} against ${camBack.map((v) => v.toFixed(2))})`);
@@ -769,8 +784,7 @@ export const suites = {
     await dragTile(page, 1, [480, 640], 'mouse');
     await dragTile(page, 2, [480, 300], 'mouse');
     await frameButtonOf(page, 'first', 'fit');
-    await frameButtonOf(page, 'first', 'look');
-    await setLookBlend(page, 'normal');
+    await setLookBlend(page, 'normal', 'first');
     await openPanel(page, false);
     t.eq(await inViewNames(page), 'second,first', 'two pictures are in the view');
     t.ok(await page.evaluate(() => window.__sculpt.reference.view.describe().arranging), 'and Arrange is on');
@@ -869,8 +883,8 @@ export const suites = {
     await openPanel(page);
     await addFiles(page, [{ name: 'one.png', mimeType: 'image/png', buffer: await png(page, 400, 300) }]);
     await addFiles(page, [{ name: 'two.png', mimeType: 'image/png', buffer: await png(page, 300, 400) }]);
-    await cardAction(page, 1, 'ref-act-mirror');
-    await cardAction(page, 1, 'ref-act-place');
+    await cardAction(page, 1, 'flip');
+    await cardAction(page, 1, 'view');
     await page.evaluate(() => {
       const { board } = window.__sculpt.reference;
       const item = board.list()[0];
@@ -963,9 +977,9 @@ export const suites = {
     await openPanel(page);
     await addFiles(page, [{ name: 'one.png', mimeType: 'image/png', buffer: await png(page, 400, 300) }]);
     await addFiles(page, [{ name: 'two.png', mimeType: 'image/png', buffer: await png(page, 300, 400) }]);
-    await cardAction(page, 1, 'ref-act-grey');
-    await cardAction(page, 2, 'ref-act-mirror');
-    await cardAction(page, 1, 'ref-act-place');
+    await cardAction(page, 1, 'grey');
+    await cardAction(page, 2, 'flip');
+    await cardAction(page, 1, 'view');
     await page.evaluate(() => {
       const { board } = window.__sculpt.reference;
       board.setPlace(board.list()[0].id, { x: 0.1, y: 0.2, w: 0.3 });
@@ -1050,7 +1064,7 @@ export const suites = {
     const marker = 'REFMARK-' + Math.random().toString(36).slice(2, 10);
     // A picture with a distinct stretch of bytes: a JPEG's own, found again in anything that carries it.
     await addFiles(page, [{ name: `${marker}.png`, mimeType: 'image/png', buffer: await png(page, 600, 400, { left: '#33aa55', right: '#aa3355' }) }]);
-    await cardAction(page, 1, 'ref-act-place');
+    await cardAction(page, 1, 'view');
     await page.evaluate(() => {
       const { board } = window.__sculpt.reference;
       board.setLook(board.list()[0].id, { blend: 'behind' });
@@ -1153,7 +1167,7 @@ export const suites = {
       await p.evaluate(() => document.querySelector('.panel--reference .panel__handle').click());
       await p.waitForTimeout(200);
       await addFiles(p, [{ name: 'a.png', mimeType: 'image/png', buffer: await png(p, 400, 300) }]);
-      await cardAction(p, 1, 'ref-act-place');
+      await cardAction(p, 1, 'view');
       t.eq(await p.evaluate(() => window.__sculpt.reference.board.inView().length), 1, 'a picture can be put in the view at phone width');
       await p.click('.ref-arrange');
       await p.waitForTimeout(300);
@@ -1164,10 +1178,10 @@ export const suites = {
     t.ok(errors.length === 0, `no page errors on the phone${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   },
 
-  // A finger on a picture's row of buttons while arranging: the frame takes
-  // the touch for its drags, and once cancelled every touch on it, the
-  // buttons' included, so they did nothing on a touch screen (they were only
-  // ever pressed with click() here). Real taps, through the browser's touch.
+  // A finger on a picture's rows while arranging (the row of buttons over it,
+  // the blend and Opacity row under it) and on the Reference panel's icons:
+  // the frame takes the touch for its drags, and once cancelled every touch on
+  // it, the buttons' included. Real taps and drags, through the browser's touch.
   async refTouchBar(page, base, t) {
     const ctx = await page.context().browser().newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true });
     const errors = [];
@@ -1198,34 +1212,267 @@ export const suites = {
         p.evaluate(() => {
           const { board, view } = window.__sculpt.reference;
           const i = board.list()[0];
-          return { mirror: i.mirror, grey: i.grey, inView: board.inView().length, arranging: view.describe().arranging, look: !!document.querySelector('.ref-look') && document.querySelector('.ref-look').getClientRects().length > 0 };
+          const pic = view.picturesInView()[0];
+          return { mirror: i.mirror, grey: i.grey, blend: i.blend, opacity: i.opacity, inView: board.inView().length, arranging: view.describe().arranging, left: pic?.left, top: pic?.top, width: pic?.width, camera: !!i.camera };
         });
-      const tap = async (sel) => {
-        const at = await p.evaluate((s) => {
+      const centre = (sel) =>
+        p.evaluate((s) => {
           const r = document.querySelector(s).getBoundingClientRect();
           return [r.left + r.width / 2, r.top + r.height / 2];
         }, sel);
+      const tap = async (sel) => {
+        const at = await centre(sel);
         await p.touchscreen.tap(at[0], at[1]);
         await p.waitForTimeout(350);
       };
+      /** Is an icon orange by colour alone (no filled square)? */
+      const orange = (sel) =>
+        p.evaluate((s) => {
+          const probe = document.createElement('i');
+          probe.style.color = 'var(--bz-orange)';
+          document.body.appendChild(probe);
+          const o = getComputedStyle(probe).color;
+          probe.remove();
+          const b = document.querySelector(s);
+          const bg = getComputedStyle(b).backgroundColor;
+          return getComputedStyle(b).color === o && (bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent');
+        }, sel);
+      // A finger drags from one point to another, through the browser's touch input.
+      const swipe = async (from, to) => {
+        const cdp = (swipe.cdp ??= await p.context().newCDPSession(p));
+        const pt = (x, y) => ({ x, y, id: 1 });
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [pt(from[0], from[1])] });
+        for (let k = 1; k <= 10; k++) {
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [pt(from[0] + ((to[0] - from[0]) * k) / 10, from[1] + ((to[1] - from[1]) * k) / 10)] });
+        }
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await p.waitForTimeout(350);
+      };
+
+      await shot(p, 'view-both-rows');
       const before = await state();
       await tap('.ref-frame .ref-frame__btn--flip');
       let s = await state();
       t.ok(!before.mirror && s.mirror, `a finger's tap on Flip mirrors the picture (${before.mirror} to ${s.mirror})`);
-      await tap('.ref-frame .ref-frame__btn--look');
+      t.ok(await orange('.ref-frame .ref-frame__btn--flip'), 'Flip is orange by colour alone while it is on');
+      await tap('.ref-frame .ref-frame__btn--flip');
+      t.ok(!(await orange('.ref-frame .ref-frame__btn--flip')) && !(await state()).mirror, 'and not orange when it is off');
+      t.ok(await p.evaluate(() => !document.querySelector('.ref-look')), 'there is no Look pop-up');
+      await tap('.ref-frame .ref-frame__btn--grey');
       s = await state();
-      t.ok(s.look, 'a tap on Look opens its pop-up');
-      await tap('.ref-look input[type=checkbox]');
+      t.ok(s.grey, 'a tap on Greyscale turns the picture grey');
+      t.ok(await orange('.ref-frame .ref-frame__btn--grey'), 'and its icon is orange');
+      await tap('.ref-frame .ref-frame__btn--grey');
+      t.ok(!(await state()).grey && !(await orange('.ref-frame .ref-frame__btn--grey')), 'a second tap turns it off, and the orange goes');
+
+      await p.evaluate(() => {
+        const { board } = window.__sculpt.reference;
+        board.setLook(board.list()[0].id, { mirror: true, grey: true, opacity: 0.4 });
+      });
+      await p.waitForTimeout(400);
+      await shot(p, 'view-flip-grey-40');
+      await p.evaluate(() => {
+        const { board } = window.__sculpt.reference;
+        board.setLook(board.list()[0].id, { mirror: false, grey: false, opacity: 1 });
+      });
+      await p.waitForTimeout(300);
+
+      // The row under the picture: Opacity dragged by a finger changes the opacity and leaves the picture where it is.
+      const where = await state();
+      const row = await p.evaluate(() => {
+        const r = document.querySelector('.ref-frame__opacity').getBoundingClientRect();
+        return { left: r.left, top: r.top, width: r.width, height: r.height };
+      });
+      t.ok(row.width > 80 && row.height >= 24, `the Opacity row is there (${Math.round(row.width)}x${Math.round(row.height)})`);
+      await swipe([row.left + row.width * 0.9, row.top + row.height / 2], [row.left + row.width * 0.35, row.top + row.height / 2]);
       s = await state();
-      t.ok(s.grey, 'and a tap on Greyscale in it turns the picture grey');
+      t.ok(s.opacity < 0.8 && s.opacity > 0, `a finger dragged across the Opacity row lowers the opacity (${s.opacity})`);
+      t.ok(Math.abs(s.left - where.left) < 1 && Math.abs(s.top - where.top) < 1 && Math.abs(s.width - where.width) < 1, 'and the picture stays where it was');
+      const was = s.opacity;
+      await tap('.ref-frame__opacity');
+      t.near((await state()).opacity, was, 0.001, 'a tap on the row changes nothing');
+      await swipe([row.left + 12, row.top + 6], [row.left + row.width - 6, row.top + 6]);
+      t.ok((await state()).opacity > was, 'a drag that starts on the word Opacity scrubs too');
+
+      // The blend select under a finger: a tap is not swallowed; the choice sets the blend.
+      await tap('.ref-frame__blend');
+      await p.selectOption('.ref-frame__blend', 'multiply');
+      await p.waitForTimeout(300);
+      s = await state();
+      t.eq(s.blend, 'multiply', 'choosing a blend sets it on the picture');
+      t.eq(await p.evaluate(() => document.querySelector('.ref-frame__blend').value), 'multiply', 'and the select shows it');
+
+      // The rows' place: under a narrow picture the row is 240 wide and centred; at the bottom edge it stays inside the view.
+      const geometry = () =>
+        p.evaluate(() => {
+          const f = document.querySelector('.ref-frame').getBoundingClientRect();
+          const u = document.querySelector('.ref-frame__under').getBoundingClientRect();
+          const v = window.__sculpt.viewer.captureCanvas.getBoundingClientRect();
+          return { f: f.toJSON(), u: u.toJSON(), v: v.toJSON() };
+        });
+      await p.evaluate(() => {
+        const { board } = window.__sculpt.reference;
+        board.setPlace(board.list()[0].id, { x: 0, y: -0.1, w: 0.15 });
+      });
+      await p.waitForTimeout(300);
+      let g = await geometry();
+      t.ok(g.f.width < 240, `the picture is narrow (${Math.round(g.f.width)}px)`);
+      t.ok(Math.abs(g.u.width - 240) < 1, `the row under it is 240px wide (${g.u.width})`);
+      t.ok(Math.abs(g.u.left + g.u.width / 2 - (g.f.left + g.f.width / 2)) < 2 && g.u.top >= g.f.bottom - 1, 'centred under the picture');
+      await p.evaluate(() => {
+        const { board } = window.__sculpt.reference;
+        board.setPlace(board.list()[0].id, { x: 0, y: 0.5, w: 0.3 });
+      });
+      await p.waitForTimeout(300);
+      g = await geometry();
+      t.ok(g.u.bottom <= g.v.bottom + 0.5 && g.u.top >= g.v.top && g.u.left >= g.v.left && g.u.right <= g.v.right, `at the bottom edge the row stays inside the view (${Math.round(g.u.bottom)} of ${Math.round(g.v.bottom)})`);
+      t.ok(g.u.top < g.f.bottom, 'sitting over the picture’s lower edge');
+      await shot(p, 'view-bottom-edge');
+      await p.evaluate(() => {
+        const { board } = window.__sculpt.reference;
+        board.setPlace(board.list()[0].id, { x: 0, y: -0.1, w: 0.15 });
+      });
+      await p.waitForTimeout(300);
+      await shot(p, 'view-narrow');
+      await p.evaluate(() => {
+        const { board } = window.__sculpt.reference;
+        board.setPlace(board.list()[0].id, { x: 0, y: 0.5, w: 0.3 });
+      });
+      await p.waitForTimeout(300);
+      await p.selectOption('.ref-frame__blend', 'normal');
+      await p.waitForTimeout(200);
+      t.eq((await state()).blend, 'normal', 'and it still works there');
+      await p.evaluate(() => {
+        const { board } = window.__sculpt.reference;
+        board.setPlace(board.list()[0].id, { x: 0, y: -0.1, w: 0.3 });
+      });
+      await p.waitForTimeout(300);
+
       await tap('.ref-frame .ref-frame__btn--lock');
       s = await state();
       t.ok(!s.arranging && s.inView === 1, 'a tap on Lock ends arranging, the picture still in the view');
+      t.ok(
+        await p.evaluate(() => {
+          const chrome = document.querySelector('.ref-chrome');
+          const pic = document.querySelector('.ref-pic');
+          return (!chrome || chrome.hidden) && !document.querySelector('.ref-frame') && !document.querySelector('.ref-frame__under') && getComputedStyle(pic).pointerEvents === 'none';
+        }),
+        'locked, neither row shows and the picture lets everything through',
+      );
       await p.evaluate(() => window.__sculpt.reference.board.setArranging(true));
       await p.waitForTimeout(300);
       await tap('.ref-frame .ref-frame__btn--remove');
       s = await state();
       t.eq(s.inView, 0, 'a tap on Remove takes it out of the view');
+
+      // Both rows are always reachable: at the default place and with the picture dragged to each edge of the view, every icon and the
+      // blend and Opacity controls are the topmost thing at their own centre, and a finger's tap reaches the Greyscale icon.
+      await p.evaluate(() => window.__sculpt.reference.board.clear());
+      await addFiles(p, [{ name: 'edge.png', mimeType: 'image/png', buffer: await png(p, 400, 300) }]);
+      await openPanel(p);
+      await p.evaluate(() => window.__sculpt.reference.board.putInView(window.__sculpt.reference.board.list()[0].id)); // Place in view: the default place
+      await openPanel(p, false);
+      await p.waitForSelector('.ref-frame .ref-frame__btn--grey', { timeout: 10_000 });
+      await p.waitForTimeout(400);
+      const reach = () =>
+        p.evaluate(() => {
+          const out = [];
+          const want = [
+            ...['lock', 'fit', 'flip', 'grey', 'remove'].map((a) => `.ref-frame__btn--${a}`),
+            '.ref-frame__blend',
+            '.ref-frame__opacity',
+          ];
+          for (const sel of want) {
+            const el = document.querySelector(`.ref-frame ${sel}`);
+            const r = el.getBoundingClientRect();
+            const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            if (!at || !at.closest(`.ref-frame ${sel}`)) out.push(`${sel} under ${at?.className || at?.tagName}`);
+          }
+          return out;
+        });
+      const places = [
+        ['the default place', null],
+        ['the left edge', { x: -9, y: 0, w: 0.3 }],
+        ['the right edge', { x: 9, y: 0, w: 0.3 }],
+        ['the top edge', { x: 0, y: -9, w: 0.3 }],
+        ['the bottom edge', { x: 0, y: 9, w: 0.3 }],
+        ['the top left corner', { x: -9, y: -9, w: 0.3 }],
+        ['the bottom right corner', { x: 9, y: 9, w: 0.3 }],
+      ];
+      for (const [name, place] of places) {
+        if (place) {
+          await p.evaluate((pl) => {
+            const { board, view } = window.__sculpt.reference;
+            view.setPlace(board.list()[0].id, pl);
+          }, place);
+          await p.waitForTimeout(300);
+        }
+        const bad = await reach();
+        t.ok(bad.length === 0, `at ${name}, every icon and the blend and Opacity controls are on top (${bad.join('; ') || 'all'})`);
+        await shot(p, `reach-${name.replaceAll(' ', '-')}`);
+        const g0 = (await state()).grey;
+        await tap('.ref-frame .ref-frame__btn--grey');
+        const g1 = (await state()).grey;
+        await tap('.ref-frame .ref-frame__btn--grey');
+        t.ok(g0 !== g1 && (await state()).grey === g0, `and a finger's tap on Greyscale works there (${g0} to ${g1})`);
+      }
+      await p.evaluate(() => window.__sculpt.reference.board.clear());
+
+      // The Reference panel's icons, by a finger. A fresh picture, which has no camera kept yet.
+      await p.evaluate(() => window.__sculpt.reference.board.clear());
+      await addFiles(p, [{ name: 'second.png', mimeType: 'image/png', buffer: await png(p, 300, 400) }]);
+      await openPanel(p);
+      await p.waitForTimeout(300);
+      t.eq(await p.evaluate(() => document.querySelectorAll('.ref-card .ref-act').length), 5, 'the card has its five icons');
+      t.ok(await p.evaluate(() => document.querySelector('.ref-act--match').getAttribute('aria-disabled') === 'true'), 'Match view is greyed: the picture has no camera kept');
+      await tap('.ref-act--match');
+      t.ok(!(await state()).camera, 'a tap on the greyed Match view does nothing');
+      await tap('.ref-act--view');
+      s = await state();
+      t.ok(s.inView === 1, 'a tap on In view puts the picture in the view');
+      t.ok(await orange('.ref-act--view'), 'and the icon is orange while it is in the view');
+      await tap('.ref-act--flip');
+      t.ok((await state()).mirror && (await orange('.ref-act--flip')), 'a tap on Flip mirrors it, the icon orange');
+      await tap('.ref-act--flip');
+      t.ok(!(await state()).mirror && !(await orange('.ref-act--flip')), 'and again unmirrors it, not orange');
+      await tap('.ref-act--grey');
+      t.ok((await state()).grey && (await orange('.ref-act--grey')), 'a tap on Greyscale turns it grey, the icon orange');
+      await tap('.ref-act--grey');
+      t.ok(!(await state()).grey, 'and again turns it back');
+      // Match view with a camera kept: lock the picture (the camera is kept), move away, tap.
+      await p.evaluate(() => window.__sculpt.reference.board.setArranging(false));
+      await p.waitForTimeout(300);
+      t.ok((await state()).camera, 'locking kept the camera with the picture');
+      t.ok(await p.evaluate(() => document.querySelector('.ref-act--match').getAttribute('aria-disabled') !== 'true'), 'Match view is no longer greyed');
+      const cam0 = await p.evaluate(() => window.__sculpt.viewer.camera.position.toArray());
+      await p.evaluate(() => window.__sculpt.viewer.orbitAzimuth(50));
+      await p.waitForTimeout(400);
+      await tap('.ref-act--match');
+      await p.waitForTimeout(500);
+      const cam1 = await p.evaluate(() => window.__sculpt.viewer.camera.position.toArray());
+      t.ok(cam1.every((v, i) => Math.abs(v - cam0[i]) < 0.02), 'a tap on Match view puts the camera back');
+      // Delete asks first, in the red window; a finger answers it.
+      await tap('.ref-act--delete');
+      t.ok(await visible(p, '.bz-ask'), 'a tap on Delete asks first');
+      await tap('.bz-ask-cancel');
+      t.eq(await p.evaluate(() => window.__sculpt.reference.board.list().length), 1, 'Cancel keeps the picture');
+      await tap('.ref-act--delete');
+      await tap('.bz-ask-yes');
+      t.eq(await p.evaluate(() => window.__sculpt.reference.board.list().length), 0, 'and Delete removes it');
+
+      // The panel with three cards, for a look.
+      for (const [name, w, h] of [['one.png', 400, 300], ['two.png', 300, 400], ['three.png', 400, 300]]) {
+        await addFiles(p, [{ name, mimeType: 'image/png', buffer: await png(p, w, h) }]);
+      }
+      await p.evaluate(() => {
+        const { board } = window.__sculpt.reference;
+        const [c, b] = board.list();
+        board.putInView(b.id);
+        board.setLook(b.id, { mirror: true });
+        board.setLook(c.id, { grey: true });
+      });
+      await p.waitForTimeout(400);
+      await shot(p, 'panel-three-cards');
     } finally {
       await ctx.close();
     }

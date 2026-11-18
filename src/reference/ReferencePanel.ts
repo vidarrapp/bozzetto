@@ -1,22 +1,33 @@
 import { SidePanel } from '../sculpt/ui/SidePanel';
 import { div } from '../ui/dom';
-import { rowMenu } from '../ui/rowMenu';
+import { nameOnLongPress, setTip } from '../sculpt/ui/edgeTip';
 import { askWindow } from '../ui/askWindow';
 import { mayStore } from '../ui/deviceStorage';
 import type { ReferenceBoard, RefItem } from './board';
 import { addPictures, pasteFromClipboard } from './intake';
 
-/** The row menu's name for putting the camera back as a picture was locked. Short, and kept in one place. */
+/** The name of the icon that puts the camera back as a picture was locked. Short, and kept in one place. */
 export const MATCH_VIEW_LABEL = 'Match view';
 export const MATCH_VIEW_HINT = 'Lock the picture first';
 
+/** The icons under a card's thumbnail, with the glyphs the view's own row uses where the action is the same. */
+export const CARD_ACTIONS = [
+  { id: 'view', name: 'In view', icon: 'fi-ss-eye' },
+  { id: 'match', name: MATCH_VIEW_LABEL, icon: 'fi-ss-camera' },
+  { id: 'flip', name: 'Flip', icon: 'fi-ss-reflect-horizontal' },
+  { id: 'grey', name: 'Greyscale', icon: 'fi-ss-circle-half' },
+  { id: 'delete', name: 'Delete', icon: 'fi-ss-trash' },
+] as const;
+
 /**
  * The Reference tab, on the right after Tool and before Render: the
- * board's pictures as a grid of thumbnails, newest first, with Add
- * picture… and Paste above them. A tile is dragged into the view (a
- * finger, the Pencil or the mouse) and the picture is placed where it is
- * let go; the row menu's Place in view does the same for a hand that
- * cannot drag. A tile whose picture is in the view has the grey fill. The
+ * board's pictures as a list of cards, newest first, with Add picture…
+ * and Paste above them. A tile is dragged into the view (a finger, the
+ * Pencil or the mouse) and the picture is placed where it is let go; the
+ * In view icon under it does the same for a hand that cannot drag. A
+ * card whose picture is in the view has the grey fill. Under each
+ * thumbnail a row of icons (In view, Match view, Flip, Greyscale, Delete)
+ * uses the glyphs of the row over a picture in the view. The
  * Arrange button at the top turns arranging (unlocked) on and off.
  *
  * Delete asks first (the app's Undo is the sculpt's stroke history and
@@ -38,6 +49,8 @@ export class ReferencePanel extends SidePanel {
   private readonly offDocTouch: () => void;
   private dragging = false;
   private urls: string[] = [];
+  /** The long-press names of the icons on the cards, released when the cards are built again. */
+  private offTips: (() => void)[] = [];
   private readonly offBoard: () => void;
   /** The library project this scene is, or null: the note under the grid says where pictures stay. */
   private linked: () => boolean = () => false;
@@ -121,6 +134,8 @@ export class ReferencePanel extends SidePanel {
     const items = this.board.list();
     for (const u of this.urls) URL.revokeObjectURL(u);
     this.urls = [];
+    for (const off of this.offTips) off();
+    this.offTips = [];
     this.grid.replaceChildren(...items.map((i) => this.card(i)));
     this.empty.hidden = items.length > 0;
     this.grid.hidden = items.length === 0;
@@ -162,44 +177,64 @@ export class ReferencePanel extends SidePanel {
     this.bindDrag(thumb, item.id, url);
     card.appendChild(thumb);
 
+    const text = div('ref-card__text');
     const name = document.createElement('div');
     name.className = 'ref-card__name';
     name.textContent = item.name;
-    card.appendChild(name);
-
-    const flags = [on ? 'In view' : '', item.mirror ? 'Mirrored' : '', item.grey ? 'Grey' : ''].filter(Boolean);
     const meta = document.createElement('div');
     meta.className = 'ref-card__meta';
-    meta.textContent = flags.join(' · ') || `${item.width} × ${item.height}`;
-    card.appendChild(meta);
+    meta.textContent = `${item.width} × ${item.height}`;
+    text.append(name, meta);
+    card.appendChild(text);
 
-    const menu = rowMenu(
-      'More',
-      [
-        on
-          ? { label: 'Remove from view', className: 'ref-act-remove', action: () => this.board.takeOut(item.id) }
-          : { label: 'Place in view', className: 'ref-act-place', action: () => this.board.putInView(item.id) },
-        { label: MATCH_VIEW_LABEL, className: 'ref-act-match', action: () => void this.board.matchView(item.id) },
-        { label: 'Mirror', className: 'ref-act-mirror', action: () => this.board.setLook(item.id, { mirror: !item.mirror }) },
-        { label: 'Greyscale', className: 'ref-act-grey', action: () => this.board.setLook(item.id, { grey: !item.grey }) },
-        { label: 'Delete', className: 'ref-act-delete file-menu__item--danger', action: () => void this.confirmDelete(item) },
-      ],
-      'ref-card__more',
-    );
-    // Match view needs the camera kept when the picture was locked.
-    const match = menu.items[1];
-    if (!item.camera) {
-      match.disabled = true;
-      match.innerHTML = '';
-      const label = document.createElement('span');
-      label.className = 'file-menu__label';
-      label.textContent = MATCH_VIEW_LABEL;
-      const hint = document.createElement('span');
-      hint.className = 'file-menu__hint';
-      hint.textContent = MATCH_VIEW_HINT;
-      match.append(label, hint);
+    // The icons: the same glyphs as the row over a picture in the view.
+    const acts = div('ref-card__acts');
+    for (const a of CARD_ACTIONS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `ref-act ref-act--${a.id}`;
+      b.setAttribute('aria-label', a.name);
+      const i = document.createElement('i');
+      i.className = `fi ${a.icon}`;
+      i.setAttribute('aria-hidden', 'true');
+      b.appendChild(i);
+      let tip: string = a.name;
+      const toggle = (on: boolean): void => {
+        b.setAttribute('aria-pressed', String(on));
+      };
+      switch (a.id) {
+        case 'view':
+          toggle(on);
+          b.addEventListener('click', () => (on ? this.board.takeOut(item.id) : this.board.putInView(item.id)));
+          break;
+        case 'match':
+          if (!item.camera) {
+            // Greyed, but still named by a long press: the reason is its tip.
+            b.setAttribute('aria-disabled', 'true');
+            tip = `${MATCH_VIEW_LABEL}: ${MATCH_VIEW_HINT.toLowerCase()}`;
+          }
+          b.addEventListener('click', () => {
+            if (item.camera) void this.board.matchView(item.id);
+          });
+          break;
+        case 'flip':
+          toggle(item.mirror);
+          b.addEventListener('click', () => this.board.setLook(item.id, { mirror: !item.mirror }));
+          break;
+        case 'grey':
+          toggle(item.grey);
+          b.addEventListener('click', () => this.board.setLook(item.id, { grey: !item.grey }));
+          break;
+        case 'delete':
+          b.addEventListener('click', () => void this.confirmDelete(item));
+          break;
+      }
+      b.title = tip;
+      setTip(b, tip);
+      this.offTips.push(nameOnLongPress(b));
+      acts.appendChild(b);
     }
-    card.appendChild(menu.wrap);
+    card.appendChild(acts);
     return card;
   }
 
@@ -297,6 +332,7 @@ export class ReferencePanel extends SidePanel {
   override dispose(): void {
     this.offBoard();
     this.offDocTouch();
+    for (const off of this.offTips) off();
     for (const u of this.urls) URL.revokeObjectURL(u);
     super.dispose();
   }
