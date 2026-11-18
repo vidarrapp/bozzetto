@@ -175,12 +175,15 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 ### Unreleased
 
 - **Four tool settings are kept with the scene.** Move's Falloff, Crease's Pinch, and Polish's Plane lock and Build-up used to go back to their defaults when the scene was opened again. A key you set for a tool in Preferences now shows on its button and its tooltip, and Help says a tool's key is its place on the tool bar.
-- **Sculpt, Paint and Present are tabs of one mode.** `Shift`+`1` to `4` take you to Armature, Sculpt, Paint or Present from any of them (replacing `Shift`+`B` and `Shift`+`P`), without a question, and each workspace remembers its own open panels, and Paint its tool, so tweaking the light is one key there and one key back.
-- **Merge down keeps to the math.** The layer is composed, with its own blend mode, opacity and mask, onto the colours of the layer below, and the layer below keeps its own mode, opacity and mask. Merging into an Overlay layer gives what merging into a Normal layer and then switching to Overlay gives.
-- **Project paints only what the camera sees.** A part of the model behind a nearer part, or behind another object in view, no longer takes projected colour.
-- **The Details overlay names the paint layer.** In Paint its Layer line shows the active paint layer, Base, or the group.
-- **Paint layers get the flatten question too.** Turning on dynamic topology, a voxel or quad remesh, Merge and splitting now ask once before flattening an object's paint layers, as they did for sculpt layers, and say which kind is flattened.
-- **Albedo tints the paint.** An object's material colour now multiplies its paint, as a material does over vertex colours: unpainted objects show their albedo, a red stroke is red times it, and a white albedo shows paint exactly as picked. Changing Albedo is instant on any mesh, Paint no longer switches Colour or shows a notice, and scenes saved before open looking as they did. A **Colour** choice in the Material tab shows Albedo and paint, Albedo only or Paint only, in Sculpt, Paint and Present. Entering Paint with dynamic topology on shows a notice to turn it off (paint layers need it off), and the Layers tab has the same button.
+
+### v0.7.5
+
+- **Workspace keys.** `Shift`+`1` to `4` go to Armature, Sculpt, Paint and Present from any of them, replacing `Shift`+`B` and `Shift`+`P`. `Esc` no longer leaves Present. Each workspace remembers its own open panels, and Paint its tool, and changing workspace asks nothing.
+- **Albedo tints the paint.** An object's material colour multiplies its paint: unpainted objects show their albedo, and a white albedo shows paint exactly as picked. A **Colour** choice in the Material tab shows Albedo and paint, Albedo only or Paint only. Scenes saved before look as they did.
+- **Merge down keeps to the math.** The layer is composed onto the colours of the layer below, which keeps its own mode, opacity and mask.
+- **Project paints only what the camera sees.** A part behind a nearer part, or behind another object in view, no longer takes projected colour.
+- **Dynamic topology and layers.** Entering Paint with dynamic topology on shows a notice with a Turn off button, and both Layers tabs have the same button. Remesh, Merge, splitting and turning dynamic topology on now ask once before flattening paint layers, as they did for sculpt layers.
+- **Smaller changes.** The top bar is a step darker, the gallery's logo sits cleanly on the page, and the Details overlay names the active paint layer.
 
 ### v0.7.0
 
