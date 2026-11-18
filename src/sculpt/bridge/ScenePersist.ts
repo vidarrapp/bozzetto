@@ -228,8 +228,13 @@ export interface SavedMesh {
 }
 
 export interface SavedScene {
-  /** 4 adds the material library; 3 records load unchanged, without one. */
-  v: 3 | 4;
+  /**
+   * 4 adds the material library; 3 records load unchanged, without one. 5 is
+   * the scene whose colours are paint alone: the object's albedo multiplies
+   * them when it is drawn. In a record of 4 or earlier the albedo is in the
+   * colours (MaterialLibrary.whitenOldPaint).
+   */
+  v: 3 | 4 | 5;
   savedAt: number;
   /** Every scene object (multi-mesh since WS4: extractions, added shapes). */
   meshes: SavedMesh[];
@@ -655,7 +660,7 @@ export async function loadSavedScene(): Promise<SavedScene | null> {
   if (!rec) return null;
   // Written by a newer build (another tab, say, on the next version): not
   // this build's to read, nor to set aside.
-  if (typeof rec.v === 'number' && rec.v > 4) return null;
+  if (typeof rec.v === 'number' && rec.v > 5) return null;
   const scene = upgradeSaved(rec);
   if (!scene) throw new UnreadableSceneError('the saved scene does not add up');
   try {
@@ -727,7 +732,7 @@ export function validSavedScene(rec: unknown): rec is SavedScene {
   const r = rec as SavedScene | undefined;
   return (
     !!r &&
-    (r.v === 3 || r.v === 4) &&
+    (r.v === 3 || r.v === 4 || r.v === 5) &&
     Array.isArray(r.meshes) &&
     r.meshes.length > 0 &&
     r.meshes.every(validMesh) &&

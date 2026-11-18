@@ -6,17 +6,14 @@ import type { SavedScene } from './ScenePersist';
 /**
  * Per-object materials.
  *
- * Sculpt mode reads albedo from the `color` attribute and roughness and
- * metalness from `materialsPBR.x/.y`, so a "material" needs no three.js
- * material of its own: it is a named set of values, and assigning it to an
- * object writes those values across that object's vertices. One shader,
- * any number of materials, and painting is the same operation at a smaller
- * radius - which is why a paint stroke and a material assignment compose
- * instead of fighting.
- *
- * An object that has been painted owns its vertices. Editing its material
- * leaves it alone; re-assigning is an explicit act and the caller confirms
- * first, because the fill cannot be undone selectively.
+ * Sculpt mode reads roughness and metalness from `materialsPBR.x/.y` and
+ * shows the object's albedo times the paint in its `color` attribute, so a
+ * "material" needs no three.js material of its own: it is a named set of
+ * values. Roughness and metalness are written across an object's vertices;
+ * the albedo is given to the object's display mesh (mode.ts syncAlbedos),
+ * where the shader multiplies the paint by it. The paint is exactly what was
+ * picked (white until painted) and nothing stored is altered by the albedo, so
+ * a change of material, or of its albedo, costs nothing and keeps the paint.
  */
 
 export interface SculptMaterial {
@@ -41,7 +38,7 @@ export const DEFAULT_MATERIAL: Omit<SculptMaterial, 'id' | 'name'> = {
 export class MaterialLibrary {
   private readonly materials: SculptMaterial[] = [];
   private readonly assigned = new Map<number, string>();
-  /** Meshes whose vertex colours a paint stroke owns. */
+  /** Meshes whose vertex colours are paint (a stroke, a fill or a layer): never written over with white. */
   private readonly painted = new Set<number>();
   /** Meshes that have had a material written to them at least once. */
   private readonly initialised = new Set<number>();
@@ -91,11 +88,10 @@ export class MaterialLibrary {
     return (id ? this.get(id) : undefined) ?? this.materials[0];
   }
 
-  /** Point an object at a material and write its values across the mesh. */
+  /** Point an object at a material and write its roughness and metalness across the mesh. Its paint stays; its albedo is the new material's. */
   assign(mesh: SculptMesh, id: string): void {
     if (!this.get(id)) return;
     this.assigned.set(mesh.getID(), id);
-    this.painted.delete(mesh.getID()); // a fresh assignment is a fresh base
     this.applyTo(mesh);
     this.onChange?.();
   }
@@ -122,30 +118,34 @@ export class MaterialLibrary {
     return this.painted.has(mesh.getID());
   }
 
+  /** An object's albedo as linear colour: what its paint is multiplied by (publishing bakes it in). */
+  albedoLinear(mesh: SculptMesh): [number, number, number] {
+    const c = new Color(this.materialFor(mesh).albedo); // hex is sRGB; Color stores it linear
+    return [c.r, c.g, c.b];
+  }
+
   /**
-   * Re-write every object using `id`. Painted objects keep their colours -
-   * their strokes are work - but still take the roughness and metalness,
-   * which no stroke has touched unless the paint brush was set to write
-   * them.
+   * Change a material. Roughness and metalness are written across every
+   * object using it; the albedo needs nothing written (the shader reads it),
+   * so editing it costs the same on any mesh and never touches the paint.
    */
   update(id: string, patch: Partial<Omit<SculptMaterial, 'id'>>): void {
     const mat = this.get(id);
     if (!mat) return;
     Object.assign(mat, patch);
-    for (const mesh of this.session.getMeshes()) {
-      if (this.materialFor(mesh).id === id) this.applyTo(mesh);
+    if ('roughness' in patch || 'metalness' in patch) {
+      for (const mesh of this.session.getMeshes()) {
+        if (this.materialFor(mesh).id === id) this.session.fillMaterials(mesh, mat.roughness, mat.metalness);
+      }
     }
     this.onChange?.();
   }
 
-  /** Write a material's values into a mesh's colour and PBR attributes. */
+  /** Set an object up: white colours where it has no paint (its albedo tints them), and its material's roughness and metalness. */
   applyTo(mesh: SculptMesh): void {
     this.initialised.add(mesh.getID());
     const mat = this.materialFor(mesh);
-    if (!this.painted.has(mesh.getID())) {
-      const c = new Color(mat.albedo); // hex is sRGB; Color stores it linear
-      this.session.fillColors(mesh, [c.r, c.g, c.b]);
-    }
+    if (!this.painted.has(mesh.getID())) this.session.fillColors(mesh, [1, 1, 1]);
     this.session.fillMaterials(mesh, mat.roughness, mat.metalness);
   }
 
@@ -219,6 +219,40 @@ export class MaterialLibrary {
   }
   private restoring = false;
 
+  /**
+   * The version step (scene version 5). Before it an object's colours held
+   * its albedo already: an unpainted object was filled with it (loadFrom
+   * fills white over that now, and its material tints it, the same picture),
+   * and a painted object's colours are the paint with the albedo baked in.
+   * Those objects keep their colours and get a white albedo, so albedo times
+   * paint is what it was. A material several objects use is not whitened for
+   * the unpainted ones: the painted objects get a copy of it, named "<name>
+   * (painted)", with the albedo white, and the unpainted keep the shared one.
+   */
+  private whitenOldPaint(meshes: SculptMesh[]): void {
+    const users = new Map<string, { painted: SculptMesh[]; others: number }>();
+    for (const mesh of meshes) {
+      const id = this.materialFor(mesh).id;
+      const u = users.get(id) ?? { painted: [], others: 0 };
+      if (this.painted.has(mesh.getID())) u.painted.push(mesh);
+      else u.others++;
+      users.set(id, u);
+    }
+    for (const [id, u] of users) {
+      if (!u.painted.length) continue;
+      const mat = this.get(id);
+      if (!mat) continue;
+      if (u.others === 0) {
+        mat.albedo = '#ffffff';
+        continue;
+      }
+      this.seq += 1;
+      const copy: SculptMaterial = { ...mat, id: `m${this.seq}`, name: `${mat.name} (painted)`.slice(0, 80), albedo: '#ffffff' };
+      this.materials.push(copy);
+      for (const mesh of u.painted) this.assigned.set(mesh.getID(), copy.id);
+    }
+  }
+
   loadFrom(scene: SavedScene): void {
     this.restoring = false;
     // sanitizeScene has already made every material well formed; the ids
@@ -246,8 +280,13 @@ export class MaterialLibrary {
       }
       if (saved.painted) this.painted.add(mesh.getID());
     });
+    // A scene from before the albedo multiplied the paint (version 4 and
+    // older) holds the albedo in its colours: an unpainted object's fill
+    // below, a painted object's own. See whitenOldPaint.
+    if ((scene.v ?? 3) < 5) this.whitenOldPaint(meshes);
     // Restored vertex colours are already correct; only the objects with no
-    // painting of their own need their material written back over them.
+    // painting of their own need white written over them (an older scene's
+    // fill was its albedo, which tints them now).
     // Painted objects keep their colours but get their PBR channels
     // re-stamped from the material: the paint brush used to smear the
     // vendor's own roughness/metalness (0.3/0.95 - the shiny-paint bug)

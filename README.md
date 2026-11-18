@@ -175,6 +175,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **Albedo tints the paint.** An object\'s material colour now multiplies its paint, as a material does over vertex colours: unpainted objects show their albedo, a red stroke is red times it, and a white albedo shows paint exactly as picked. Changing Albedo is instant on any mesh, Paint no longer switches Colour or shows a notice, and scenes saved before open looking as they did.
+
 ### v0.7.0
 
 - **A Paint workspace.** Painting has its own workspace between Sculpt and Present (`Shift`+`B`), with Paint, Erase, Blur, Fill, Pick and Project on `1` to `6`. Project paints a reference picture in the view onto the model.

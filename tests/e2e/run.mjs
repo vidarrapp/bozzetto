@@ -66,6 +66,7 @@ import { suites as viewerTools } from './viewerTools.mjs';
 import { suites as webgpuHang } from './webgpuHang.mjs';
 import { suites as zoomFocus } from './zoomFocus.mjs';
 import { suites as lookTabs } from './lookTabs.mjs';
+import { suites as tint } from './tint.mjs';
 
 // One suite file per line, so two branches adding a file do not collide.
 const suites = {
@@ -119,6 +120,7 @@ const suites = {
   ...studyName,
   ...sculptLayers,
   ...lookTabs,
+  ...tint,
   ...detailsOverlay,
 };
 

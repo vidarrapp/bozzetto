@@ -780,21 +780,44 @@ step and Shift+B come out. The page's address has `paint=1` while it is up
   returns in Present, entered from Paint).
 - **Present from Paint** returns to Paint (Esc, Shift+P). The View menu's panel
   items are the workspace's own.
-- **Colour.** Entering Paint sets Colour to Sculpt colours where the look had
-  Plain colour, with a notice.
+- **Colour.** Nothing to switch on: paint shows in Sculpt, Paint and Present
+  from Sculpt whatever the look says, so entering Paint neither changes
+  Colour nor says anything. Colour (Present from Sculpt, Render panel) is
+  **Albedo and paint** (the albedo times the paint) or **Albedo only**; over a
+  published model with colours it stays Sculpt colours (the model's own
+  colours) or Plain colour (its albedo).
 - **Paint layers** use `ui/layerList.ts` with a reorder handle (a 44px grip at
   the row's left, `touch-action: none`, a line shows the drop place), a blend
   mode select (`ui/blendModes.ts`, 27 modes in Photoshop's six groups, a
   disabled line between groups) and an Opacity slider (0 to 100%). Menu:
-  Rename, Duplicate, Merge down, Clear, Delete (red). Flatten all at the foot.
-  Base at the bottom is paintable. A stroke on a layer that is hidden or at 0%
-  does not start and says why; Erase with Base picked says to pick a layer.
+  Rename, Duplicate, Merge down, Clear, Delete (red). Base's menu: Clear (back
+  to white, one undo step; nothing happens while Base holds no paint) and Flatten
+  all. Base at the bottom is paintable. A stroke on a layer that is hidden or
+  at 0% does not start and says why; Erase with Base picked says to pick a
+  layer (Base is opaque).
+- **The albedo multiplies the paint.** The shown colour is the object's
+  material albedo times its paint, in linear space, per object and always.
+  Base is white and opaque until painted, so an unpainted object is its
+  albedo, and making a layer or a stroke copies nothing from the albedo. The
+  paint is exactly what was picked and nothing stored is altered by the
+  albedo: a pure red stroke is red times clay under a clay albedo, red as
+  picked under a white one, and a change of Albedo is a value the shader
+  reads (`userData.albedo` on each object's display mesh), no recomposite, at
+  any mesh size. Matcap draws the paint alone, as it always did. Assigning a
+  material to a painted object keeps its paint and asks nothing. Pick returns
+  the paint colour.
 - **Data.** Four bytes a vertex of the highest level (sRGB colour, alpha) a
   layer, allocated on its first stroke; Base is linear floats, three a vertex.
-  The mesh's own colours are the composite, so publishing and export use
-  them. Saved per object as `SavedMesh.paintLayers` (version 1, sparse). Every
-  stroke and every layer change is one undo step. Remesh, merge, split and
-  dynamic topology ask once to flatten the sculpt and the paint layers.
+  The mesh's own colours are the paint alone; publishing writes the albedo
+  times the paint as the vertex colours (the viewer shows a published model's
+  colours in place of its albedo, as before), and OBJ export writes no
+  colours. Saved per object as `SavedMesh.paintLayers` (version 2, sparse).
+  Scene records are version 5; in a version 4 or older one the albedo is in the
+  colours, so on opening a painted object gets a white albedo (a copy of a
+  shared material, named "<name> (painted)") and an unpainted one white
+  colours. Every stroke and every layer change is one undo step. Remesh,
+  merge, split and dynamic topology ask once to flatten the sculpt and the
+  paint layers.
 
 ## Clarity rules (design critique, 2026-11)
 

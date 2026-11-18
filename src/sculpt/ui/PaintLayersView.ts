@@ -22,8 +22,8 @@ const rgbOf = (hex: string): [number, number, number] => {
  * panel has it: above the list the blend mode and the Opacity of the ACTIVE
  * layer or group (a group's modes start with Pass through), then the list, one
  * row a layer with groups folding over their layers, and at the foot a bar of
- * icons: Add mask, New fill layer, New group, New layer and Delete. Flatten all
- * is the Base row's menu. The list is the shared component
+ * icons: Add mask, New fill layer, New group, New layer and Delete. Clear and
+ * Flatten all are the Base row's menu. The list is the shared component
  * (src/ui/layerList.ts); this is what turns its taps into session commands.
  */
 export class PaintLayersView {
@@ -105,7 +105,10 @@ export class PaintLayersView {
           this.session.paint.move(mesh, layer, r.parent, r.index);
           this.onEdit?.();
         },
-        baseMenu: () => [{ label: 'Flatten all', action: () => this.act((m) => this.session.paint.flattenAll(m)) }],
+        baseMenu: () => [
+          { label: 'Clear', action: () => this.act((m) => this.session.paint.clearBase(m)) },
+          { label: 'Flatten all', action: () => this.act((m) => this.session.paint.flattenAll(m)) },
+        ],
         menu: (id) => this.menuFor(this.byId.get(id as number), id),
       },
       { baseName: 'Base' },

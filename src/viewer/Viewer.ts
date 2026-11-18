@@ -1127,6 +1127,7 @@ export class Viewer {
     mesh.castShadow = this.display.castShadow;
     mesh.receiveShadow = this.display.receiveShadow;
     mesh.userData.locked = 0; // the shared material reads it; never undefined
+    mesh.userData.albedo = new Color(1, 1, 1); // and the albedo (setSculptAlbedo), likewise
     mesh.matrixAutoUpdate = false;
     mesh.matrix.copy(matrix);
     mesh.matrixWorldNeedsUpdate = true;
@@ -1176,6 +1177,7 @@ export class Viewer {
     mesh.castShadow = this.display.castShadow;
     mesh.receiveShadow = this.display.receiveShadow;
     if (mesh.userData.locked === undefined) mesh.userData.locked = 0;
+    if (mesh.userData.albedo === undefined) mesh.userData.albedo = new Color(1, 1, 1);
     this.sculptExtras.push(mesh);
     this.scene.add(mesh);
     this.invalidate();
@@ -1264,6 +1266,19 @@ export class Viewer {
   /** Whether an object carries the selection highlight (tests read this). */
   isSculptHighlighted(target: Mesh | 'primary'): boolean {
     return this.sculptOutlines.has(target === 'primary' ? this.display : target);
+  }
+
+  /**
+   * An object's own albedo, which the shared sculpt material multiplies its
+   * paint by: per display mesh, read off userData as the lock is. `hex` is sRGB.
+   */
+  setSculptAlbedo(target: Mesh | 'primary', hex: string): void {
+    const host = target === 'primary' ? this.display : target;
+    const c = new Color(hexColor(hex, '#ffffff')); // sRGB in, linear held
+    const was = host.userData.albedo as Color | undefined;
+    if (was && was.r === c.r && was.g === c.g && was.b === c.b) return;
+    host.userData.albedo = c;
+    this.invalidate();
   }
 
   /**
@@ -2964,6 +2979,7 @@ export class Viewer {
     this.display.frustumCulled = false;
     // The shared sculpt material reads the lock off userData; never undefined.
     this.display.userData.locked = 0;
+    this.display.userData.albedo = new Color(1, 1, 1);
     this.wireframe.frustumCulled = false;
     this.setSculptMatrix(matrix);
     this.fitSubjectBounds(worldBox, true);

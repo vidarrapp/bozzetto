@@ -33,7 +33,7 @@ import { WorldScaleBrush } from './bridge/worldScale';
 import { TransformGizmo, type GizmoMode, type GizmoParts } from './bridge/transform';
 import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
 import { presentationPatch, saveModelToGallery } from './bridge/GallerySave';
-import { packScene, unpackScene } from './bridge/SceneFile';
+import { mergeSceneArrays, packScene, unpackScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
 import { failNotice, statusToast } from './ui/statusToast';
 import { AuthExpiredError, checkSignIn, roleOf, type Role } from '../admin/api';
@@ -475,10 +475,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Sculpt-local, so a published project's own saved material is untouched.
   viewer.materials.setAlbedo(SCULPT_ALBEDO);
   viewer.materials.setRoughness(SCULPT_ROUGHNESS);
-  // Albedo comes from the painted `color` attribute while sculpting. Vertex
-  // colours start white, so every object is filled with the material colour
-  // to read as that material - which is also the state a first paint stroke
-  // paints on top of.
+  // Colour while sculpting is the object's albedo times its paint, the
+  // `color` attribute (white until painted). The shader reads each object's
+  // own albedo off its display mesh (syncAlbedos), so objects with different
+  // materials each show theirs and the paint stays exactly as picked.
   viewer.materials.setSculptVertexColor(true);
   viewer.materials.setSculptVertexPBR(true);
   // Materials are per object now: a named set of albedo/roughness/metalness
@@ -643,6 +643,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     SculptMesh,
     { sync: GeometrySync; handle: ReturnType<Viewer['addSculptExtra']> }
   >();
+  /**
+   * Each object's own albedo to its display mesh: the shared material
+   * multiplies the object's paint by it, so objects with different materials
+   * each show their own, and a change of an albedo is this and a redraw.
+   */
+  const syncAlbedos = (): void => {
+    const active = session.getMesh();
+    viewer.setSculptAlbedo('primary', active ? library.materialFor(active).albedo : '#ffffff');
+    for (const [mesh, e] of extras) viewer.setSculptAlbedo(e.handle, library.materialFor(mesh).albedo);
+  };
   const reconcile = (): void => {
     const active = session.getMesh();
     const list = session.getMeshes();
@@ -683,6 +693,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.setSculptLocked('primary', !!active && session.isLocked(active));
     // A newly added object still has SculptGL's white vertex colours.
     library.applyNew();
+    syncAlbedos();
     syncHighlights();
   };
   /**
@@ -1677,11 +1688,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     toolbar.setWorkspace(true);
     layersPanel?.setPaint(true);
     input.selectBrush(Enums.Tools.PAINT);
-    // Painting is on the object's vertex colours: where the look had them off (Plain colour, chosen in Present), they come on.
-    if (viewer.materials.getMaterialState().vertexColors === false) {
-      viewer.materials.setPlainColor(false);
-      statusToast('').done('Colour is set to Sculpt colours while you paint.');
-    }
     sculptPanel?.refreshBrush();
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true, mode: 'paint' } }));
     setPaintAddress(true);
@@ -2132,6 +2138,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
     presented: () => present?.isActive() ?? false,
     units: () => session.getUnits(),
+    albedoOf: (mesh: SculptMesh) => library.albedoLinear(mesh),
   };
   /** Who the page is for, by the latest probe; null before its first answer. */
   let role: Role | null = null;
@@ -2245,6 +2252,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Every mutation source reports in.
   const noteWorkspace = (): void => persist.markDirty();
   library.onChange = () => {
+    syncAlbedos();
     scenePanel?.refresh();
     syncPanelMaterial();
     noteWorkspace();
@@ -2356,6 +2364,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     blend: blendModule, // the blend arithmetic, for the tests
     scaleBanner, // Set scale, for a scene from before real units
     worldScale, // the brushes' world sizes
+    /** The vertex colours a publish writes (the albedo times the paint, as seen), for the tests. */
+    publishColours: () => mergeSceneArrays(session, true, (m) => library.albedoLinear(m))?.colors ?? null,
     /** An object's exact world box, as plain arrays (the units suite measures with it). */
     worldBox: (mesh: SculptMesh) => {
       const b = exactWorldBox(mesh);

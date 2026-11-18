@@ -359,13 +359,13 @@ export class MaterialControls {
     const state = mats.getMaterialState();
 
     if (this.viewer.getMaterial() === 'lit' && this.sculpting && this.presenting) {
-      // Presenting a sculpt: its paint, or the albedo over all of it, as
-      // the published model will offer. The albedo itself stays per object,
-      // in the Surface section of the Material panel.
+      // Presenting a sculpt: the albedo times the paint, or the albedo alone.
+      // The albedo itself stays per object, in the Surface section of the
+      // Material panel. (The stored choice keeps its name, vertexColors.)
       const source = selectEl(
         [
-          ['sculpt', 'Sculpt colours'],
-          ['plain', 'Plain colour'],
+          ['sculpt', 'Albedo and paint'],
+          ['plain', 'Albedo only'],
         ],
         state.vertexColors === false ? 'plain' : 'sculpt',
       );
