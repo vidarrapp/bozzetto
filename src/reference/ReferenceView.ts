@@ -84,6 +84,16 @@ class Pictures {
   }
 }
 
+interface Rect {
+  l: number;
+  t: number;
+  r: number;
+  b: number;
+}
+
+const area = (a: Rect): number => (a.r - a.l) * (a.b - a.t);
+const overlap = (a: Rect, b: Rect): number => Math.max(0, Math.min(a.r, b.r) - Math.max(a.l, b.l)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.t, b.t));
+
 interface FrameEls {
   el: HTMLDivElement;
   bar: HTMLDivElement;
@@ -106,6 +116,8 @@ export class ReferenceView {
   private readonly offBoard: () => void;
   private readonly offPlace: () => void;
   private readonly ro: ResizeObserver | null;
+  private readonly mo: MutationObserver | null;
+  private relayout = 0;
   private renderToken = 0;
 
   private readonly onPresent = (e: Event): void => {
@@ -138,6 +150,9 @@ export class ReferenceView {
     window.addEventListener('bozzetto:present', this.onPresent);
     this.ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => this.layout()) : null;
     this.ro?.observe(viewer.captureCanvas);
+    // A panel opening or closing changes what stands over the view: the rows are placed again, once a frame.
+    this.mo = typeof MutationObserver === 'function' ? new MutationObserver(() => this.soon()) : null;
+    this.mo?.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class', 'hidden'] });
     void this.render();
   }
 
@@ -358,12 +373,21 @@ export class ReferenceView {
     return { x: b.left / v.w, y: b.top / v.h, w: b.width / v.w, h: b.height / v.h };
   }
 
+  private soon(): void {
+    if (this.relayout || this.frames.size === 0) return;
+    this.relayout = window.requestAnimationFrame(() => {
+      this.relayout = 0;
+      this.layout();
+    });
+  }
+
   /** Positions only (a drag, a resize of the view): no decoding, no rebuilding. */
   private layout(): void {
     const cr = this.viewer.captureCanvas.getBoundingClientRect();
     Object.assign(this.chrome.style, { left: `${cr.left}px`, top: `${cr.top}px`, width: `${cr.width}px`, height: `${cr.height}px` });
     const items = this.visibleItems();
     const v = this.viewRect();
+    const obstacles = this.obstacles(cr);
     for (const item of items) {
       const b = this.boxOf(item, this.placeOf(item));
       const pic = this.pics.get(item.id);
@@ -379,27 +403,31 @@ export class ReferenceView {
       f.el.style.top = `${b.top}px`;
       f.el.style.width = `${b.width}px`;
       f.el.style.height = `${b.height}px`;
-      // The row sits above the top edge, or inside it when there is no room above.
+      // Both rows go where a finger can reach them: clear of the title strip, the tabs, an open panel, the tool bar and the transport.
+      // Outside the picture when that is free, else inside its edge (over the picture), still the whole row.
       const barW = FRAME_ACTIONS.length * BAR_BTN;
-      const absLeft = Math.min(Math.max(b.left, 4), Math.max(4, v.w - barW - 4));
-      // Nor over the tabs at the top, which stand over the view and would take a press first.
-      const clear = this.tabsBottom(cr, absLeft, absLeft + barW);
-      const above = b.top >= BAR_BTN + 4 + clear;
-      f.bar.style.top = above ? `${-BAR_BTN - 4}px` : '4px';
-      f.bar.style.left = `${absLeft - b.left}px`;
-      f.bar.dataset.inside = above ? 'false' : 'true';
+      const barLeft = Math.min(Math.max(b.left, EDGE), Math.max(EDGE, v.w - barW - EDGE));
+      const barBox = this.freest(
+        [b.top - BAR_BTN - EDGE, b.top + EDGE, b.top + b.height - EDGE - BAR_BTN, b.top + (b.height - BAR_BTN) / 2].map((top) => ({ l: barLeft, t: top, r: barLeft + barW, b: top + BAR_BTN })),
+        obstacles,
+        v,
+      );
+      f.bar.style.top = `${barBox.t - b.top - 1}px`;
+      f.bar.style.left = `${barBox.l - b.left - 1}px`;
+      f.bar.dataset.inside = barBox.t >= b.top ? 'true' : 'false';
       // The row under the picture: centred, as wide as the picture but not narrower than it needs, kept inside the view.
       const underW = Math.max(UNDER_MIN_W, b.width);
-      const wantLeft = b.left + (b.width - underW) / 2;
-      const underLeft = Math.min(Math.max(wantLeft, EDGE), Math.max(EDGE, v.w - underW - EDGE));
-      const room = b.top + b.height + EDGE + UNDER_H <= v.h - EDGE;
-      // At the bottom edge it sits over the picture's lower edge, inside the view.
-      const underTop = room ? b.top + b.height + EDGE : Math.max(EDGE, v.h - EDGE - UNDER_H);
+      const underLeft = Math.min(Math.max(b.left + (b.width - underW) / 2, EDGE), Math.max(EDGE, v.w - underW - EDGE));
+      const underBox = this.freest(
+        [b.top + b.height + EDGE, b.top + b.height - EDGE - UNDER_H, b.top + EDGE, b.top + (b.height - UNDER_H) / 2].map((top) => ({ l: underLeft, t: top, r: underLeft + underW, b: top + UNDER_H })),
+        [...obstacles, barBox],
+        v,
+      );
       // The frame's own border (1px) is outside the box its children are placed in.
       f.under.style.width = `${underW}px`;
-      f.under.style.left = `${underLeft - b.left - 1}px`;
-      f.under.style.top = `${underTop - b.top - 1}px`;
-      f.under.dataset.inside = room ? 'false' : 'true';
+      f.under.style.left = `${underBox.l - b.left - 1}px`;
+      f.under.style.top = `${underBox.t - b.top - 1}px`;
+      f.under.dataset.inside = underBox.t < b.top + b.height ? 'true' : 'false';
     }
     if (this.backdropActive && this.behindCanvas) {
       const behind = [...items].reverse().find((i) => i.blend === BEHIND);
@@ -407,15 +435,32 @@ export class ReferenceView {
     }
   }
 
-  /** How far down, in the view's pixels, the panel tabs reach over the view between two x positions (0 where none do). */
-  private tabsBottom(view: DOMRect, x0: number, x1: number): number {
-    let low = 0;
-    for (const h of document.querySelectorAll<HTMLElement>('.panel > .panel__handle')) {
-      const r = h.getBoundingClientRect();
-      if (r.width === 0 || r.height === 0) continue;
-      if (r.right - view.left > x0 && r.left - view.left < x1) low = Math.max(low, r.bottom - view.top);
+  /** What stands over the view and would take a press first (in the view's pixels): the strip, the tabs, open panels, the tool bar, the transport, the edge buttons. */
+  private obstacles(view: DOMRect): Rect[] {
+    const out: Rect[] = [];
+    const add = (el: Element): void => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) out.push({ l: r.left - view.left, t: r.top - view.top, r: r.right - view.left, b: r.bottom - view.top });
+    };
+    for (const el of document.querySelectorAll('.bz-strip, .panel > .panel__handle, .sculpt-toolbar, .bz-edge, .transport--shell, .float-window')) add(el);
+    for (const panel of document.querySelectorAll('.panel:not(.panel--collapsed)')) for (const part of [panel, ...Array.from(panel.children)]) add(part);
+    return out;
+  }
+
+  /** Of some places for a row, the first that is free of the obstacles and inside the view; else the one with least in the way. */
+  private freest(cands: Rect[], obstacles: Rect[], v: { w: number; h: number }): Rect {
+    let best = cands[0];
+    let bestCost = Infinity;
+    for (const c of cands) {
+      let cost = area(c) - overlap(c, { l: 0, t: 0, r: v.w, b: v.h });
+      for (const o of obstacles) cost += overlap(c, o);
+      if (cost < 0.5) return c;
+      if (cost < bestCost) {
+        best = c;
+        bestCost = cost;
+      }
     }
-    return Math.max(0, low);
+    return best;
   }
 
   // --- arranging ----------------------------------------------------------
@@ -542,6 +587,8 @@ export class ReferenceView {
     this.offPlace();
     window.removeEventListener('bozzetto:present', this.onPresent);
     this.ro?.disconnect();
+    this.mo?.disconnect();
+    window.cancelAnimationFrame(this.relayout);
     if (this.backdropActive) this.viewer.setBackdrop(null);
     this.layer.remove();
     this.chrome.remove();

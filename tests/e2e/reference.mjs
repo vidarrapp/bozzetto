@@ -1365,6 +1365,59 @@ export const suites = {
       s = await state();
       t.eq(s.inView, 0, 'a tap on Remove takes it out of the view');
 
+      // Both rows are always reachable: at the default place and with the picture dragged to each edge of the view, every icon and the
+      // blend and Opacity controls are the topmost thing at their own centre, and a finger's tap reaches the Greyscale icon.
+      await p.evaluate(() => window.__sculpt.reference.board.clear());
+      await addFiles(p, [{ name: 'edge.png', mimeType: 'image/png', buffer: await png(p, 400, 300) }]);
+      await openPanel(p);
+      await p.evaluate(() => window.__sculpt.reference.board.putInView(window.__sculpt.reference.board.list()[0].id)); // Place in view: the default place
+      await openPanel(p, false);
+      await p.waitForSelector('.ref-frame .ref-frame__btn--grey', { timeout: 10_000 });
+      await p.waitForTimeout(400);
+      const reach = () =>
+        p.evaluate(() => {
+          const out = [];
+          const want = [
+            ...['lock', 'fit', 'flip', 'grey', 'remove'].map((a) => `.ref-frame__btn--${a}`),
+            '.ref-frame__blend',
+            '.ref-frame__opacity',
+          ];
+          for (const sel of want) {
+            const el = document.querySelector(`.ref-frame ${sel}`);
+            const r = el.getBoundingClientRect();
+            const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            if (!at || !at.closest(`.ref-frame ${sel}`)) out.push(`${sel} under ${at?.className || at?.tagName}`);
+          }
+          return out;
+        });
+      const places = [
+        ['the default place', null],
+        ['the left edge', { x: -9, y: 0, w: 0.3 }],
+        ['the right edge', { x: 9, y: 0, w: 0.3 }],
+        ['the top edge', { x: 0, y: -9, w: 0.3 }],
+        ['the bottom edge', { x: 0, y: 9, w: 0.3 }],
+        ['the top left corner', { x: -9, y: -9, w: 0.3 }],
+        ['the bottom right corner', { x: 9, y: 9, w: 0.3 }],
+      ];
+      for (const [name, place] of places) {
+        if (place) {
+          await p.evaluate((pl) => {
+            const { board, view } = window.__sculpt.reference;
+            view.setPlace(board.list()[0].id, pl);
+          }, place);
+          await p.waitForTimeout(300);
+        }
+        const bad = await reach();
+        t.ok(bad.length === 0, `at ${name}, every icon and the blend and Opacity controls are on top (${bad.join('; ') || 'all'})`);
+        await shot(p, `reach-${name.replaceAll(' ', '-')}`);
+        const g0 = (await state()).grey;
+        await tap('.ref-frame .ref-frame__btn--grey');
+        const g1 = (await state()).grey;
+        await tap('.ref-frame .ref-frame__btn--grey');
+        t.ok(g0 !== g1 && (await state()).grey === g0, `and a finger's tap on Greyscale works there (${g0} to ${g1})`);
+      }
+      await p.evaluate(() => window.__sculpt.reference.board.clear());
+
       // The Reference panel's icons, by a finger. A fresh picture, which has no camera kept yet.
       await p.evaluate(() => window.__sculpt.reference.board.clear());
       await addFiles(p, [{ name: 'second.png', mimeType: 'image/png', buffer: await png(p, 300, 400) }]);
