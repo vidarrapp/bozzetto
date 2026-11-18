@@ -451,7 +451,14 @@ export class ReferenceView {
   private freest(cands: Rect[], obstacles: Rect[], v: { w: number; h: number }): Rect {
     let best = cands[0];
     let bestCost = Infinity;
-    for (const c of cands) {
+    // Last resorts, only if every place beside or over the picture is in the way: just above or below what is in the way.
+    const h = cands[0].b - cands[0].t;
+    const extra: Rect[] = [];
+    for (const o of obstacles) {
+      if (o.r <= cands[0].l || o.l >= cands[0].r) continue;
+      extra.push({ ...cands[0], t: o.t - h - EDGE, b: o.t - EDGE }, { ...cands[0], t: o.b + EDGE, b: o.b + EDGE + h });
+    }
+    for (const c of [...cands, ...extra]) {
       let cost = area(c) - overlap(c, { l: 0, t: 0, r: v.w, b: v.h });
       for (const o of obstacles) cost += overlap(c, o);
       if (cost < 0.5) return c;

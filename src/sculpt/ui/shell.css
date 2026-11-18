@@ -2052,10 +2052,16 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
   pointer-events: none;
 }
 
-.panel--reference .ref-act:hover,
 .panel--reference .ref-act:focus-visible {
   background: var(--bz-hover);
   color: var(--bz-text);
+}
+
+@media (hover: hover) {
+  .panel--reference .ref-act:hover {
+    background: var(--bz-hover);
+    color: var(--bz-text);
+  }
 }
 
 /* A toggle that is on shows it by colour alone, as Solo and Negative do. */
@@ -2233,8 +2239,10 @@ body.presenting .ref-chrome {
   cursor: pointer;
 }
 
-.ref-frame__btn:hover {
-  background: rgba(255, 255, 255, 0.14);
+@media (hover: hover) {
+  .ref-frame__btn:hover {
+    background: rgba(255, 255, 255, 0.14);
+  }
 }
 
 /* Floating marks over the view: the light line with the faint shade, no dark box behind. */
