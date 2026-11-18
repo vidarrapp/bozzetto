@@ -346,7 +346,7 @@ export class SculptToolbar {
     if (this.paintBtns.size) return;
     const tools = Enums.Tools;
     const paintTools: Array<[number, string, string, string, string, string]> = [
-      [tools.PAINT, '1', 'Paint (alt: pick colour, shift: blur)', 'paint', 'fi-ss-palette', 'Paint'],
+      [tools.PAINT, '1', 'Paint (alt: pick colour, shift: blur)', 'paint', 'fi-ss-paint', 'Paint'],
       [tools.PAINT_ERASE, '2', "Erase: lowers the layer's alpha", 'erase', 'fi-ss-eraser', 'Erase'],
       [tools.BLUR, '3', 'Blur: softens the layer', 'blur', 'fi-ss-raindrops', 'Blur'],
       [tools.FILL, '4', 'Fill: the layer, or the part that is not masked', 'fill', 'fi-ss-fill', 'Fill'],

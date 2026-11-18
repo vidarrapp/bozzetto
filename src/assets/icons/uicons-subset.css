@@ -27,7 +27,7 @@ i[class^=fi-ss-]:before,i[class*=" fi-ss-"]:before,span[class^=fi-ss-]:before,sp
 .fi-ss-hand-back-fist:before{content:"\f74f"}
 .fi-ss-layers:before{content:"\f876"}
 .fi-ss-lock:before{content:"\f8ce"}
-.fi-ss-palette:before{content:"\f9e3"}
+.fi-ss-paint:before{content:"\f9e1"}
 .fi-ss-pause:before{content:"\fa03"}
 .fi-ss-play:before{content:"\fa94"}
 .fi-ss-projector:before{content:"\fad4"}
