@@ -233,13 +233,20 @@ async function frameButtonOf(page, name, action) {
   await page.waitForTimeout(350);
 }
 
-/** Choose the blend in the row under a picture (the first one in the view, or the named one). */
+/** Choose the blend on a picture's card in the Reference panel (the first picture in the view, or the named one), whether or not the panel is open. */
 const setLookBlend = async (page, id, name = null) => {
   const fid = await page.evaluate((name) => {
     const { board } = window.__sculpt.reference;
     return (name ? board.list().find((i) => i.name === name) : board.inView()[0]).id;
   }, name);
-  await page.selectOption(`.ref-frame[data-id="${fid}"] .ref-frame__blend`, id);
+  await page.evaluate(
+    ([fid, id]) => {
+      const sel = document.querySelector(`.ref-card[data-id="${fid}"] .ref-card__blend`);
+      sel.value = id;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+    [fid, id],
+  );
   await page.waitForTimeout(450);
 };
 
@@ -598,11 +605,28 @@ export const suites = {
     await page.waitForTimeout(300);
     t.ok(isBlue(await picPixel(page, 0.2, 0.2)) && isRed(await picPixel(page, 0.8, 0.2)), 'Flip swaps left and right');
 
-    // Under the picture: the blend select (Behind the model, Normal, the modes in Photoshop's order) and Opacity. Greyscale is a button in the row over it.
-    t.ok(await visible(page, '.ref-frame__under'), 'a row under the picture');
+    // One row of tools over the picture: the icons, then Opacity to their right. No row under it, and no blend select in the view.
+    const row = await page.evaluate(() => {
+      const bar = document.querySelector('.ref-frame__bar').getBoundingClientRect();
+      const last = document.querySelector('.ref-frame__btn--remove').getBoundingClientRect();
+      const op = document.querySelector('.ref-frame__bar .ref-frame__opacity')?.getBoundingClientRect();
+      return {
+        under: !!document.querySelector('.ref-frame__under'),
+        blend: !!document.querySelector('.ref-frame select'),
+        look: !!document.querySelector('.ref-look'),
+        slider: !!document.querySelector('.ref-frame__bar .ref-frame__opacity input[type=range]'),
+        right: !!op && op.left >= last.right - 1,
+        inRow: !!op && op.top >= bar.top - 1 && op.bottom <= bar.bottom + 1,
+      };
+    });
+    t.ok(row.slider && row.right && row.inRow, `Opacity is in the row of icons, to their right (${JSON.stringify(row)})`);
+    t.ok(!row.under && !row.blend && !row.look, 'and there is no row under the picture, no blend select in the view and no Look pop-up');
+    // The blend is chosen on the picture's card in the Reference panel: Behind the model, Normal, the modes in Photoshop's order.
+    await openPanel(page);
+    t.ok(await visible(page, '.ref-card .ref-card__blend'), 'the card in the Reference panel has the blend select');
     const opts = await page.evaluate(() => {
       const g = [[]];
-      for (const o of document.querySelectorAll('.ref-frame__blend option')) {
+      for (const o of document.querySelectorAll('.ref-card .ref-card__blend option')) {
         if (o.disabled) g.push([]);
         else g[g.length - 1].push(o.textContent);
       }
@@ -613,8 +637,12 @@ export const suites = {
       'Behind the model,Normal|Darken,Multiply,Color Burn|Lighten,Screen,Color Dodge,Linear Dodge (Add)|Overlay,Soft Light,Hard Light|Difference,Exclusion|Hue,Saturation,Color,Luminosity',
       'the blend select lists Behind the model, Normal and the CSS-matched modes in Photoshop’s order, groups between lines',
     );
-    t.ok(await page.evaluate(() => !!document.querySelector('.ref-frame__under .ref-frame__opacity input[type=range]') && !document.querySelector('.ref-look')), 'with Opacity, and no Look pop-up');
-    await shot(page, 'under-row');
+    await page.selectOption('.ref-card .ref-card__blend', 'multiply');
+    await page.waitForTimeout(300);
+    t.eq(await page.evaluate(() => window.__sculpt.reference.board.inView()[0].blend), 'multiply', 'choosing there sets the blend on the picture');
+    await shot(page, 'panel-blend');
+    await openPanel(page, false);
+    await shot(page, 'one-row');
     // Pixels: Normal against Multiply, read from a real screenshot of the view as composed. Locked first, so no outline is in it.
     await setLookBlend(page, 'normal');
     await lock(page);
@@ -1179,7 +1207,7 @@ export const suites = {
   },
 
   // A finger on a picture's rows while arranging (the row of buttons over it,
-  // the blend and Opacity row under it) and on the Reference panel's icons:
+  // Opacity beside them) and on the Reference panel's icons:
   // the frame takes the touch for its drags, and once cancelled every touch on
   // it, the buttons' included. Real taps and drags, through the browser's touch.
   async refTouchBar(page, base, t) {
@@ -1277,7 +1305,7 @@ export const suites = {
       });
       await p.waitForTimeout(300);
 
-      // The row under the picture: Opacity dragged by a finger changes the opacity and leaves the picture where it is.
+      // Opacity, in the row of icons: dragged by a finger it changes the opacity and leaves the picture where it is.
       const where = await state();
       const row = await p.evaluate(() => {
         const r = document.querySelector('.ref-frame__opacity').getBoundingClientRect();
@@ -1294,54 +1322,33 @@ export const suites = {
       await swipe([row.left + 12, row.top + 6], [row.left + row.width - 6, row.top + 6]);
       t.ok((await state()).opacity > was, 'a drag that starts on the word Opacity scrubs too');
 
-      // The blend select under a finger: a tap is not swallowed; the choice sets the blend.
-      await tap('.ref-frame__blend');
-      await p.selectOption('.ref-frame__blend', 'multiply');
-      await p.waitForTimeout(300);
-      s = await state();
-      t.eq(s.blend, 'multiply', 'choosing a blend sets it on the picture');
-      t.eq(await p.evaluate(() => document.querySelector('.ref-frame__blend').value), 'multiply', 'and the select shows it');
-
-      // The rows' place: under a narrow picture the row is 240 wide and centred; at the bottom edge it stays inside the view.
+      // The row's place: beside a narrow picture the whole row still shows, and at the bottom edge it stays inside the view.
       const geometry = () =>
         p.evaluate(() => {
           const f = document.querySelector('.ref-frame').getBoundingClientRect();
-          const u = document.querySelector('.ref-frame__under').getBoundingClientRect();
+          const bar = document.querySelector('.ref-frame__bar').getBoundingClientRect();
+          const op = document.querySelector('.ref-frame__opacity').getBoundingClientRect();
           const v = window.__sculpt.viewer.captureCanvas.getBoundingClientRect();
-          return { f: f.toJSON(), u: u.toJSON(), v: v.toJSON() };
+          return { f: f.toJSON(), bar: bar.toJSON(), op: op.toJSON(), v: v.toJSON() };
         });
+      const whole = (g) => g.bar.left >= g.v.left && g.op.right <= g.v.right + 0.5 && g.bar.top >= g.v.top && g.bar.bottom <= g.v.bottom + 0.5;
       await p.evaluate(() => {
         const { board } = window.__sculpt.reference;
         board.setPlace(board.list()[0].id, { x: 0, y: -0.1, w: 0.15 });
       });
       await p.waitForTimeout(300);
       let g = await geometry();
-      t.ok(g.f.width < 240, `the picture is narrow (${Math.round(g.f.width)}px)`);
-      t.ok(Math.abs(g.u.width - 240) < 1, `the row under it is 240px wide (${g.u.width})`);
-      t.ok(Math.abs(g.u.left + g.u.width / 2 - (g.f.left + g.f.width / 2)) < 2 && g.u.top >= g.f.bottom - 1, 'centred under the picture');
-      await p.evaluate(() => {
-        const { board } = window.__sculpt.reference;
-        board.setPlace(board.list()[0].id, { x: 0, y: 0.5, w: 0.3 });
-      });
-      await p.waitForTimeout(300);
-      g = await geometry();
-      t.ok(g.u.bottom <= g.v.bottom + 0.5 && g.u.top >= g.v.top && g.u.left >= g.v.left && g.u.right <= g.v.right, `at the bottom edge the row stays inside the view (${Math.round(g.u.bottom)} of ${Math.round(g.v.bottom)})`);
-      t.ok(g.u.top < g.f.bottom, 'sitting over the picture’s lower edge');
-      await shot(p, 'view-bottom-edge');
-      await p.evaluate(() => {
-        const { board } = window.__sculpt.reference;
-        board.setPlace(board.list()[0].id, { x: 0, y: -0.1, w: 0.15 });
-      });
-      await p.waitForTimeout(300);
+      t.ok(g.f.width < g.op.right - g.bar.left, `the picture is narrower than its row (${Math.round(g.f.width)}px)`);
+      t.ok(whole(g) && g.op.width > 120, `and the whole row shows, Opacity included (${Math.round(g.op.width)}px)`);
       await shot(p, 'view-narrow');
       await p.evaluate(() => {
         const { board } = window.__sculpt.reference;
         board.setPlace(board.list()[0].id, { x: 0, y: 0.5, w: 0.3 });
       });
       await p.waitForTimeout(300);
-      await p.selectOption('.ref-frame__blend', 'normal');
-      await p.waitForTimeout(200);
-      t.eq((await state()).blend, 'normal', 'and it still works there');
+      g = await geometry();
+      t.ok(whole(g), `at the bottom edge the row stays inside the view (${Math.round(g.bar.bottom)} of ${Math.round(g.v.bottom)})`);
+      await shot(p, 'view-bottom-edge');
       await p.evaluate(() => {
         const { board } = window.__sculpt.reference;
         board.setPlace(board.list()[0].id, { x: 0, y: -0.1, w: 0.3 });
@@ -1355,7 +1362,7 @@ export const suites = {
         await p.evaluate(() => {
           const chrome = document.querySelector('.ref-chrome');
           const pic = document.querySelector('.ref-pic');
-          return (!chrome || chrome.hidden) && !document.querySelector('.ref-frame') && !document.querySelector('.ref-frame__under') && getComputedStyle(pic).pointerEvents === 'none';
+          return (!chrome || chrome.hidden) && !document.querySelector('.ref-frame') && !document.querySelector('.ref-frame__opacity') && getComputedStyle(pic).pointerEvents === 'none';
         }),
         'locked, neither row shows and the picture lets everything through',
       );
@@ -1379,7 +1386,6 @@ export const suites = {
           const out = [];
           const want = [
             ...['lock', 'fit', 'flip', 'grey', 'remove'].map((a) => `.ref-frame__btn--${a}`),
-            '.ref-frame__blend',
             '.ref-frame__opacity',
           ];
           for (const sel of want) {
@@ -1476,6 +1482,74 @@ export const suites = {
     } finally {
       await ctx.close();
     }
+    t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
+
+  // A picture behind the model is drawn the right way up and where its frame is (owner report, 2026-11-18:
+  // it stood on its head, and moving the frame up moved the picture down). The other suites' pictures are
+  // split left from right, which a picture on its head passes; this one is red over blue.
+  async refBehindUp(page, base, t) {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await openSculpt(page, base, '&q=low');
+    await page.evaluate(async () => {
+      const c = document.createElement('canvas');
+      c.width = 200;
+      c.height = 300;
+      const g = c.getContext('2d');
+      g.fillStyle = '#e02020';
+      g.fillRect(0, 0, 200, 150);
+      g.fillStyle = '#2030e0';
+      g.fillRect(0, 150, 200, 150);
+      const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+      const { board } = window.__sculpt.reference;
+      const item = await board.add(blob, 'up');
+      board.putInView(item.id, { x: -0.45, y: 0, w: 0.25 });
+      board.setLook(item.id, { blend: 'behind' });
+    });
+    await page.waitForTimeout(700);
+    t.ok(await page.evaluate(() => window.__sculpt.reference.view.describe().behind), 'the picture is drawn behind the model');
+    const frame = () =>
+      page.evaluate(() => {
+        const r = document.querySelector('.ref-frame').getBoundingClientRect();
+        return { left: r.left, top: r.top, width: r.width, height: r.height };
+      });
+    const quarters = async () => {
+      const f = await frame();
+      const x = f.left + f.width / 2;
+      return {
+        f,
+        top: await sample(page, x, f.top + f.height * 0.25),
+        bottom: await sample(page, x, f.top + f.height * 0.75),
+        above: await sample(page, x, f.top - 12),
+        below: await sample(page, x, f.top + f.height + 12),
+      };
+    };
+    let q = await quarters();
+    t.ok(isRed(q.top) && isBlue(q.bottom), `the top of the picture is at the top of its frame (top ${q.top}, bottom ${q.bottom})`);
+    t.ok(!isRed(q.above) && !isBlue(q.above) && !isRed(q.below) && !isBlue(q.below), `and it ends where the frame ends (above ${q.above}, below ${q.below})`);
+    await shot(page, 'behind-up');
+    // Up and down: the picture goes the way the frame goes.
+    for (const [y, where] of [[-0.25, 'up'], [0.2, 'down']]) {
+      await page.evaluate((y) => {
+        const { board } = window.__sculpt.reference;
+        board.setPlace(board.list()[0].id, { x: -0.45, y, w: 0.25 });
+      }, y);
+      await page.waitForTimeout(500);
+      const before = q.f.top;
+      q = await quarters();
+      t.ok(where === 'up' ? q.f.top < before - 40 : q.f.top > before + 40, `the frame moved ${where} (${Math.round(before)} to ${Math.round(q.f.top)})`);
+      t.ok(isRed(q.top) && isBlue(q.bottom) && !isRed(q.above) && !isBlue(q.below), `and the picture is under it, the right way up (top ${q.top}, bottom ${q.bottom}, above ${q.above}, below ${q.below})`);
+    }
+    // Sideways as well, and with the opacity down the background shows through evenly.
+    await page.evaluate(() => {
+      const { board } = window.__sculpt.reference;
+      board.setPlace(board.list()[0].id, { x: 0.45, y: 0.2, w: 0.25 });
+    });
+    await page.waitForTimeout(500);
+    q = await quarters();
+    t.ok(isRed(q.top) && isBlue(q.bottom), `moved across, still under its frame (top ${q.top}, bottom ${q.bottom})`);
     t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   },
 };

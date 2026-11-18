@@ -3,7 +3,8 @@ import { div } from '../ui/dom';
 import { nameOnLongPress, setTip } from '../sculpt/ui/edgeTip';
 import { askWindow } from '../ui/askWindow';
 import { mayStore } from '../ui/deviceStorage';
-import type { ReferenceBoard, RefItem } from './board';
+import { blendSelect, CSS_BLEND_MODES } from '../ui/blendModes';
+import { BEHIND, type ReferenceBoard, type RefItem } from './board';
 import { addPictures, pasteFromClipboard } from './intake';
 
 /** The name of the icon that puts the camera back as a picture was locked. Short, and kept in one place. */
@@ -184,7 +185,13 @@ export class ReferencePanel extends SidePanel {
     const meta = document.createElement('div');
     meta.className = 'ref-card__meta';
     meta.textContent = `${item.width} × ${item.height}`;
-    text.append(name, meta);
+    // The blend mode: how the picture is laid over the view, or behind the model.
+    const blend = blendSelect(CSS_BLEND_MODES, item.blend, [[BEHIND, 'Behind the model']]);
+    blend.className = 'ref-card__blend';
+    blend.title = 'Blend mode';
+    blend.setAttribute('aria-label', `Blend mode of ${item.name}`);
+    blend.addEventListener('change', () => this.board.setLook(item.id, { blend: blend.value }));
+    text.append(name, meta, blend);
     card.appendChild(text);
 
     // The icons: the same glyphs as the row over a picture in the view.

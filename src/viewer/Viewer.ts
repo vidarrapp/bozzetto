@@ -2377,7 +2377,7 @@ export class Viewer {
     /** Where it stands, as fractions of the view: left, top, width and height (top down). Default: fitted to the view's height and centred. */
     rect?: { x: number; y: number; w: number; h: number },
   ): void {
-    if (rect) this.backdropRect.value.set(rect.x, 1 - (rect.y + rect.h), rect.w, rect.h);
+    if (rect) this.backdropRect.value.set(rect.x, rect.y, rect.w, rect.h);
     this.backdropOpacity.value = Math.min(1, Math.max(0, opacity));
     this.invalidate();
     if (!picture) {
@@ -2403,12 +2403,14 @@ export class Viewer {
     this.backdropTex = tex;
     this.backdropPicture = picture;
     const bg = this.backdropBg;
-    // u, v: where the screen point falls on the picture (v up, as the texture is).
+    // u, down: where the screen point falls on the picture, from its left and from its top. screenUV runs
+    // from the top of the view down, on both backends; the texture's v runs up, so it is read at 1 - down.
+    // (Read the other way up, the picture stood on its head and moved the wrong way when its frame was moved up or down.)
     const r = this.backdropRect;
     const u = screenUV.x.sub(r.x).div(r.z);
-    const v = screenUV.y.sub(r.y).div(r.w);
-    const inside = min(min(u, float(1).sub(u)), min(v, float(1).sub(v))).greaterThanEqual(0);
-    const uvn = vec2(u, v).clamp(0, 1);
+    const down = screenUV.y.sub(r.y).div(r.w);
+    const inside = min(min(u, float(1).sub(u)), min(down, float(1).sub(down))).greaterThanEqual(0);
+    const uvn = vec2(u, float(1).sub(down)).clamp(0, 1);
     const sample = tslTexture(tex, uvn);
     this.backdropNode = select(inside, vec4(mix(bg, sample.rgb, this.backdropOpacity), 1), vec4(bg, 1)) as unknown as Node;
     this.followBackdropColour();
@@ -2450,7 +2452,7 @@ export class Viewer {
   private backdropTex: CanvasTexture | null = null;
   private backdropPicture: HTMLCanvasElement | null = null;
   private readonly backdropBg = uniform(new Color(0x1c1814));
-  /** Left, bottom, width, height of the backdrop picture as fractions of the view. */
+  /** Left, top, width, height of the backdrop picture as fractions of the view, from the top down. */
   private readonly backdropRect = uniform(new Vector4(0, 0, 1, 1));
   /** How much of the backdrop picture shows over the background's colour. */
   private readonly backdropOpacity = uniform(1);

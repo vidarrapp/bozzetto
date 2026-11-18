@@ -119,6 +119,8 @@ export interface InputShellHooks {
   toggleChrome(): void;
   /** Shift+1 to 4 (ws.*): straight to a workspace from any other; the one you are in does nothing. */
   goWorkspace(to: 'armature' | 'sculpt' | 'paint' | 'present'): void;
+  /** Ctrl+S (file.save): Save to library, or for a guest the copy on this device at once. */
+  save(): void;
   /** Space (play.toggle) in Present: the turntable on or off. */
   togglePlay(): void;
   /** ctrl+h: show/hide the mask tint (the mask itself stays). */
@@ -143,6 +145,7 @@ const PRESENT_KEYS = new Set([
   'ws.sculpt',
   'ws.paint',
   'ws.present',
+  'file.save',
   'ui.chrome',
   'ui.show',
   'ui.help',
@@ -2480,7 +2483,14 @@ export class InputShell {
     if (document.body.classList.contains('has-modal')) return;
     // A tool lifted off the tool bar (the dock's drag) owns the keys: Esc puts it back, the digits wait.
     if (toolBars.lifted) return;
-    if (isTextEntryTarget(e)) return;
+    // Save is the one key that also works from a text field: the browser's own answer to it is to save the page.
+    if (isTextEntryTarget(e)) {
+      if (keymap.actionFor(e, 'sculpt')?.id === 'file.save') {
+        this.hooks.save();
+        this.claim(e);
+      }
+      return;
+    }
     // A focused checkbox/slider/select keeps its PLAIN keys (space toggles,
     // arrows slide), but modifier chords stay hotkeys: after clicking a
     // panel checkbox, ctrl+z must still undo rather than go quietly dead.
@@ -2558,6 +2568,9 @@ export class InputShell {
         return this.claim(e);
       case 'ws.present':
         this.hooks.goWorkspace('present');
+        return this.claim(e);
+      case 'file.save':
+        this.hooks.save();
         return this.claim(e);
       case 'play.toggle':
         // Play / pause, the viewer's key: in Present the turntable is what

@@ -29,6 +29,14 @@ export type Vec3 = [number, number, number];
  * The joint limits below are written the anatomical way, measured from
  * STRAIGHT, and shifted onto the rest by `fromRest`: an elbow that rests
  * seven degrees in can still straighten by seven, and bends by the rest.
+ *
+ * They are a dancer's ranges and then some, not a textbook's (owner,
+ * 2026-11-18, after trying to match a dancer mid leap: the back leg would
+ * not go far enough back and the foot would not point). A textbook hip
+ * extends 30 degrees because the rest of an arabesque comes from the pelvis
+ * and the spine; on a mannequin posed one joint at a time that reads as a
+ * joint that is stuck. The ranges stop where the part would pass through
+ * its neighbour, and the twist about a bone (y) stays within a quarter turn.
  */
 const ELBOW_REST = 7;
 /** How far forward the knee sits at rest, in metres on a 1.80 m figure. */
@@ -267,7 +275,7 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
     head: [0, s(1.1), 0],
     tail: [0, s(1.3), 0],
     hint: 'x',
-    limits: { x: deg(-35, 30), y: deg(-30, 30), z: deg(-25, 25) },
+    limits: { x: deg(-50, 45), y: deg(-40, 40), z: deg(-35, 35) },
     part: { width: s(0.28), depth: s(0.2) },
     mirror: null,
     kind: 'ball',
@@ -278,7 +286,7 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
     head: [0, s(1.3), 0],
     tail: [0, s(1.5), 0],
     hint: 'x',
-    limits: { x: deg(-25, 25), y: deg(-30, 30), z: deg(-20, 20) },
+    limits: { x: deg(-35, 35), y: deg(-40, 40), z: deg(-30, 30) },
     part: { width: b.chestWidth * h, depth: s(0.24) },
     mirror: null,
     kind: 'ball',
@@ -289,7 +297,7 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
     head: [0, s(1.52), 0],
     tail: [0, s(1.6), 0],
     hint: 'x',
-    limits: { x: deg(-30, 40), y: deg(-50, 50), z: deg(-30, 30) },
+    limits: { x: deg(-45, 55), y: deg(-60, 60), z: deg(-40, 40) },
     part: { width: s(0.11), depth: s(0.11) },
     mirror: null,
     kind: 'ball',
@@ -300,7 +308,7 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
     head: [0, s(1.6), 0],
     tail: [0, s(1.8), 0],
     hint: 'x',
-    limits: { x: deg(-40, 30), y: deg(-60, 60), z: deg(-35, 35) },
+    limits: { x: deg(-50, 45), y: deg(-70, 70), z: deg(-45, 45) },
     part: { width: b.headSize * 0.8 * h, depth: b.headSize * h, length: b.headSize * 1.1 * h },
     mirror: null,
     kind: 'ball',
@@ -337,7 +345,7 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
       // Up further than down. A turn the positive way about Z drops the
       // shoulder (on the left, X is the hinted up and Y runs out to the
       // shoulder, so Z points back): the shrug is the negative side.
-      limits: { x: deg(-15, 15), y: deg(-10, 10), z: deg(-30, 20) },
+      limits: { x: deg(-20, 20), y: deg(-15, 15), z: deg(-40, 30) },
       part: { width: s(0.05), depth: s(0.05) },
       mirror: 'clavicle' + other,
       kind: 'ball',
@@ -348,7 +356,7 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
       head: shoulder,
       tail: elbow,
       hint: 'x',
-      limits: { x: deg(-100, 100), y: deg(-90, 90), z: deg(-110, 110) },
+      limits: { x: deg(-130, 130), y: deg(-90, 90), z: deg(-140, 140) },
       part: { width: b.armThick * h, depth: b.armThick * h },
       mirror: 'upperarm' + other,
       kind: 'ball',
@@ -361,7 +369,7 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
       hint: 'x',
       // A hinge: bends forward, with a little twist. It rests bent, so the
       // range it can still reach is measured from there.
-      limits: { x: fromRest(deg(-150, 0), -ELBOW_REST), y: deg(-45, 45), z: NONE },
+      limits: { x: fromRest(deg(-150, 0), -ELBOW_REST), y: deg(-80, 80), z: NONE },
       part: { width: b.armThick * 0.85 * h, depth: b.armThick * 0.85 * h },
       mirror: 'forearm' + other,
       kind: 'hinge',
@@ -372,7 +380,7 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
       head: wrist,
       tail: fingertip,
       hint: 'x',
-      limits: { x: deg(-70, 70), y: deg(-30, 30), z: deg(-35, 35) },
+      limits: { x: deg(-90, 90), y: deg(-40, 40), z: deg(-45, 45) },
       part: { width: s(0.09), depth: s(0.035) },
       mirror: 'hand' + other,
       kind: 'ball',
@@ -403,7 +411,7 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
       // knee in, towards the middle (the thigh hangs down, so its Z points
       // back): the side that opens the leg is the negative one, and the
       // right's range is this one reflected.
-      limits: { x: deg(-120, 30), y: deg(-45, 45), z: deg(-60, 20) },
+      limits: { x: deg(-150, 75), y: deg(-60, 60), z: deg(-90, 40) },
       part: { width: b.legThick * h, depth: b.legThick * h },
       mirror: 'thigh' + other,
       kind: 'ball',
@@ -416,7 +424,7 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
       hint: 'x',
       // A hinge: the foot swings back, with a little twist, from a knee
       // that already rests a few degrees in.
-      limits: { x: fromRest(deg(0, 150), kneeBend), y: deg(-15, 15), z: NONE },
+      limits: { x: fromRest(deg(0, 150), kneeBend), y: deg(-30, 30), z: NONE },
       part: { width: b.legThick * 0.7 * h, depth: b.legThick * 0.7 * h },
       mirror: 'shin' + other,
       kind: 'hinge',
@@ -427,7 +435,7 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
       head: ankle,
       tail: toe,
       hint: 'x',
-      limits: { x: deg(-45, 30), y: deg(-20, 20), z: deg(-20, 20) },
+      limits: { x: deg(-70, 45), y: deg(-30, 30), z: deg(-30, 30) },
       part: { width: s(0.1), depth: s(0.07) },
       mirror: 'foot' + other,
       kind: 'ball',

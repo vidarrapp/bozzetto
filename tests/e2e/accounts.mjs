@@ -1147,6 +1147,17 @@ async function owner(server, o, t) {
     !!saved && !saved.scope && o.requests.some((r) => r.method === 'POST' && r.path === '/api/me/projects') && !o.requests.some((r) => r.method !== 'GET' && r.path.startsWith('/admin/api/projects')),
     `through the account's own routes, not the owner tools' (${show(saved)})`,
   );
+  // Ctrl+S is Save to library for whoever saves to one (owner, 2026-11-18): the same project again, by the key alone.
+  await p.evaluate(() => document.querySelectorAll('.file-menu__progress').forEach((n) => n.remove()));
+  await p.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
+  const byKey = o.requests.length;
+  await p.keyboard.press('Control+s');
+  await p.waitForFunction(() => document.querySelector('.file-menu__progress')?.dataset.state === 'done', null, { timeout: 60_000 }).catch(() => {});
+  const keyed = await p.evaluate(() => ({ text: document.querySelector('.file-menu__progress')?.textContent ?? '', link: window.__sculpt.fileActions.link?.id ?? null }));
+  t.ok(
+    /^Saved to My projects: /.test(keyed.text) && keyed.link === saved?.id && o.requests.slice(byKey).some((r) => r.method !== 'GET' && r.path.startsWith('/api/me/projects')),
+    `Ctrl+S saves to the library too, into the same project ("${keyed.text}")`,
+  );
   await p.evaluate(() => document.querySelectorAll('.file-menu__progress').forEach((n) => n.remove()));
   await p.evaluate(() => fetch('/api/auth/signout', { method: 'POST' }));
   await p.evaluate(() => window.__sculpt.session.addPrimitive('torus'));

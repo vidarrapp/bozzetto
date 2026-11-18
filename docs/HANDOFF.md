@@ -2,6 +2,8 @@
 
 ## Open questions for Vidar
 
+- [x] 2026-11-18: References and Armature after a second test on the iPad. Decided 2026-11-18: the blend mode is chosen on the picture's card in the Reference panel, not in the view; Opacity sits in the row of icons over the picture, one bar of tools; the mannequins' joint limits are widened well past the textbook ranges so a dancer's leap can be posed (the hips, ankles, shoulders and spine most)
+- [x] 2026-11-18: Armature handles after a test on the iPad. Decided 2026-11-18: the head's look-at target is a point placed in the scene and the head aims at it constantly while the figure moves; the hip handle is the same box that shows when the hip part is selected, a tap on it selects the hips with the combined move and rotate gizmo, and a press that drags moves the figure in the screen plane; a pole target must follow a drag on a straight, locked-out limb (a fault, being fixed)
 - [x] 2026-11-18: Asset library, moderation of shared assets (plan: docs/plans/asset-library.md). Decided 2026-11-18: tools, materials and light rigs carry at most a bad name, so they are public when shared and the owner and moderators can rename or hide them; matcaps may be added and shared by members who confirm they own them (as pictures they are looked at first: Claude's reading); HDRIs in the Community are the owner's only, from Poly Haven under CC0, and members do not share HDRIs for now but may keep any HDRI on their own device. Whether members may share HDRIs later, with a stated source and a confirmed CC0 licence, is still being thought about
 - [ ] 2026-11-18: Asset library, what sharing an asset means: anyone may take it and use it in their own work with no credit needed, and the sharer says it is theirs to give (recommended); or credit is required and the app carries the author's name with the asset (blocks: the Community step of the asset library)
 - [ ] 2026-11-18: Asset library, who can take from the Community: anyone, signed in or not, with an account needed only to share, star and report (recommended); or members only (blocks: the Community step of the asset library)
@@ -123,7 +125,7 @@
 
 ## Later
 
-- To build from the answers of 2026-11-17: the look target held at its world point while pinned; a bold label on a field whose value differs from its default. (Built 2026-11-18: the albedo over a white Base, Merge down by the layers' own colours, the depth test for Project.)
+- To build from the answers of 2026-11-17: a bold label on a field whose value differs from its default. (The look target held at its world point is being built, see the decision of 2026-11-18 above.) (Built 2026-11-18: the albedo over a white Base, Merge down by the layers' own colours, the depth test for Project.)
 - A contrast brush (2026-11-17, Vidar): strengthens or flattens the relief under it, its result kept on an ordinary sculpt layer; this is his answer to blend modes on sculpt layers. Designed in docs/plans/tool-library-and-nodes.md, section 6; it comes with the tool editor.
 - Thumbnails on layer rows (2026-11-17).
 - Larger shadow maps for the still view on the low quality tier (2026-11-17). Tried and taken out before 0.7.0: resizing the maps when the view came to rest reallocated them at every pen-down and turn, which the latency tests forbid. It needs both sizes kept allocated.

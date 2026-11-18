@@ -1,7 +1,7 @@
 import type { Viewer } from '../viewer/Viewer';
 import { deviceStore } from '../ui/deviceStorage';
 import { BEHIND, DEFAULT_BLEND, type Placement, type ReferenceBoard, type RefItem, type StoredCamera } from './board';
-import { blendModeById, blendSelect, CSS_BLEND_MODES } from '../ui/blendModes';
+import { blendModeById } from '../ui/blendModes';
 import { compactRange } from '../ui/Panel';
 import { setSliderValue } from '../ui/sliderEntry';
 import { Vector3 } from 'three';
@@ -28,8 +28,9 @@ import { drawLook } from './image';
 const SHOW_KEY = 'bz.reference.show';
 const BAR_BTN = 44;
 /** The row under a picture: as wide as the picture, never narrower than this, and one finger tall. */
-const UNDER_MIN_W = 240;
-const UNDER_H = 44;
+/** Opacity, in the row of icons to their right: the gap before it and its width. */
+const BAR_GAP = 8;
+const OPACITY_W = 168;
 const EDGE = 4;
 const MIN_W = 0.06;
 const MAX_W = 6;
@@ -98,9 +99,7 @@ interface FrameEls {
   el: HTMLDivElement;
   bar: HTMLDivElement;
   buttons: Map<string, HTMLButtonElement>;
-  /** The row under the picture: the blend mode and Opacity. */
-  under: HTMLDivElement;
-  select: HTMLSelectElement;
+  /** Opacity, in the row to the right of the icons. */
   opacity: HTMLInputElement;
 }
 
@@ -403,31 +402,19 @@ export class ReferenceView {
       f.el.style.top = `${b.top}px`;
       f.el.style.width = `${b.width}px`;
       f.el.style.height = `${b.height}px`;
-      // Both rows go where a finger can reach them: clear of the title strip, the tabs, an open panel, the tool bar and the transport.
+      // The row of tools goes where a finger can reach it: clear of the title strip, the tabs, an open panel, the tool bar and the transport.
       // Outside the picture when that is free, else inside its edge (over the picture), still the whole row.
-      const barW = FRAME_ACTIONS.length * BAR_BTN;
+      const barW = FRAME_ACTIONS.length * BAR_BTN + BAR_GAP + OPACITY_W;
       const barLeft = Math.min(Math.max(b.left, EDGE), Math.max(EDGE, v.w - barW - EDGE));
       const barBox = this.freest(
         [b.top - BAR_BTN - EDGE, b.top + EDGE, b.top + b.height - EDGE - BAR_BTN, b.top + (b.height - BAR_BTN) / 2].map((top) => ({ l: barLeft, t: top, r: barLeft + barW, b: top + BAR_BTN })),
         obstacles,
         v,
       );
+      // The frame's own border (1px) is outside the box its children are placed in.
       f.bar.style.top = `${barBox.t - b.top - 1}px`;
       f.bar.style.left = `${barBox.l - b.left - 1}px`;
       f.bar.dataset.inside = barBox.t >= b.top ? 'true' : 'false';
-      // The row under the picture: centred, as wide as the picture but not narrower than it needs, kept inside the view.
-      const underW = Math.max(UNDER_MIN_W, b.width);
-      const underLeft = Math.min(Math.max(b.left + (b.width - underW) / 2, EDGE), Math.max(EDGE, v.w - underW - EDGE));
-      const underBox = this.freest(
-        [b.top + b.height + EDGE, b.top + b.height - EDGE - UNDER_H, b.top + EDGE, b.top + (b.height - UNDER_H) / 2].map((top) => ({ l: underLeft, t: top, r: underLeft + underW, b: top + UNDER_H })),
-        [...obstacles, barBox],
-        v,
-      );
-      // The frame's own border (1px) is outside the box its children are placed in.
-      f.under.style.width = `${underW}px`;
-      f.under.style.left = `${underBox.l - b.left - 1}px`;
-      f.under.style.top = `${underBox.t - b.top - 1}px`;
-      f.under.dataset.inside = underBox.t < b.top + b.height ? 'true' : 'false';
     }
     if (this.backdropActive && this.behindCanvas) {
       const behind = [...items].reverse().find((i) => i.blend === BEHIND);
@@ -494,11 +481,10 @@ export class ReferenceView {
     }
   }
 
-  /** The picture's own values on its buttons and its lower row. */
+  /** The picture's own values on its buttons and its Opacity. */
   private showValues(f: FrameEls, item: RefItem): void {
     f.buttons.get('flip')?.setAttribute('aria-pressed', String(item.mirror));
     f.buttons.get('grey')?.setAttribute('aria-pressed', String(item.grey));
-    if (f.select.value !== item.blend) f.select.value = item.blend;
     const want = Math.round(item.opacity * 100);
     // Not while a drag or a typed value is on it: that is the value being set.
     if (Number(f.opacity.value) !== want && document.activeElement !== f.opacity) setSliderValue(f.opacity, want);
@@ -530,22 +516,14 @@ export class ReferenceView {
       buttons.set(a.id, b);
       bar.appendChild(b);
     }
-    el.appendChild(bar);
-
-    // Under the picture: the blend mode and Opacity.
-    const under = document.createElement('div');
-    under.className = 'ref-frame__under';
-    const select = blendSelect(CSS_BLEND_MODES, DEFAULT_BLEND, [[BEHIND, 'Behind the model']]);
-    select.className = 'ref-frame__blend';
-    select.setAttribute('aria-label', 'Blend mode');
-    select.addEventListener('change', () => this.board.setLook(id, { blend: select.value }));
+    // One row of tools: the icons, then Opacity to their right. (The blend mode is chosen in the Reference panel.)
     const slider = compactRange('Opacity', 0, 100, 1, 100, (v) => this.board.setLook(id, { opacity: v / 100 }), { unit: ' %', limits: { min: 0, max: 100 } });
     slider.classList.add('ref-frame__opacity');
     const opacity = slider.querySelector('input[type=range]') as HTMLInputElement;
-    under.append(select, slider);
-    el.appendChild(under);
+    bar.appendChild(slider);
+    el.appendChild(bar);
     bindFrame(el, id, this);
-    return { el, bar, buttons, under, select, opacity };
+    return { el, bar, buttons, opacity };
   }
 
   private act(action: (typeof FRAME_ACTIONS)[number]['id'], id: string): void {
@@ -667,14 +645,14 @@ function bindFrame(el: HTMLElement, id: string, view: ReferenceView): void {
   el.addEventListener(
     'touchstart',
     (e) => {
-      if ((e.target as Element).closest('.ref-frame__bar, .ref-frame__under')) return;
+      if ((e.target as Element).closest('.ref-frame__bar')) return;
       e.preventDefault();
     },
     { passive: false },
   );
   el.addEventListener('pointerdown', (e) => {
     const target = e.target as Element;
-    if (target.closest('.ref-frame__bar, .ref-frame__under')) return;
+    if (target.closest('.ref-frame__bar')) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     try {
@@ -740,7 +718,7 @@ function bindFrame(el: HTMLElement, id: string, view: ReferenceView): void {
   el.addEventListener(
     'wheel',
     (e) => {
-      if ((e.target as Element).closest('.ref-frame__under')) return;
+      if ((e.target as Element).closest('.ref-frame__opacity')) return;
       e.preventDefault();
       const st = view.frameState(id);
       if (!st) return;

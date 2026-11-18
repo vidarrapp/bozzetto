@@ -76,7 +76,7 @@ import { recordTurntable } from '../viewer/capture/turntable';
 import { downloadBlob } from '../ui/download';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import { originOf } from '../ui/origin';
-import { deviceStore } from '../ui/deviceStorage';
+import { deviceStore, mayStore } from '../ui/deviceStorage';
 import { sceneStateWord } from '../ui/sceneState';
 import { defaultSceneName, newSceneName } from './bridge/SceneLibrary';
 
@@ -830,6 +830,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   materialPanel = studio.material;
   // Whether the scene is as last saved to its project: the autosave's count (set once it exists).
   let syncedNow: () => boolean = () => false;
+  /** The copy on this device written now, without the autosave's wait (the Save key for a guest); false when saving on this device is off. Set once the autosave exists. */
+  let keepNow: () => Promise<boolean> = async () => false;
   let goArmature: () => Promise<void> = async () => undefined;
 
   // The opt-in hardware input log, for bugs that only exist on a real
@@ -1230,6 +1232,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     dolly: (factor, at) => viewer.dolly(factor, at),
     toggleChrome: () => chrome.handleTab(),
     goWorkspace: (to) => void studio.go(to),
+    save: () => void fileMenu?.save(),
     togglePlay: () => present?.toggleTurning(),
     extractMasked: () => session.extractMasked(modelPanel?.getExtractThickness() ?? (session.getUnits() ? 0.5 : 1)),
     toggleMaskTint: () => {
@@ -1779,6 +1782,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     publish: () => publishWindow?.toggle(),
     canPublish: () => !!publishWindow?.isAvailable(),
     hasReferences: () => referenceBoard.list().length > 0,
+    keepNow: () => keepNow(),
   });
   fileMenu.onItemsChange = () => studio.refreshMenus();
   // Publish, at the right of the strip. The button stays hidden until the
@@ -2125,6 +2129,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     scene.name = fileActions.sceneName;
   };
   syncedNow = () => persist.isSynced();
+  keepNow = async () => {
+    if (!mayStore()) return false;
+    persist.markDirty(false);
+    await persist.flush();
+    return true;
+  };
   persist.install();
   if (bootLink && bootSynced) persist.adoptSynced();
   // A scene opened from a library card or from Projects replaces the one in

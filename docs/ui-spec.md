@@ -499,7 +499,8 @@ Tool, with Material before it.
   is a picture to glance at; fitted across the view at Multiply 30% is a film
   to trace on. The place is stored relative to the centre of the view (in
   units of its shorter side), so it survives a resize or a turn of the device.
-- **Blend modes.** The row under a picture has a select in Photoshop's order and
+- **Blend modes.** Each card in the Reference panel has a select beside its
+  thumbnail (owner, 2026-11-18: not in the view), in Photoshop's order and
   groups (`src/ui/blendModes.ts`, shared with the Paint workspace's layers):
   **Behind** first (drawn behind the model by the viewer), then the modes the
   browser can blend live over the 3D view, as an element with
@@ -507,7 +508,9 @@ Tool, with Material before it.
   Lighten, Screen, Color Dodge, Linear Dodge (Add) | Overlay, Soft Light, Hard
   Light | Difference, Exclusion | Hue, Saturation, Color, Luminosity (the
   first is labelled **Behind the model** there). Opacity applies to every mode. Only the topmost Behind picture is drawn behind the
-  model.
+  model, the right way up and under its frame: `Viewer.setBackdrop` takes the
+  frame's place from the top of the view down, which is how `screenUV` runs
+  on both backends (suite `refBehindUp`).
 - **Arranging (unlocked).** Putting a picture in the view turns it on. Every
   picture in the view has a thin outline, four corner marks and a row of
   five icon buttons at its top edge (inside the top edge when there is no
@@ -515,13 +518,13 @@ Tool, with Material before it.
   (ends arranging for all pictures), **Fit** (fill the view, keeping the
   aspect), **Flip** (mirror), **Greyscale**, **Remove from view** (a cross;
   the picture stays on the board). Flip and Greyscale show they are on by an
-  orange icon alone, no filled square. **Under the picture** is one row:
-  the blend select and an **Opacity** slider, 0 to 100 %, built as the app's
-  slider rows are (a press anywhere on the row and a drag scrubs, never
-  moving the picture; a double tap types a value). The row is as wide as the
-  picture, never narrower than 240px, centred under it and kept inside the
-  view: at the bottom edge it sits over the picture's lower edge. Both rows
-  are light marks with the faint shade (no dark box).
+  orange icon alone, no filled square. **Opacity** is in the same row, to the
+  right of the icons (owner, 2026-11-18: one bar of tools): a slider, 0 to
+  100 %, built as the app's slider rows are (a press anywhere on it and a
+  drag scrubs, never moving the picture; a double tap types a value). The
+  whole row is kept inside the view and clear of the bars and panels, even
+  where it is wider than the picture. It is light marks with the faint
+  shade (no dark box).
   A finger, the mouse or the Pencil drags a picture to move it; a pinch or
   the wheel scales it; a corner is dragged to resize it, the opposite corner
   staying. Arranging is not kept: a scene opens locked.

@@ -2113,6 +2113,14 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
   color: var(--bz-text-2);
 }
 
+/* The blend mode, under the name and size: how the picture is laid over the view. */
+.panel--reference .ref-card__blend {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: 8px;
+}
+
 .panel--reference .ref-card__acts {
   grid-column: 1 / -1;
   display: flex;
@@ -2378,42 +2386,14 @@ body.presenting .ref-chrome {
   z-index: 2;
 }
 
-/* Under the picture: the blend mode and Opacity, as light marks with the faint shade (no dark box). */
-.ref-frame__under {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 44px;
-  box-sizing: border-box;
-  cursor: default;
-  color: var(--bz-text);
-}
-
-.ref-frame__blend {
-  flex: 0 0 108px;
+/* Opacity, to the right of the icons in the same row: a light mark with the faint shade (no dark box). */
+.ref-frame__bar .ref-frame__opacity {
+  flex: 0 0 168px;
+  width: 168px;
   min-width: 0;
-  height: 32px;
-  box-sizing: border-box;
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  outline: 1px solid var(--bz-view-shade-line);
-  border-radius: 0;
-  background: transparent;
+  margin: 0 0 0 8px;
+  align-self: center;
   color: var(--bz-text);
-  font: 400 13px/16px var(--bz-font);
-  text-shadow: var(--bz-view-shade);
-}
-
-.ref-frame__blend option {
-  background: var(--bz-panel-fill);
-  color: var(--bz-text);
-  text-shadow: none;
-}
-
-.ref-frame__under .compact {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
   text-shadow: var(--bz-view-shade);
   filter: drop-shadow(var(--bz-view-shade));
 }
