@@ -176,6 +176,12 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 - **References: icons instead of menus.** Over a picture in the view the row is Lock, Fit, Flip, Greyscale and Remove, and under it one row holds the blend mode and an Opacity slider that goes down to 0. The Look pop-up and the More menu on each card are gone: the Reference panel has a row of icons under each picture (In view, Match view, Flip, Greyscale, Delete), and the same icons work with a finger and the Pencil.
 
+### v0.7.6
+
+- **Passkey sign-in.** Pressing Use a passkey just as the sign-in window opened could do nothing. It now signs in.
+- **Reference buttons by touch.** The buttons over a reference picture in the view (Lock, Fit, Flip, Look, Remove) and the Look pop-up now answer a finger and the Pencil.
+- **Smaller changes.** The paint tool has a paintbrush icon. The Layers icons read New layer, Add mask, New group, Delete. The work in progress comes back without the "Restored your last sculpt" notice; File, New sculpt starts a clean one.
+
 ### v0.7.5
 
 - **Workspace keys.** `Shift`+`1` to `4` go to Armature, Sculpt, Paint and Present from any of them, replacing `Shift`+`B` and `Shift`+`P`. `Esc` no longer leaves Present. Each workspace remembers its own open panels, and Paint its tool, and changing workspace asks nothing.

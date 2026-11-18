@@ -1192,13 +1192,22 @@ export const suites = {
       await openPanel(p);
       await addFiles(p, [{ name: 'first.png', mimeType: 'image/png', buffer: await png(p, 400, 300) }]);
       await p.evaluate(() => {
-        const { board } = window.__sculpt.reference;
-        board.putInView(board.list()[0].id);
+        const { board, view } = window.__sculpt.reference;
+        const id = board.list()[0].id;
+        board.putInView(id);
         board.setArranging(true);
+        // Small, in the middle of the view: its row of buttons clear of the tabs and the bars.
+        view.setPlace(id, { x: 0, y: 0, w: view.frameState(id).place.w * 0.35 });
       });
       await openPanel(p, false);
       await p.waitForSelector('.ref-frame .ref-frame__btn--flip', { timeout: 10_000 });
       await p.waitForTimeout(300);
+      const under = await p.evaluate(() => {
+        const r = document.querySelector('.ref-frame .ref-frame__btn--flip').getBoundingClientRect();
+        const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return at?.closest('.ref-frame__btn--flip') ? '' : `${at?.className}`;
+      });
+      t.eq(under, '', 'the Flip button is the thing under the finger');
       const state = () =>
         p.evaluate(() => {
           const { board, view } = window.__sculpt.reference;
