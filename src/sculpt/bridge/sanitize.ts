@@ -358,6 +358,8 @@ export function sanitizeLook(v: unknown): Partial<LookState> | undefined {
         metalness: num(material.metalness, 0, 1),
         flatShading: bool(material.flatShading),
         matcapIndex: num(material.matcapIndex, 0, 1000),
+        vertexColors: bool(material.vertexColors),
+        colourSource: oneOf(material.colourSource, ['both', 'albedo', 'paint'] as const),
       }),
     ),
     environment: isRec(v.environment)

@@ -2544,6 +2544,11 @@ body.bz-shell .panel--layers {
   font: 13px/16px var(--bz-font);
 }
 
+.layers-note__btn {
+  display: block;
+  margin-top: 8px;
+}
+
 .layers-foot {
   border-top: 1px solid var(--bz-line);
 }
