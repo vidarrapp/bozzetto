@@ -1527,9 +1527,30 @@ async function memberLibrary(server, o, a, t) {
   await p.click('.file-menu__progress button:text-is("Sign in again")');
   t.ok(await step(p, 'Sign in'), 'Sign in again opens the dialog over Sculpt');
   await p.waitForFunction(() => !document.querySelector('.account-card .account-passkey')?.disabled, null, { timeout: 10_000 }).catch(() => {});
+  // What the dialog and the sign-in requests are doing, for when this step is slow or stuck
+  // (it has failed on the CI machine with an empty line in the dialog, and never locally).
+  const authCalls = [];
+  const onAuth = (r) => {
+    const { pathname } = new URL(r.url());
+    if (pathname.startsWith('/api/auth/') || pathname === '/api/me') authCalls.push(`${r.status()} ${pathname}`);
+  };
+  p.on('response', onAuth);
+  const passkeyAt = Date.now();
   await press(p, '.account-card', 'Use a passkey');
-  const closed = await dialogGone(p, 20_000);
-  t.ok(closed, `signed in with the passkey${closed ? '' : `, but the dialog says "${await said(p)}"`}`);
+  const closed = await dialogGone(p, 60_000);
+  const took = Date.now() - passkeyAt;
+  p.off('response', onAuth);
+  const stuck = closed
+    ? ''
+    : `, but after ${took} ms the dialog says "${await said(p)}": ${show(
+        await p.evaluate(() => ({
+          title: document.querySelector('.account-card .account-title')?.textContent ?? null,
+          buttons: [...document.querySelectorAll('.account-card button')].map((b) => `${b.textContent.trim()}${b.disabled ? ' (off)' : ''}`),
+          focus: document.hasFocus(),
+          visible: document.visibilityState,
+        })),
+      )}; requests: ${authCalls.join(', ') || 'none'}`;
+  t.ok(closed, `signed in with the passkey${closed ? ` (${took} ms)` : stuck}`);
   await p.waitForFunction(() => [...document.querySelectorAll('.file-menu__progress')].some((n) => n.dataset.state === 'done'), null, { timeout: 60_000 }).catch(() => {});
   const again = await p.evaluate(() => [...document.querySelectorAll('.file-menu__progress')].map((n) => `${n.dataset.state}: ${n.textContent}`));
   list = (await pageJson(p, '/api/me/projects')).body ?? [];
