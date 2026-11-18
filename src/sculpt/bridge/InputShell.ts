@@ -33,6 +33,9 @@ import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
 import type { BrushCursor } from './BrushCursor';
 import { MeasureTool } from './measureTool';
+import { placeOfAction, toolBars } from '../tools/bars';
+import { ENGINE_TOOLS, toolById, type ToolDef } from '../tools/registry';
+import { cleanOwn, readOwn, writeOwn, type EngineTool } from '../tools/toolSettings';
 
 /**
  * Ported from SculptGL.js's onDeviceDown/Move/Up state machine (plan 6.3),
@@ -944,6 +947,44 @@ export class InputShell {
     if (!(smooth instanceof StableSmooth)) return;
     smooth.setSmooth({ mode: 'average', relax: SURFACE_RELAX, strength: SMOOTH_STRENGTH });
     if (saved) smooth.setSmooth(saved);
+  }
+
+  /**
+   * Every tool's own knobs (the registry's settings of role `own`), by tool
+   * id, for the scene's `tools` table: Move's Falloff, Crease's Pinch,
+   * Polish's Plane lock and Build-up, the Rake's and Smooth's rows.
+   */
+  serializeOwn(def: ToolDef): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    const tool = def.engine === null ? undefined : (this.session.getSculptManager().getTool(def.engine) as unknown as EngineTool | undefined);
+    if (!tool) return out;
+    for (const spec of def.settings) {
+      if (!spec.saved) continue;
+      const v = readOwn(tool, spec);
+      // The Rake's preset is null once a row has been edited: nothing to keep then.
+      if (v !== null && v !== undefined) out[spec.key] = v;
+    }
+    return out;
+  }
+
+  /**
+   * Put the tools' own knobs back from the table the scene read
+   * (readToolTable): a knob the table has no value for goes back to its
+   * default, as a brush's curve does, so a scene opens the way it was left.
+   * The Rake and Smooth load through their own records (loadRake, loadSmooth).
+   * Silently: restoring is not an edit.
+   */
+  loadOwn(table: Record<string, Record<string, number | boolean | string>> | undefined): void {
+    for (const def of ENGINE_TOOLS) {
+      if (def.ownRecord) continue;
+      const tool = this.session.getSculptManager().getTool(def.engine as number) as unknown as EngineTool | undefined;
+      if (!tool) continue;
+      for (const spec of def.settings) {
+        if (!spec.saved) continue;
+        const v = cleanOwn(spec, table?.[def.id]?.[spec.key]) ?? (spec.default as number | boolean | string | undefined);
+        if (v !== undefined) writeOwn(tool, spec, v);
+      }
+    }
   }
 
   // --- the Select tool -----------------------------------------------------
@@ -2668,41 +2709,21 @@ export class InputShell {
       case 'tool.calipers':
         this.toggleMeasure();
         return this.claim(e);
-      case 'tool.crease':
-        return this.selectTool(Enums.Tools.CREASE, e);
-      case 'tool.move':
-        return this.selectTool(Enums.Tools.MOVE, e);
-      case 'tool.clay':
-        return this.selectTool(Enums.Tools.BRUSH, e);
-      case 'tool.inflate':
-        return this.selectTool(Enums.Tools.INFLATE, e);
-      case 'tool.pinch':
-        return this.selectTool(Enums.Tools.PINCH, e);
-      case 'tool.flatten':
-        return this.selectTool(Enums.Tools.FLATTEN, e);
-      case 'tool.rake':
-        return this.selectTool(Enums.Tools.RAKE, e);
-      case 'tool.drag':
-        return this.selectTool(Enums.Tools.DRAG, e);
-      case 'tool.polish':
-        return this.selectTool(Enums.Tools.TWIST, e);
-      case 'paint.paint':
-        return this.selectTool(Enums.Tools.PAINT, e);
-      case 'paint.erase':
-        return this.selectTool(Enums.Tools.PAINT_ERASE, e);
-      case 'paint.blur':
-        return this.selectTool(Enums.Tools.BLUR, e);
-      case 'paint.fill':
-        return this.selectTool(Enums.Tools.FILL, e);
-      case 'paint.pick':
-        return this.selectTool(Enums.Tools.PICK, e);
-      case 'paint.project':
-        return this.selectTool(Enums.Tools.PROJECT, e);
-      default:
+      default: {
+        // The number keys: whatever sits in that place of this workspace's tool bar.
+        const place = placeOfAction(action.id);
+        if (place) {
+          const id = toolBars.idAt(this.paintMode ? 'paint' : 'sculpt', place);
+          const engine = id ? toolById(id)?.engine : undefined;
+          // An empty place picks nothing: in Paint the digit is still its own, in Sculpt it goes on to whoever else wants it.
+          if (engine === undefined || engine === null) return this.paintMode ? this.claim(e) : undefined;
+          return this.selectTool(engine, e);
+        }
         // A shared action this shell does not act on (the guide, the
         // frame meter, the ground) falls through to the viewer's
         // handler, unclaimed.
         return;
+      }
     }
   };
 

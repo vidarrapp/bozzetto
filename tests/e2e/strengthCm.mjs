@@ -419,6 +419,9 @@ export const suites = {
       const m = session.getSculptManager();
       const open = async (strength, rev) => {
         const rec = await file.unpack(await file.pack());
+        // An older scene has no table by tool id (settings.tools): drop the one this build wrote, so the numbered table set here is what opens.
+        delete rec.settings.tools;
+        delete rec.settings.toolsRev;
         rec.settings.strength = strength;
         if (rev === undefined) delete rec.settings.strengthRev;
         else rec.settings.strengthRev = rev;

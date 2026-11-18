@@ -868,6 +868,9 @@ export const suites = {
       const { file } = window.__sculpt;
       const tool = window.__sculpt.session.getSculptManager().getTool(13);
       const rec = await file.unpack(await file.pack());
+      // An older scene has no table by tool id (settings.tools): drop the one this build wrote, so the numbered record set here is what opens.
+      delete rec.settings.tools;
+      delete rec.settings.toolsRev;
       rec.settings.rake = { tines: 6, width: 0.5, depth: 0.07, plateau: 0.35, taper: 0, invert: false, preset: null };
       delete rec.settings.strength;
       delete rec.settings.strengthRev;

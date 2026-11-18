@@ -28,6 +28,7 @@ function guideHtml(mode: KeyMode, updates: boolean): string {
     const chord = keymap.chordFor(a.id);
     const gesture = !!a.gesture;
     if (!gesture && !chord) continue; // unbound: nothing to press
+    if (!keymap.placeFilled(a, mode)) continue; // a place on the tool bar with no tool in it
     if (a.group !== group) {
       if (open) html += '</div>';
       group = a.group;
@@ -39,7 +40,7 @@ function guideHtml(mode: KeyMode, updates: boolean): string {
       : `<span class="help-keys">${chordParts(chord!)
           .map((p) => `<kbd>${esc(p)}</kbd>`)
           .join('+')}</span>`;
-    html += `<div class="help-row">${key}<span>${esc(a.label)}</span></div>`;
+    html += `<div class="help-row">${key}<span>${esc(keymap.labelFor(a, mode))}</span></div>`;
   }
   if (open) html += '</div>';
   html += `<div class="help-guide__foot"><button type="button" class="help-guide__prefs">Customise hotkeys…</button>`;

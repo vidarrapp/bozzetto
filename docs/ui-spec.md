@@ -549,6 +549,19 @@ Tool, with Material before it.
 - On devices with a home indicator it sits above the safe area.
 - On a phone, where it scrolls, it fades at each edge that has more tools
   behind it and snaps to the tools as it scrolls.
+- **The bar is a list of tool ids** (`src/sculpt/tools/bars.ts`), one per
+  workspace, read from one place: Sculpt's brushes between Select and
+  Transform, Paint's six tools after Select. The tools themselves, with
+  their names, icons, one-line descriptions, Help topics and the list of
+  their settings, are one table (`src/sculpt/tools/registry.ts`). The ten
+  number keys are the actions `slot.1` to `slot.10` ("Tool bar, place
+  1" and so on): each picks whatever sits in that place of the current
+  workspace's bar, so a badge, a tooltip, the hotkey guide and
+  Preferences all read the place. Select, Transform and Calipers have no
+  place and keep Q, T and C. A key rebound before places existed
+  (`tool.crease`, `paint.erase` and the like) carries over to the place
+  that tool holds on the default bar. The order is not yet something a
+  person changes.
 - **Calipers** (hotkey C) is the last button, after Transform. It is not
   a brush: it measures between two points on the model and edits
   nothing. Its icon is the Uicons ruler until a drawn calipers glyph is

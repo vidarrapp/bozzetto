@@ -7,6 +7,8 @@ import { DEFAULT_MATERIAL, MATERIAL_ID, type SculptMaterial } from './materials'
 import { isCurveId } from './dynamics';
 import { parseStoredCurve, parseV1Points, serializeAnchors, type StoredCurve } from './profile';
 import type { BrushSymmetry } from './symmetry';
+import { ENGINE_TOOLS, toolById } from '../tools/registry';
+import { cleanOwn, TOOLS_REV, type SavedToolSettings, type SavedToolTable } from '../tools/toolSettings';
 import { sanitizeSource } from './objSource';
 import { sanitizeGroups } from './groupsRecord';
 import { sanitizeLayers } from './layersRecord';
@@ -229,6 +231,65 @@ function sanitizeMaterials(v: unknown): SculptMaterial[] | undefined {
   return out.length ? out : undefined;
 }
 
+function positive(x: unknown): number | undefined {
+  const n = num(x);
+  return n !== undefined && n > 0 ? n : undefined;
+}
+
+/**
+ * The `tools` table (settings by tool id): only ids of tools the engine runs,
+ * each entry's fields as the numbered tables' readers hold them, and a tool's
+ * own knobs only for the knobs its registry entry names, each held to that
+ * knob's kind and limits. Anything else is left behind.
+ */
+function sanitizeToolTable(v: unknown): SavedToolTable | undefined {
+  if (!isRec(v)) return undefined;
+  const out: SavedToolTable = {};
+  for (const def of ENGINE_TOOLS) {
+    // Looked up by the registry's own ids, so a key of the file's making
+    // ("__proto__", "constructor") never lands anywhere.
+    if (!Object.prototype.hasOwnProperty.call(v, def.id) || toolById(def.id) !== def) continue;
+    const e = v[def.id];
+    if (!isRec(e)) continue;
+    const entry: SavedToolSettings = defined({
+      size: positive(e.size),
+      strength: num(e.strength, 0, STRENGTH_LIMIT),
+      spacing: positive(e.spacing),
+      dynamics: isRec(e.dynamics)
+        ? defined({
+            size: num(e.dynamics.size, 0, 1),
+            strength: num(e.dynamics.strength, 0, 1),
+            sizeCurve: isCurveId(e.dynamics.sizeCurve) ? e.dynamics.sizeCurve : undefined,
+            strengthCurve: isCurveId(e.dynamics.strengthCurve) ? e.dynamics.strengthCurve : undefined,
+          })
+        : undefined,
+      curve: ((): StoredCurve | [number, number][] | undefined => {
+        const a = parseStoredCurve(e.curve);
+        if (a) return serializeAnchors(a);
+        const pts = parseV1Points(e.curve);
+        return pts ? pts.map((p): [number, number] => [p.t, p.v]) : undefined;
+      })(),
+      symmetry: ((): BrushSymmetry | undefined => {
+        if (!isRec(e.symmetry)) return undefined;
+        const axis = oneOf(e.symmetry.axis, ['x', 'y', 'z'] as const);
+        const on = bool(e.symmetry.on);
+        return axis !== undefined && on !== undefined ? { on, axis } : undefined;
+      })(),
+    }) as SavedToolSettings;
+    if (isRec(e.own)) {
+      const own: Record<string, number | boolean | string> = {};
+      for (const spec of def.settings) {
+        if (!spec.saved || !Object.prototype.hasOwnProperty.call(e.own, spec.key)) continue;
+        const clean = cleanOwn(spec, e.own[spec.key]);
+        if (clean !== undefined) own[spec.key] = clean;
+      }
+      if (Object.keys(own).length) entry.own = own;
+    }
+    if (Object.keys(entry).length) out[def.id] = entry;
+  }
+  return out;
+}
+
 /** The brush workspace: each table's entries as the readers expect them. */
 function sanitizeSettings(v: unknown): SculptSettings | undefined {
   if (!isRec(v)) return undefined;
@@ -299,6 +360,9 @@ function sanitizeSettings(v: unknown): SculptSettings | undefined {
       const on = bool(s.on);
       return axis !== undefined && on !== undefined ? { on, axis } : undefined;
     }),
+    // The settings by tool id; a revision this build does not read is dropped with its table.
+    tools: (num(v.toolsRev, 0) ?? 0) <= TOOLS_REV ? sanitizeToolTable(v.tools) : undefined,
+    toolsRev: num(v.toolsRev, 0),
   });
 }
 

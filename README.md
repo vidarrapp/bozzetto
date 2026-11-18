@@ -174,6 +174,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ### Unreleased
 
+- **Four tool settings are kept with the scene.** Move's Falloff, Crease's Pinch, and Polish's Plane lock and Build-up used to go back to their defaults when the scene was opened again. A key you set for a tool in Preferences now shows on its button and its tooltip, and Help says a tool's key is its place on the tool bar.
 - **Sculpt, Paint and Present are tabs of one mode.** `Shift`+`1` to `4` take you to Armature, Sculpt, Paint or Present from any of them (replacing `Shift`+`B` and `Shift`+`P`), without a question, and each workspace remembers its own open panels, and Paint its tool, so tweaking the light is one key there and one key back.
 - **Merge down keeps to the math.** The layer is composed, with its own blend mode, opacity and mask, onto the colours of the layer below, and the layer below keeps its own mode, opacity and mask. Merging into an Overlay layer gives what merging into a Normal layer and then switching to Overlay gives.
 - **Project paints only what the camera sees.** A part of the model behind a nearer part, or behind another object in view, no longer takes projected colour.

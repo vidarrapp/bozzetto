@@ -30,6 +30,9 @@ import {
 import type { SavedScene, SceneLink } from './bridge/ScenePersist';
 import type { BrushSymmetry, SymmetryAxis } from './bridge/symmetry';
 import { WorldScaleBrush } from './bridge/worldScale';
+import { buildToolTable, readToolTable, TOOLS_REV } from './tools/toolSettings';
+import { toolBars } from './tools/bars';
+import { TOOLS } from './tools/registry';
 import { TransformGizmo, type GizmoMode, type GizmoParts } from './bridge/transform';
 import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
 import { presentationPatch, saveModelToGallery } from './bridge/GallerySave';
@@ -1488,23 +1491,37 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    * set up is part of coming back to work, and a .bozz opened elsewhere
    * should feel like the session that made it.
    */
-  const collectSettings = (): SculptSettings => ({
-    worldScale: worldScale.isEnabled(),
-    worldRadius: worldScale.isEnabled() ? worldScale.worldRadius() : undefined,
-    radius: worldScale.serializeSizes(),
-    dynamics: input.dynamics.serialize(),
-    paintColor: paintColorOf(),
-    spacing: input.serializeSpacing(),
-    spacingRev: SPACING_REV,
-    curves: input.serializeCurves(),
-    curvesRev: PROFILE_REV,
-    strength: input.serializeStrength(),
-    strengthRev: STRENGTH_REV,
-    rake: input.serializeRake(),
-    smooth: input.serializeSmooth(),
-    smoothRev: SMOOTH_REV,
-    symmetry: session.symmetry.serialize(),
-  });
+  const collectSettings = (): SculptSettings => {
+    const tables = {
+      radius: worldScale.serializeSizes(),
+      dynamics: input.dynamics.serialize(),
+      spacing: input.serializeSpacing(),
+      curves: input.serializeCurves(),
+      strength: input.serializeStrength(),
+      smooth: input.serializeSmooth(),
+      symmetry: session.symmetry.serialize(),
+    };
+    return {
+      worldScale: worldScale.isEnabled(),
+      worldRadius: worldScale.isEnabled() ? worldScale.worldRadius() : undefined,
+      radius: tables.radius,
+      dynamics: tables.dynamics,
+      paintColor: paintColorOf(),
+      spacing: tables.spacing,
+      spacingRev: SPACING_REV,
+      curves: tables.curves,
+      curvesRev: PROFILE_REV,
+      strength: tables.strength,
+      strengthRev: STRENGTH_REV,
+      rake: input.serializeRake(),
+      smooth: tables.smooth,
+      smoothRev: SMOOTH_REV,
+      symmetry: tables.symmetry,
+      // The same settings by tool id, beside the numbered tables an older build reads.
+      tools: buildToolTable(tables, (def) => input.serializeOwn(def)),
+      toolsRev: TOOLS_REV,
+    };
+  };
   /**
    * What a scene from before per-brush symmetry sculpted with: its one
    * flag and the active object's mirror plane. Every brush starts from it.
@@ -1523,23 +1540,28 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   const applySettings = (scene: SavedScene | null): void => {
     const settings = scene?.settings;
+    // The tool table over the numbered ones: per tool, the table's values first.
+    const read = readToolTable(settings);
     // Symmetry is per brush and always applied: with no settings at all
     // (a fresh scene, or a bare legacy record) the brushes take their
     // defaults, or the legacy scene's one flag and axis.
-    session.symmetry.load(settings?.symmetry, scene ? legacySymmetry(scene) : undefined);
+    session.symmetry.load(read.symmetry, scene ? legacySymmetry(scene) : undefined);
     session.applyBrushSymmetry(input.currentToolIndex());
     if (settings) {
       worldScale.restore(settings.worldScale, settings.worldRadius);
-      worldScale.loadSizes(settings.radius);
-      input.dynamics.load(settings.dynamics);
+      worldScale.loadSizes(read.radius);
+      input.dynamics.load(read.dynamics);
       input.loadSpacing(settings.spacing, settings.spacingRev);
+      input.loadSpacing(read.spacing, SPACING_REV);
       // The rake's preset first: it sets the tine profile, which the
       // stored curve then replaces.
-      input.loadRake(settings.rake);
+      input.loadRake(read.rake);
       // After the rake's preset, which sets the rake's strength too.
       input.loadStrength(settings.strength, settings.strengthRev);
-      input.loadCurves(settings.curves, settings.curvesRev);
-      input.loadSmooth(settings.smooth, settings.smoothRev);
+      input.loadStrength(read.strength, STRENGTH_REV);
+      input.loadCurves(read.curves, settings.curvesRev);
+      input.loadSmooth(read.smooth, settings.smoothRev);
+      input.loadOwn(read.own);
       if (settings.paintColor) setPaintColorOn(settings.paintColor);
       input.refreshBrushCursor();
       sculptPanel?.refreshBrush();
@@ -2435,6 +2457,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     library,
     gizmo, // transform modes, for the console and the tests
     present, // Present mode, its turntable and Save image
+    /** The table of tools and the bars' order, for the console and the tests. */
+    tools: { registry: TOOLS, bars: toolBars },
     /** The Paint workspace, for the console and the tests. */
     paintWorkspace: { enter: () => enterPaint(), leave: () => leavePaint(), isOn: () => paintOn },
     blend: blendModule, // the blend arithmetic, for the tests

@@ -195,6 +195,20 @@ export async function openSculpt(page, base, query = '') {
   await page.waitForTimeout(250);
 }
 
+/**
+ * A tool bar button by the tool's word id ("bz.clay"): the by-name twin of
+ * finding one by the digit on its badge, which follows the bar's order and
+ * the keys a person has set. Only the buttons on screen count.
+ */
+export function toolButton(page, id) {
+  return page.locator(`.sculpt-toolbar__btn[data-tool="${id}"]:visible`);
+}
+
+/** Press a tool's button by its word id. */
+export async function pickTool(page, id) {
+  await toolButton(page, id).click();
+}
+
 /** Boot armature mode on a fresh page and wait for its console handle. */
 export async function openArmature(page, base) {
   await page.goto(`${base}/?armature=1`, { waitUntil: 'domcontentloaded' });

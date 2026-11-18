@@ -5,24 +5,12 @@ import { checkbox, compactRange, section } from '../../ui/Panel';
 import { setSliderValue, type Limits } from '../../ui/sliderEntry';
 import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
 import { installSwatchPick } from '../../ui/swatchPick';
-import { CURVE_OPTIONS, type CurveId } from '../bridge/dynamics';
-import {
-  ClayStripsBrush,
-  CreaseBrush,
-  PaintBrush,
-  PolishBrush,
-  RAKE_PRESETS,
-  RAKE_TINES_MAX,
-  RAKE_TINES_MIN,
-  RakeBrush,
-  SMOOTH_MODES,
-  StableSmooth,
-  VolumetricMove,
-  type SmoothMode,
-} from '../bridge/tools';
+import { CURVE_OPTIONS, type BrushDynamics, type CurveId } from '../bridge/dynamics';
+import { RAKE_PRESETS, RakeBrush, StableSmooth } from '../bridge/tools';
 import type { ProfileCurve } from '../bridge/profile';
 import { CurveEditor } from './CurveEditor';
-import { TOOL_NAMES } from './SculptToolbar';
+import { toolByEngine, toolName, SMOOTH_OWN, type SettingSpec, type ToolDef } from '../tools/registry';
+import { readOwn, writeOwn, type EngineTool } from '../tools/toolSettings';
 import type { InputShell } from '../bridge/InputShell';
 import type { GizmoParts } from '../bridge/transform';
 import type { SculptSession } from '../bridge/SculptSession';
@@ -32,15 +20,8 @@ import { SidePanel } from './SidePanel';
 import { lengthText } from '../bridge/measure';
 import { ChannelBox } from './ChannelBox';
 
-/** Matches the left rail's range so the two controls agree end to end. */
-const RADIUS_MIN = 5;
-const RADIUS_MAX = 500;
-
-/** Typed-value limits (sliderEntry): what each quantity can be, past the travel. */
-const FRACTION: Limits = { min: 0, max: 1 }; // a strength, a pressure amount, a profile
-const AMOUNT: Limits = { min: 0 };
-/** A brush radius: a whole pixel at least, and as large as anyone types. */
-const BRUSH_SIZE: Limits = { min: 1, integer: true };
+/** Typed-value limits (sliderEntry): what Smooth's strength can be, past the travel. */
+const FRACTION: Limits = { min: 0, max: 1 };
 
 /**
  * The Tool palette (WS4/WS5, renamed from Sculpt by owner call): everything
@@ -168,282 +149,229 @@ export class SculptPanel extends SidePanel {
       return;
     }
     this.refreshState();
-    this.nameBrush(TOOL_NAMES[tool] ?? 'Brush');
-    const d = this.input.dynamics.get(tool);
-    // The paint brush leads with its colour: the same HSV picker the Render
-    // panel uses for albedo, so a colour is chosen the same way wherever
-    // you are. Alt + click on the model samples one off the surface.
-    if (this.input.usesColour()) {
-      this.paintPicker = colorPicker(this.input.getPaintColor(), (hex) =>
-        this.input.setPaintColor(hex),
-      );
-      // The fill sits beside the swatch (owner call): the whole object in
-      // this colour, in one undo step.
-      const colourRow = div('sculpt-panel__inline');
-      const fill = document.createElement('button');
-      fill.type = 'button';
-      fill.className = 'sculpt-panel__btn sculpt-panel__btn--icon';
-      fill.title = 'Fill the object with this colour';
-      fill.setAttribute('aria-label', 'Fill the object with the paint colour');
-      const icon = document.createElement('i');
-      icon.className = 'fi fi-ss-fill';
-      icon.setAttribute('aria-hidden', 'true');
-      fill.appendChild(icon);
-      fill.addEventListener('click', () => this.input.fillPaint());
-      colourRow.append(this.paintPicker.root, fill);
-      dyn.appendChild(labelRow('Colour', colourRow));
-      // Drag the swatch over the view to pick a colour off the frame, as
-      // the Render panel's background and light swatches do.
-      installSwatchPick(this.paintPicker, this.viewer, (hex) => this.input.setPaintColor(hex));
-      const hint = div('sculpt-panel__hint muted');
-      hint.textContent = tool === Enums.Tools.PICK ? 'Tap or drag on the model to take its colour.' : tool === Enums.Tools.FILL ? 'Tap the model to fill.' : 'Alt+click for color picker';
-      dyn.appendChild(hint);
-    } else if (tool === Enums.Tools.PROJECT) {
-      const hint = div('sculpt-panel__hint muted');
-      hint.textContent = 'Paints the reference picture in the view onto the model under the brush. Lock the pictures first so the brush reaches the model.';
-      dyn.appendChild(hint);
-    }
-    // Fill and Pick are a tap, not a brush: no size, strength or dab rows.
-    if (tool === Enums.Tools.FILL || tool === Enums.Tools.PICK) {
-      this.nameBrush(TOOL_NAMES[tool] ?? 'Brush');
-      this.extrasBody.replaceChildren();
-      return;
-    }
-    // Radius and strength are per tool (the vendored core keeps both, and
-    // world scale a radius per brush), so these are rebuilt with the rest
-    // of the row set when the brush changes, and re-synced by
-    // refreshBrushValues when the rail or a hotkey moves them.
-    if (this.input.hasBrushRadius()) {
-      const sizeRow = compactRange(
-        'Size',
-        RADIUS_MIN,
-        RADIUS_MAX,
-        1,
-        Math.round(this.input.getBrushRadius()),
-        (v) => this.input.setBrushRadius(v),
-        // Printed as the rail prints it: pixels, or centimetres in world
-        // scale on real units (InputShell.brushSizeDisplay).
-        { limits: BRUSH_SIZE, ...(this.input.brushSizeDisplay().scale !== 1 ? this.input.brushSizeDisplay() : {}) },
-      );
-      this.sizeInput = sizeRow.querySelector('input') as HTMLInputElement;
-      dyn.appendChild(sizeRow);
-    }
-    // Pressure is an amount, not a switch (owner call): the bottom of the
-    // slider is off, the top the full range. The curve shapes the response
-    // and means nothing at zero, so its row folds away there (same rule as
-    // the Render panel's lights/DoF/ground and dyntopo's sliders).
-    const sizeCurveRow = labelRow(
-      'Size curve',
-      this.curveSelect(d.sizeCurve, (c) => {
-        d.sizeCurve = c;
-        this.input.onBrushSettingsChange?.();
-      }),
-    );
-    sizeCurveRow.hidden = d.size <= 0;
-    dyn.appendChild(
-      compactRange(
-        'Pressure: size',
-        0,
-        1,
-        0.05,
-        d.size,
-        (v) => {
-          d.size = v;
-          sizeCurveRow.hidden = v <= 0;
-          this.input.onBrushSettingsChange?.();
-        },
-        { limits: FRACTION },
-      ),
-    );
-    dyn.appendChild(sizeCurveRow);
-    // Drag has no strength at all: no slider for it, and no pressure to
-    // drive it with either.
-    if (this.input.hasBrushIntensity()) {
-      // A length in cm for the brushes that push the surface (owner call,
-      // 2026-10-31): how far one stroke at full pressure moves it at the
-      // brush centre, 0 to 5 cm on the travel and up to 50 typed. The
-      // capped brushes and Move keep 0 to 1.
-      const spec = this.input.strengthSpec();
-      const strengthRow = compactRange(
-        'Strength',
-        0,
-        spec.max,
-        spec.step,
-        this.input.getBrushIntensity(),
-        (v) => this.input.setBrushIntensity(v),
-        spec.cm ? { limits: { min: 0, max: spec.limit }, unit: spec.unit } : { limits: FRACTION },
-      );
-      strengthRow.dataset.strength = spec.cm ? 'cm' : 'fraction';
-      this.strengthInput = strengthRow.querySelector('input') as HTMLInputElement;
-      dyn.appendChild(strengthRow);
-      const strengthCurveRow = labelRow(
-        'Strength curve',
-        this.curveSelect(d.strengthCurve, (c) => {
-          d.strengthCurve = c;
-          this.input.onBrushSettingsChange?.();
-        }),
-      );
-      strengthCurveRow.hidden = d.strength <= 0;
-      dyn.appendChild(
-        compactRange(
-          'Pressure: strength',
-          0,
-          1,
-          0.05,
-          d.strength,
-          (v) => {
-            d.strength = v;
-            strengthCurveRow.hidden = v <= 0;
-            this.input.onBrushSettingsChange?.();
-          },
-          { limits: FRACTION },
-        ),
-      );
-      dyn.appendChild(strengthCurveRow);
-    }
-
-    // Dab spacing: how far the brush travels between stamps, as a fraction
-    // of its radius. Upstream fixed this at 0.15 for every tool; it is the
-    // difference between a clay ribbon and a row of separate dabs, and a
-    // rake only combs at all when its stamps overlap.
-    if (this.input.hasBrushSpacing()) {
-      dyn.appendChild(
-        // Under 0.02 a stroke lays down so many dabs that it stalls.
-        compactRange('Spacing', 0.02, 0.6, 0.01, this.input.getBrushSpacing(), (v) => this.input.setBrushSpacing(v), {
-          limits: { min: 0.02 },
-        }),
-      );
-    }
-
-    const extras = this.extrasBody;
-    extras.replaceChildren();
-    const manager = this.session.getSculptManager();
-    // Every profile slider reads sharp on the left and soft on the right
-    // (owner call), whatever the number underneath runs.
-    if (tool === Enums.Tools.MOVE) {
-      // The quartic's power: a low power flattens the bell's top and
-      // drops it at the rim (sharp), 1 is the plain gradual bell (soft).
-      const move = manager.getTool(tool) as unknown as VolumetricMove;
-      extras.appendChild(
-        compactRange(
-          'Falloff (sharp-soft)',
-          0.3,
-          1,
-          0.05,
-          move.falloffPow,
-          (v) => {
-            move.falloffPow = v;
-          },
-          { limits: { min: 0.05 } },
-        ),
-      );
-    } else if (tool === Enums.Tools.BRUSH) {
-      // The strip's falloff is a curve now (owner call): its Plateau preset
-      // is the old plateau slider's 0.8, and the clay stencils went with it.
-      // The layer's height is the Strength, in cm (2026-10-31): the Strip
-      // layer slider, a fraction of the radius, went with that.
-      const strips = manager.getTool(tool) as unknown as ClayStripsBrush;
-      extras.appendChild(this.curveRow('Profile', 'Clay profile', strips.curve));
-    } else if (tool === Enums.Tools.CREASE) {
-      // A crease is a pinch and a crest, and upstream hardcoded the
-      // balance between them. The crest is a curve (Sharp the knife line it
-      // has always defaulted to, Soft a broad trough); Pinch is the
-      // sideways gather; at 0 it carves a groove without drawing the
-      // surface in, which is a different tool entirely.
-      const crease = manager.getTool(tool) as unknown as CreaseBrush;
-      extras.appendChild(this.curveRow('Profile', 'Crease profile', crease.curve));
-      extras.appendChild(
-        compactRange(
-          'Pinch',
-          0,
-          2.5,
-          0.1,
-          crease.pinch,
-          (v) => {
-            crease.pinch = v;
-          },
-          { limits: AMOUNT },
-        ),
-      );
-    } else if (tool === Enums.Tools.TWIST) {
-      // Polish lives in the old Twist slot. Plane lock is the flatten-vs-
-      // follow trade: locked planarizes chatter hardest, loose rides
-      // gentle curvature without flattening it. The profile and build-up
-      // shape how a stroke lays its polish down: a small plateau (the
-      // Default curve) and a low build-up smooth the effect across the
-      // stroke instead of stepping it (owner feedback).
-      const polish = manager.getTool(tool) as unknown as PolishBrush;
-      extras.appendChild(
-        // The brush itself holds the lock under 0.95.
-        compactRange(
-          'Plane lock (follow-flatten)',
-          0,
-          0.95,
-          0.05,
-          polish.planeLock,
-          (v) => {
-            polish.planeLock = v;
-          },
-          { limits: { min: 0, max: 0.95 } },
-        ),
-      );
-      extras.appendChild(this.curveRow('Profile', 'Polish profile', polish.curve));
-      extras.appendChild(
-        compactRange(
-          'Build-up',
-          0.2,
-          2,
-          0.1,
-          polish.gain,
-          (v) => {
-            polish.gain = v;
-          },
-          { limits: AMOUNT },
-        ),
-      );
-    } else if (tool === Enums.Tools.PAINT || tool === Enums.Tools.PAINT_ERASE || tool === Enums.Tools.BLUR || tool === Enums.Tools.PROJECT) {
-      // The paint falloff, a curve in place of the vendor's hardness (its
-      // Default preset is hardness 0.75). Shift's blur shares it.
-      const paint = manager.getTool(tool) as unknown as PaintBrush;
-      extras.appendChild(this.curveRow('Profile', 'Paint profile', paint.curve));
-    } else if (tool === Enums.Tools.RAKE) {
-      this.buildRake(extras, manager.getTool(tool) as unknown as RakeBrush);
-    } else if (tool === Enums.Tools.SMOOTH) {
-      const smooth = manager.getTool(tool) as unknown as StableSmooth;
-      if (smooth instanceof StableSmooth) this.buildSmooth(extras, smooth);
-    }
+    // The tool's rows come from its entry in the registry (tools/registry.ts),
+    // in its order. A tool the table does not know has a heading and nothing else.
+    const def = toolByEngine(tool);
+    this.nameBrush(toolName(tool));
+    this.extrasBody.replaceChildren();
+    if (def) this.buildRows(def, tool);
   }
 
   /**
-   * Smooth's Mode (owner call, 2026-10-24): Average, the umbrella average
-   * it always was (the default), or Surface, which fits the surface by
-   * distance and evens the triangles with a light Relax, the row shown in
-   * Surface only. Shift's smoothing from any brush uses the mode set here;
-   * the same rows head every other brush's Smooth group (fillShiftSmooth).
+   * The rows of a brush: each of its settings, in the registry's order, in
+   * the block it belongs to (the common rows under the heading, then the
+   * tool's own). Rows that show only while another setting says so are
+   * shown or hidden as it changes.
    */
-  private buildSmooth(extras: HTMLElement, smooth: StableSmooth, label = 'Smooth mode'): void {
-    const mode = selectEl(SMOOTH_MODES, smooth.smoothMode);
-    mode.setAttribute('aria-label', label);
-    const relax = compactRange(
-      'Relax',
-      0,
-      1,
-      0.05,
-      smooth.relax,
-      (v) => {
-        smooth.setSmooth({ relax: v });
-        this.input.onBrushSettingsChange?.();
-      },
-      { limits: FRACTION },
-    );
-    relax.dataset.smooth = 'relax';
-    relax.hidden = smooth.smoothMode !== 'surface';
-    mode.addEventListener('change', () => {
-      smooth.setSmooth({ mode: mode.value as SmoothMode });
-      relax.hidden = smooth.smoothMode !== 'surface';
+  private buildRows(def: ToolDef, tool: number): void {
+    const dyn = this.dynamicsBody;
+    const extras = this.extrasBody;
+    const d = this.input.dynamics.get(tool);
+    const engine = this.session.getSculptManager().getTool(tool) as unknown as EngineTool;
+    const gated: Array<{ spec: SettingSpec; row: HTMLElement }> = [];
+    const holds = (when: SettingSpec['when']): boolean => {
+      if (when === 'pressure-size') return d.size > 0;
+      if (when === 'pressure-strength') return d.strength > 0;
+      if (when === 'smooth-surface') return engine.smoothMode === 'surface';
+      return true;
+    };
+    const regate = (): void => {
+      for (const g of gated) g.row.hidden = !holds(g.spec.when);
+    };
+    const changed = (): void => {
+      this.lightRakePresets();
       this.input.onBrushSettingsChange?.();
-    });
-    extras.append(labelRow('Mode', mode), relax);
+      regate();
+    };
+    for (const spec of def.settings) {
+      const host = spec.block === 'brush' ? dyn : extras;
+      const rows = this.buildSetting(spec, tool, d, engine, { regate, changed });
+      for (const row of rows) host.appendChild(row);
+      if (spec.when && spec.when !== 'always' && rows[0]) gated.push({ spec, row: rows[0] });
+    }
+    regate();
+  }
+
+  /** One setting's row (the colour's and a few hints' are two elements), by what it is and what it is for. */
+  private buildSetting(
+    spec: SettingSpec,
+    tool: number,
+    d: BrushDynamics,
+    engine: EngineTool,
+    on: { regate: () => void; changed: () => void },
+    aria = spec.aria,
+  ): HTMLElement[] {
+    const input = this.input;
+    switch (spec.role) {
+      case 'colour': {
+        // The paint tools lead with the colour: the same HSV picker the Render
+        // panel uses for albedo, so a colour is chosen the same way wherever
+        // you are. Alt + click on the model samples one off the surface.
+        this.paintPicker = colorPicker(input.getPaintColor(), (hex) => input.setPaintColor(hex));
+        // The fill sits beside the swatch (owner call): the whole object in
+        // this colour, in one undo step.
+        const colourRow = div('sculpt-panel__inline');
+        const fill = document.createElement('button');
+        fill.type = 'button';
+        fill.className = 'sculpt-panel__btn sculpt-panel__btn--icon';
+        fill.title = 'Fill the object with this colour';
+        fill.setAttribute('aria-label', 'Fill the object with the paint colour');
+        const icon = document.createElement('i');
+        icon.className = 'fi fi-ss-fill';
+        icon.setAttribute('aria-hidden', 'true');
+        fill.appendChild(icon);
+        fill.addEventListener('click', () => input.fillPaint());
+        colourRow.append(this.paintPicker.root, fill);
+        // Drag the swatch over the view to pick a colour off the frame, as
+        // the Render panel's background and light swatches do.
+        installSwatchPick(this.paintPicker, this.viewer, (hex) => input.setPaintColor(hex));
+        return [labelRow(spec.label, colourRow), this.hint(spec.text ?? '')];
+      }
+      case 'size': {
+        // Printed as the rail prints it: pixels, or centimetres in world
+        // scale on real units (InputShell.brushSizeDisplay).
+        const display = input.brushSizeDisplay();
+        const row = compactRange(
+          spec.label,
+          spec.min!,
+          spec.max!,
+          spec.step!,
+          Math.round(input.getBrushRadius()),
+          (v) => input.setBrushRadius(v),
+          { limits: spec.limits, ...(display.scale !== 1 ? display : {}) },
+        );
+        this.sizeInput = row.querySelector('input') as HTMLInputElement;
+        return [row];
+      }
+      case 'pressureSize':
+      case 'pressureStrength': {
+        // Pressure is an amount, not a switch (owner call): the bottom of the
+        // slider is off, the top the full range. Its curve shapes the response
+        // and means nothing at zero, so that row folds away there.
+        const key = spec.role === 'pressureSize' ? 'size' : 'strength';
+        return [
+          compactRange(
+            spec.label,
+            spec.min!,
+            spec.max!,
+            spec.step!,
+            d[key],
+            (v) => {
+              d[key] = v;
+              input.onBrushSettingsChange?.();
+              on.regate();
+            },
+            { limits: spec.limits },
+          ),
+        ];
+      }
+      case 'sizeCurve':
+      case 'strengthCurve': {
+        const key = spec.role === 'sizeCurve' ? 'sizeCurve' : 'strengthCurve';
+        return [
+          labelRow(
+            spec.label,
+            this.curveSelect(d[key], (c) => {
+              d[key] = c;
+              input.onBrushSettingsChange?.();
+            }),
+          ),
+        ];
+      }
+      case 'strength': {
+        // A length in cm for the brushes that push the surface (owner call,
+        // 2026-10-31): how far one stroke at full pressure moves the surface
+        // at the brush centre, 0 to 5 cm on the travel and up to 50 typed.
+        // The capped brushes and Move keep 0 to 1.
+        const cm = spec.unit === 'cm';
+        const row = compactRange(
+          spec.label,
+          spec.min!,
+          spec.max!,
+          spec.step!,
+          input.getBrushIntensity(),
+          (v) => input.setBrushIntensity(v),
+          cm ? { limits: spec.limits, unit: input.strengthSpec().unit } : { limits: spec.limits },
+        );
+        row.dataset.strength = cm ? 'cm' : 'fraction';
+        this.strengthInput = row.querySelector('input') as HTMLInputElement;
+        return [row];
+      }
+      case 'spacing': {
+        // Dab spacing: how far the brush travels between stamps, as a fraction
+        // of its radius. It is the difference between a clay ribbon and a row
+        // of separate dabs, and a rake only combs at all when its stamps
+        // overlap. Under 0.02 a stroke lays down so many dabs that it stalls.
+        return [compactRange(spec.label, spec.min!, spec.max!, spec.step!, input.getBrushSpacing(), (v) => input.setBrushSpacing(v), { limits: spec.limits })];
+      }
+      case 'curve': {
+        // Every profile reads sharp on the left and soft on the right (owner call).
+        const curve = (engine as unknown as { curve: ProfileCurve }).curve;
+        return [this.curveRow(spec.label, spec.aria ?? spec.label, curve)];
+      }
+      case 'own':
+        return this.buildOwn(spec, engine, on, aria);
+    }
+  }
+
+  /** A knob of the tool's own: a slider, a switch, a choice, the Rake's presets, or a line of words. */
+  private buildOwn(spec: SettingSpec, engine: EngineTool, on: { regate: () => void; changed: () => void }, aria = spec.aria): HTMLElement[] {
+    if (spec.kind === 'hint') return [this.hint(spec.text ?? '')];
+    if (spec.kind === 'presets') return [this.rakePresetRow(engine as unknown as RakeBrush, on.changed)];
+    const write = (v: number | boolean | string): void => {
+      writeOwn(engine, spec, v);
+      on.changed();
+    };
+    const read = readOwn(engine, spec);
+    if (spec.kind === 'toggle') return [checkbox(spec.label, read === true, (checked) => write(checked))];
+    if (spec.kind === 'select') {
+      const sel = selectEl(spec.options ?? [], String(read));
+      if (aria) sel.setAttribute('aria-label', aria);
+      sel.addEventListener('change', () => write(sel.value));
+      return [labelRow(spec.label, sel)];
+    }
+    const row = compactRange(spec.label, spec.min!, spec.max!, spec.step!, Number(read), (v) => write(v), { limits: spec.limits });
+    if (spec.data) Object.assign(row.dataset, spec.data);
+    return [row];
+  }
+
+  private hint(text: string): HTMLDivElement {
+    const hint = div('sculpt-panel__hint muted');
+    hint.textContent = text;
+    return hint;
+  }
+
+  /** The Rake's presets: one press sets every row, the strength included. */
+  private rakePresetRow(rake: RakeBrush, changed: () => void): HTMLDivElement {
+    const presets = div('sculpt-panel__row sculpt-panel__presets');
+    for (const p of RAKE_PRESETS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sculpt-panel__btn';
+      b.textContent = p.label;
+      b.dataset.preset = p.id;
+      b.setAttribute('aria-label', `Rake preset ${p.label}`);
+      if (p.id === rake.presetId) b.classList.add('sculpt-panel__btn--on');
+      onTap(b, () => {
+        rake.applyPreset(p.id);
+        changed();
+        this.refreshBrush();
+        // The rail's strength nub, which the preset moved too.
+        this.input.onBrushChange?.();
+      });
+      presets.appendChild(b);
+    }
+    this.rakePresets = presets;
+    return presets;
+  }
+
+  /** The Rake's preset lights while its settings are still the preset's. */
+  private lightRakePresets(): void {
+    const rake = this.session.getSculptManager().getTool(Enums.Tools.RAKE) as unknown as RakeBrush | undefined;
+    if (!this.rakePresets?.isConnected || !rake) return;
+    for (const b of this.rakePresets.querySelectorAll<HTMLButtonElement>('button')) {
+      b.classList.toggle('sculpt-panel__btn--on', b.dataset.preset === rake.presetId);
+    }
   }
 
   // --- Smooth (Shift): one shared setting for every brush ------------------
@@ -468,28 +396,6 @@ export class SculptPanel extends SidePanel {
     this.fillShiftSmooth(this.input.uiMode() === 'brush' ? this.input.currentToolIndex() : -1);
   }
 
-  /**
-   * Whether Shift smooths from `tool` (InputShell's swap): every brush but
-   * Paint, where Shift blurs the paint instead. Smooth itself has these
-   * rows in its own settings, and Paint blur and Mask are not brushes the
-   * toolbar offers (Mask is Ctrl's stand-in).
-   */
-  private static shiftSmooths(tool: number): boolean {
-    const t = Enums.Tools;
-    return (
-      tool >= 0 &&
-      tool !== t.PAINT &&
-      tool !== t.PAINT_BLUR &&
-      tool !== t.MASKING &&
-      tool !== t.SMOOTH &&
-      tool !== t.PAINT_ERASE &&
-      tool !== t.BLUR &&
-      tool !== t.FILL &&
-      tool !== t.PICK &&
-      tool !== t.PROJECT
-    );
-  }
-
   /** Rebuild the Smooth group from the tool's values, or hide it (`tool` -1: not a brush). */
   private fillShiftSmooth(tool: number): void {
     const sec = this.smoothSection;
@@ -498,7 +404,8 @@ export class SculptPanel extends SidePanel {
     rows.replaceChildren();
     this.smoothStrengthInput = undefined;
     const smooth = this.session.getSculptManager().getTool(Enums.Tools.SMOOTH) as unknown as StableSmooth | undefined;
-    sec.hidden = !SculptPanel.shiftSmooths(tool) || !(smooth instanceof StableSmooth);
+    // Shift smooths from every brush but Paint's (where it blurs) and the tools that are not brushes: the registry says which.
+    sec.hidden = !toolByEngine(tool)?.shiftSmooths || !(smooth instanceof StableSmooth);
     if (sec.hidden || !(smooth instanceof StableSmooth)) return;
     const strength = compactRange(
       'Strength',
@@ -515,7 +422,22 @@ export class SculptPanel extends SidePanel {
     strength.dataset.smooth = 'strength';
     this.smoothStrengthInput = strength.querySelector('input') as HTMLInputElement;
     rows.appendChild(strength);
-    this.buildSmooth(rows, smooth, 'Shift smooth mode');
+    // Smooth's own rows (its Mode, and Relax in Surface), from the registry, as on Smooth's own panel.
+    const engine = smooth as unknown as EngineTool;
+    const regate = (): void => {
+      for (const r of gated) r.hidden = engine.smoothMode !== 'surface';
+    };
+    const gated: HTMLElement[] = [];
+    const changed = (): void => {
+      this.input.onBrushSettingsChange?.();
+      regate();
+    };
+    for (const spec of SMOOTH_OWN) {
+      const built = this.buildOwn(spec, engine, { regate, changed }, spec.key === 'mode' ? 'Shift smooth mode' : spec.aria);
+      rows.append(...built);
+      if (spec.when === 'smooth-surface' && built[0]) gated.push(built[0]);
+    }
+    regate();
   }
 
   /** A profile curve's editor under its caption; an edit schedules the autosave. */
@@ -526,71 +448,6 @@ export class SculptPanel extends SidePanel {
     const editor = new CurveEditor(curve, { label, onCommit: () => this.input.onBrushSettingsChange?.() });
     row.append(head, editor.root);
     return row;
-  }
-
-  /**
-   * The tine rake's rows: its presets, the tine count and width, the
-   * Scrape (how flat each dab planes the footprint before the tines cut),
-   * the taper, Invert, Stop at depth, and the tine's own profile. The groove's depth is
-   * the Strength above, in cm (2026-10-31: the Depth row went with that).
-   * A preset sets them all, the strength included; any of them can move
-   * after.
-   */
-  private buildRake(extras: HTMLElement, rake: RakeBrush): void {
-    const changed = (): void => {
-      for (const b of presets.querySelectorAll<HTMLButtonElement>('button')) {
-        b.classList.toggle('sculpt-panel__btn--on', b.dataset.preset === rake.presetId);
-      }
-      this.input.onBrushSettingsChange?.();
-    };
-    const presets = div('sculpt-panel__row sculpt-panel__presets');
-    for (const p of RAKE_PRESETS) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'sculpt-panel__btn';
-      b.textContent = p.label;
-      b.dataset.preset = p.id;
-      b.setAttribute('aria-label', `Rake preset ${p.label}`);
-      if (p.id === rake.presetId) b.classList.add('sculpt-panel__btn--on');
-      onTap(b, () => {
-        rake.applyPreset(p.id);
-        this.input.onBrushSettingsChange?.();
-        this.refreshBrush();
-        // The rail's strength nub, which the preset moved too.
-        this.input.onBrushChange?.();
-      });
-      presets.appendChild(b);
-    }
-    extras.appendChild(presets);
-    this.rakePresets = presets;
-    const knob = (label: string, min: number, max: number, step: number, value: number, set: (v: number) => void, limits: Limits): void => {
-      extras.appendChild(
-        compactRange(label, min, max, step, value, (v) => {
-          set(v);
-          changed();
-        }, { limits }),
-      );
-    };
-    knob('Tines', RAKE_TINES_MIN, RAKE_TINES_MAX, 1, rake.tines, (v) => rake.set({ tines: v }), { min: RAKE_TINES_MIN, max: RAKE_TINES_MAX, integer: true });
-    knob('Tine width', 0.1, 1, 0.05, rake.tineWidth, (v) => rake.set({ width: v }), { min: 0.1, max: 1 });
-    knob('Scrape', 0, 1, 0.05, rake.scrape, (v) => rake.set({ scrape: v }), FRACTION);
-    knob('Taper', 0, 1, 0.05, rake.taper, (v) => rake.set({ taper: v }), FRACTION);
-    extras.appendChild(
-      checkbox('Invert (raise ridges)', rake.invert, (on) => {
-        rake.set({ invert: on });
-        changed();
-      }),
-    );
-    extras.appendChild(
-      checkbox('Stop at depth', rake.level, (on) => {
-        rake.set({ level: on });
-        changed();
-      }),
-    );
-    const hint = div('sculpt-panel__hint muted');
-    hint.textContent = 'Tines cut down to the Strength below the surface, then only take off what stands proud. Off: every pass cuts deeper.';
-    extras.appendChild(hint);
-    extras.appendChild(this.curveRow('Tine profile', 'Tine profile', rake.curve));
   }
 
   /**
@@ -809,12 +666,7 @@ export class SculptPanel extends SidePanel {
     if (this.sizeInput) setSliderValue(this.sizeInput, Math.round(this.input.getBrushRadius()));
     if (this.strengthInput) setSliderValue(this.strengthInput, Number(this.input.getBrushIntensity().toFixed(2)));
     // The rake's preset lights while the strength is still the preset's.
-    const rake = this.session.getSculptManager().getTool(Enums.Tools.RAKE) as unknown as RakeBrush | undefined;
-    if (this.rakePresets?.isConnected && rake) {
-      for (const b of this.rakePresets.querySelectorAll<HTMLButtonElement>('button')) {
-        b.classList.toggle('sculpt-panel__btn--on', b.dataset.preset === rake.presetId);
-      }
-    }
+    this.lightRakePresets();
     const smooth = this.session.getSculptManager().getTool(Enums.Tools.SMOOTH) as unknown as StableSmooth | undefined;
     if (this.smoothStrengthInput && smooth instanceof StableSmooth) {
       setSliderValue(this.smoothStrengthInput, Number(smooth._intensity.toFixed(2)));
