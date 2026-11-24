@@ -302,18 +302,28 @@ export function checkHeader(layout: Layout): void {
   /**
    * The sculpt layers (SavedMesh.layers), as far as the header says: at
    * most 32 layers, a name each, and u32 ids and f32 displacements,
-   * three a vertex id. Which vertices, and that they exist,
-   * is the app's to check (layersRecord.ts).
+   * three a vertex id; a layer's mask, where it has one, as u8 values and
+   * u32 run lengths, one of each a run. Which vertices, and that they
+   * exist, is the app's to check (layersRecord.ts).
+   *
+   * Versions 1 and 2, as the app's own reader takes (layersRecord.ts): the
+   * app has written version 2 since layers got groups and masks, and this
+   * check, which the upload goes through, still took only version 1, so a
+   * scene with sculpt layers was refused as damaged (found 2026-11-24).
    */
   const checkLayers = (g: unknown, object: string): void => {
     const bad = (what: string): never => {
       throw damaged(`${object} has bad layers (${what})`);
     };
-    if (!isRec(g) || g.v !== 1 || !Array.isArray(g.items) || g.items.length > 32) bad('not a record this app reads');
+    if (!isRec(g) || (g.v !== 1 && g.v !== 2) || !Array.isArray(g.items) || g.items.length > 32) bad('not a record this app reads');
     for (const it of (g as Rec).items as unknown[]) {
       if (!isRec(it)) bad('a layer that is not one');
       const l = it as Rec;
       name(l.name, object);
+      if (l.maskVals !== undefined || l.maskLens !== undefined) {
+        const runs = entry(l.maskVals);
+        if (!runs || runs.t !== 'u8' || !array(l.maskLens, 'u32', runs.len)) bad('a mask of the wrong kind or size');
+      }
       if (l.ids === undefined && l.vals === undefined) continue;
       const ids = entry(l.ids);
       if (!ids || ids.t !== 'u32' || !array(l.vals, 'f32', ids.len * 3)) bad('data of the wrong kind or size');
