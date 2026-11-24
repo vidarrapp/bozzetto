@@ -1,4 +1,4 @@
-import { Box3, Group, Mesh, Plane, Raycaster, Sphere, Vector2, Vector3, Object3D } from 'three';
+import { Box3, Group, Mesh, Plane, Quaternion, Raycaster, Sphere, Vector2, Vector3, Object3D } from 'three';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { float, normalLocal, positionLocal } from 'three/tsl';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
@@ -10,7 +10,7 @@ import { isShowKey } from '../ui/ChromeToggle';
 import { pasteFromClipboard } from '../reference/intake';
 import { Studio, type DetailLine } from '../studio/Studio';
 import { Hidden, watchAdditions } from '../studio/hidden';
-import { isTextEntryTarget } from '../ui/dom';
+import { eventTime, isTextEntryTarget, LONG_PRESS_MS } from '../ui/dom';
 import { settings } from '../ui/settings';
 import { mayStore, onDeviceChoice } from '../ui/deviceStorage';
 import { requireSaving } from '../ui/deviceChoice';
@@ -442,6 +442,18 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
    */
   const rootProxy = new Object3D();
   rootProxy.name = 'armature-root-move';
+  /**
+   * The same for the pelvis's rotate gizmo: at the middle of the box, turned
+   * as the hips are. Its turn is the hips' turn about that middle: what it
+   * has turned by since the last change is `spinLast`'s inverse.
+   */
+  const rootSpin = new Object3D();
+  rootSpin.name = 'armature-root-turn';
+  const spinLast = new Quaternion();
+  const spinStep = new Quaternion();
+  const spinAt = new Vector3();
+  const spinFrom = new Vector3();
+  let spinning = false;
   /** The part's proportions as the drag began. */
   let scaleFrom: { size: number; length: number } | null = null;
   const controls = [rotateTc, moveTc, scaleTc];
@@ -492,6 +504,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     tc.addEventListener('dragging-changed', (e) => {
       const on = !!(e as unknown as { value: boolean }).value;
       dragging = on;
+      if (tc === rotateTc) spinning = on;
       viewer.setOrbitEnabled(!on);
       if (tc === scaleTc) {
         scaleProxy.scale.set(1, 1, 1);
@@ -511,7 +524,17 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     });
     tc.addEventListener('objectChange', () => {
       if (tc === scaleTc) scaled();
-      else if (tc === moveTc && moveTc.object === rootProxy) {
+      else if (tc === rotateTc && rotateTc.object === rootSpin) {
+        // The hips turned about the middle of their box: the root turns by
+        // the step the proxy took, and goes round that middle with it.
+        spinStep.copy(rootSpin.quaternion).multiply(spinLast.invert());
+        armature.rootHandleWorld(spinAt);
+        armature.root.getWorldPosition(spinFrom).sub(spinAt).applyQuaternion(spinStep).add(spinAt);
+        armature.root.quaternion.premultiply(spinStep);
+        armature.root.position.copy(armature.root.parent ? armature.root.parent.worldToLocal(spinFrom) : spinFrom);
+        spinLast.copy(rootSpin.quaternion);
+        afterGizmo(null);
+      } else if (tc === moveTc && moveTc.object === rootProxy) {
         // The proxy was moved from the box's middle: the root goes by that step.
         armature.rootHandleWorld(rootMiddle);
         const to = rootProxy.getWorldPosition(rootStep).sub(rootMiddle).add(armature.root.getWorldPosition(rootMiddle));
@@ -527,15 +550,19 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
    * re-solve that follows keeps the knee or elbow where it was turned to.
    */
   const afterGizmo = (joint: string | null): void => {
+    // The head or the neck turned by hand takes the look-at target with it;
+    // any other change leaves the target and the head faces it again.
+    const byHand = !!joint && armature.isLookBone(joint);
     if (joint) {
       armature.clampPose(joint);
       armature.followAims(joint);
+      if (byHand) armature.carryLook();
     }
     // Pinned hands and feet hold their ground while the rest moves; this
     // is what lets the pelvis drop into a crouch with the feet planted. A
     // foot being turned by hand is not stood flat again under the gizmo,
     // or no drag of it would show.
-    armature.applyPins(undefined, armature.plantFeet && !(joint && armature.isFoot(joint)));
+    armature.applyPins(undefined, armature.plantFeet && !(joint && armature.isFoot(joint)), !byHand);
     syncHandles();
     refreshPanel();
     scheduleSave();
@@ -577,6 +604,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     attached.clear();
     scaleProxy.removeFromParent();
     rootProxy.removeFromParent();
+    rootSpin.removeFromParent();
     selectedHandle = null;
     selected = bone && armature.bones.has(bone) ? bone : null;
     if (selected) {
@@ -608,7 +636,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
           armature.rootHandleWorld(rootProxy.position);
           viewer.scene.add(rootProxy);
         }
-        tc.attach(tc === scaleTc ? scaleProxy : tc === moveTc && def.kind === 'root' ? rootProxy : target);
+        if (tc === rotateTc && def.kind === 'root') {
+          armature.rootHandleWorld(rootSpin.position);
+          armature.root.getWorldQuaternion(rootSpin.quaternion);
+          spinLast.copy(rootSpin.quaternion);
+          viewer.scene.add(rootSpin);
+        }
+        const root = def.kind === 'root';
+        tc.attach(tc === scaleTc ? scaleProxy : tc === moveTc && root ? rootProxy : tc === rotateTc && root ? rootSpin : target);
         tc.enabled = true;
         tc.getHelper().visible = !suspended;
         attached.add(tc);
@@ -807,9 +842,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     }
     const lookArrow = views.get(LOOK_NAME);
     if (lookArrow) {
+      // Dimmer while the head cannot reach the target: out of range, not a fault.
       const state = stateOf(LOOK_NAME, looking || selectedHandle === LOOK_ID);
-      kit.paint(lookArrow, state);
-      kit.paint(views.get(LOOK_DASH)!, state);
+      const dim = !armature.lookInRange();
+      kit.paint(lookArrow, state, false, dim);
+      kit.paint(views.get(LOOK_DASH)!, state, false, dim);
     }
     kit.paint(rootView, stateOf(ROOT_BALL, moving !== null || selected === armature.root.name));
   };
@@ -831,7 +868,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     }
     for (const [id, m] of aims) {
       const where = armature.hingeWorld(id, joint);
-      const target = where ? armature.poleTarget(id, at) : null;
+      const target = where ? armature.poleTarget(id, at, id === aiming) : null;
       const arrow = views.get(`aim:${id}`)!;
       const dash = views.get(`dash:${id}`)!;
       m.visible = dash.mesh.visible = !!target;
@@ -863,6 +900,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     }
     // The pelvis's move gizmo sits in the middle of that box.
     if (!dragging) rootProxy.position.copy(rootView.mesh.position);
+    // And so does its turn gizmo, turned as the hips are.
+    if (!spinning && rootSpin.parent) {
+      rootSpin.position.copy(rootView.mesh.position);
+      armature.root.getWorldQuaternion(rootSpin.quaternion);
+      spinLast.copy(rootSpin.quaternion);
+    }
     paintHandles();
   };
   buildHandles();
@@ -909,10 +952,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
   const dragPoint = new Vector3();
   // Scratch for the aim and look drags, which run on every move.
   const dragNormal = new Vector3();
-  const lookSphere = new Sphere();
   const lookPoint = new Vector3();
-  /** Where a press landed on the look-at handle, from its middle, so the drag does not jump by it. */
-  const lookGrab = { x: 0, y: 0 };
+  /** Where a press landed on the look-at target, from its middle in the world, so the drag does not jump by it. */
+  const lookGrab = new Vector3();
   /** What the last press took: 'ik:<chain>', 'aim:<chain>', 'look:head', 'root', a part's bone, or nothing. */
   let picked: string | null = null;
   /**
@@ -938,7 +980,29 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
    * `before` is the pose at the press, put back then if the drag had
    * stirred it on the way.
    */
-  let tap: { id: number; x: number; y: number; target: string | null; ball: string | null; before: string | null } | null = null;
+  let tap: { id: number; x: number; y: number; target: string | null; ball: string | null; before: string | null; at?: number } | null = null;
+  /**
+   * Pinning a hand or a foot by its ring (owner request): a double-click or
+   * double-tap, or a press held still for LONG_PRESS_MS, toggles its pin.
+   * `pinPress` is a press on a ring that may yet become the long press;
+   * `pinHeld` is the pointer of a press that pinned (or was the second of a
+   * double), whose lift does nothing more; `lastRingTap` is the last tap on
+   * a ring, which a second press close to it in time and place completes.
+   */
+  let pinPress: { id: number; chain: string; x: number; y: number; downAt: number; timer: number; waits: number } | null = null;
+  let pinHeld = -1;
+  /** The press that pinned, to put the pin back if its lift turns out (by the events' own times) to have come before the time ran out. */
+  let heldPress: { chain: string; was: boolean; downAt: number; x: number; y: number } | null = null;
+  let lastRingTap: { chain: string; at: number; x: number; y: number } | null = null;
+  const DOUBLE_TAP_MS = 350;
+  /** How far a press may wander and still be held still for the long press, in CSS pixels: a drag that starts is a drag at once, however slowly the page takes its first moves. */
+  const LONG_PRESS_SLOP = 4;
+  /** How far apart a double-click's two presses may be, in CSS pixels: tight for a mouse, wider for a finger or the Pencil. */
+  const doubleTapDistance = (e: PointerEvent): number => (e.pointerType === 'mouse' ? 6 : 24);
+  const cancelPinPress = (): void => {
+    if (pinPress) clearTimeout(pinPress.timer);
+    pinPress = null;
+  };
   /** The pointers down on the canvas: a second one is a pinch, never a tap. */
   const down = new Set<number>();
   const travelled = (e: PointerEvent): boolean =>
@@ -1089,10 +1153,53 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     e.stopImmediatePropagation();
   };
 
+  /** A hand or foot pinned if it is free, freed if it is pinned: one undo step, the panel's box following. */
+  const togglePin = (chain: string): void => {
+    armature.setPinned(chain, !armature.isPinned(chain));
+    syncHandles();
+    panel.refresh(selected);
+    commit();
+  };
+  /**
+   * A press on a ring is a long press: pin it, with the press still down.
+   * The limb goes back to where the press found it (a hand that shook a
+   * little under the finger), and the lift that follows does nothing.
+   */
+  const longPin = (press: NonNullable<typeof pinPress>): void => {
+    if (tap && tap.id === press.id && tap.before !== null) armature.restore(JSON.parse(tap.before) as ArmatureState);
+    cancelPinPress();
+    tap = null;
+    reaching = null;
+    pinHeld = press.id;
+    heldPress = { chain: press.chain, was: armature.isPinned(press.chain), downAt: press.downAt, x: press.x, y: press.y };
+    togglePin(press.chain);
+    paintHandles();
+    viewer.invalidate();
+  };
+  function pinHeldDown(): void {
+    const press = pinPress;
+    if (!press) return;
+    // A page busy with a frame runs this timer ahead of events that came in
+    // before it ran out: a move that was made in time, a second finger. Where
+    // the browser can say so, those are let through first (a few turns of the
+    // loop at most), since they are what cancels the press.
+    const scheduling = (navigator as Navigator & { scheduling?: { isInputPending?: (o?: { includeContinuous?: boolean }) => boolean } }).scheduling;
+    if (press.waits < 40 && scheduling?.isInputPending?.({ includeContinuous: true })) {
+      press.waits++;
+      press.timer = window.setTimeout(pinHeldDown, 5);
+      return;
+    }
+    press.timer = 0;
+    longPin(press);
+  }
+
   const onPointerDown = (e: PointerEvent): void => {
     down.add(e.pointerId);
     // A second finger: a pinch or a two-finger pan, whatever the first was.
-    if (down.size > 1) tap = null;
+    if (down.size > 1) {
+      tap = null;
+      cancelPinPress();
+    }
     if (lightHeld) {
       if (lightArmed && lightPointer === -1) {
         lightPointer = e.pointerId;
@@ -1132,15 +1239,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
       if (ball.kind === 'aim') {
         aiming = ball.id;
       } else if (ball.kind === 'look') {
-        // Where on the handle the press landed, kept so the drag starts
-        // from where the head already faces; the chain's poses now are
-        // what every move of the drag turns from.
+        // The target is a point in the world, moved in the plane that faces
+        // the camera through where it is. Where on the handle the press
+        // landed is kept, so the drag does not jump by it; the torso's
+        // poses now are what the drag's small shares turn from.
         looking = true;
-        if (ballOnScreen(ball.ball)) {
-          const [hx, hy] = ballOnScreen(ball.ball)!;
-          lookGrab.x = hx - e.clientX;
-          lookGrab.y = hy - e.clientY;
-        }
+        dragPlane.setFromNormalAndCoplanarPoint(viewer.camera.getWorldDirection(dragNormal), ball.ball.position);
+        if (raycaster.ray.intersectPlane(dragPlane, lookGrab)) lookGrab.sub(ball.ball.position);
+        else lookGrab.set(0, 0, 0);
         armature.beginLook();
         if (down.size === 1) {
           tap = { id: e.pointerId, x: e.clientX, y: e.clientY, target: null, ball: LOOK_ID, before: null };
@@ -1157,10 +1263,26 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
             from: raycaster.ray.intersectPlane(dragPlane, new Vector3()) ?? ball.ball.position.clone(),
             root: armature.root.getWorldPosition(new Vector3()),
           };
-        } else {
-          reaching = ball.id;
+          // A tap on the box selects the hips; a press that travels moves the figure.
           if (down.size === 1) {
-            tap = { id: e.pointerId, x: e.clientX, y: e.clientY, target: null, ball: ball.id, before: null };
+            tap = { id: e.pointerId, x: e.clientX, y: e.clientY, target: null, ball: ROOT_BALL, before: null };
+          }
+        } else {
+          if (down.size === 1 && lastRingTap && lastRingTap.chain === ball.id && eventTime(e) - lastRingTap.at <= DOUBLE_TAP_MS && Math.hypot(e.clientX - lastRingTap.x, e.clientY - lastRingTap.y) <= doubleTapDistance(e)) {
+            // The second press of a double-click or double-tap: it toggles the pin
+            // and is nothing else, so it moves no limb and starts no drag.
+            lastRingTap = null;
+            pinHeld = e.pointerId;
+            togglePin(ball.id);
+          } else {
+            reaching = ball.id;
+            if (down.size === 1) {
+              tap = { id: e.pointerId, x: e.clientX, y: e.clientY, target: null, ball: ball.id, before: null, at: eventTime(e) };
+              // Held still, it pins when the time runs out, with the press still down.
+              // (A mouse has the double-click; a mouse button held still is not the gesture, and a slow first move of a drag must not be taken for it.)
+              cancelPinPress();
+              if (e.pointerType !== 'mouse') pinPress = { id: e.pointerId, chain: ball.id, x: e.clientX, y: e.clientY, downAt: eventTime(e), timer: window.setTimeout(pinHeldDown, LONG_PRESS_MS), waits: 0 };
+            }
           }
         }
       }
@@ -1195,6 +1317,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     // A drag's work for the coming frame, for the frame meter.
     const noteWork = (): void => viewer.noteInput(performance.now() - t0, e.timeStamp);
     if (tap && e.pointerId === tap.id && travelled(e)) tap = null;
+    if (pinPress && e.pointerId === pinPress.id && Math.hypot(e.clientX - pinPress.x, e.clientY - pinPress.y) > LONG_PRESS_SLOP) cancelPinPress();
     const dx = e.clientX - lastPointer.x;
     const dy = e.clientY - lastPointer.y;
     lastPointer.x = e.clientX;
@@ -1242,21 +1365,15 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
       return;
     }
     if (looking) {
-      // The pointer's ray meets the sphere the target sits on, round the
-      // head: the head turns to face where it lands, with the handle under
-      // the pointer. Past the silhouette the nearest point of the sphere
-      // stands in, and past the limits the head holds at them.
+      // The pointer's ray meets the plane through the target that faces the
+      // camera: the target goes to where it lands, anywhere on the screen,
+      // with the handle under the pointer, and the head turns to face it
+      // (as far as its limits allow; the target stays where it was put).
       if (tap?.ball && tap.before === null) tap.before = JSON.stringify(armature.serialize());
-      aimAt(e.clientX + lookGrab.x, e.clientY + lookGrab.y);
-      if (armature.lookFromWorld(joint)) {
-        lookSphere.center.copy(joint);
-        lookSphere.radius = armature.lookDistance();
-        if (!raycaster.ray.intersectSphere(lookSphere, lookPoint)) {
-          raycaster.ray.closestPointToPoint(joint, lookPoint);
-          lookPoint.sub(joint).setLength(lookSphere.radius).add(joint);
-        }
-        armature.lookAt(lookPoint);
-        armature.applyPins();
+      aim(e);
+      if (raycaster.ray.intersectPlane(dragPlane, lookPoint)) {
+        armature.lookAt(lookPoint.sub(lookGrab));
+        armature.applyPins(undefined, armature.plantFeet, false);
         syncHandles();
         placeControls();
         refreshPanel();
@@ -1270,6 +1387,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     if (moving) {
       aim(e);
       if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
+      // Still maybe a tap: what the pose was, should it be one.
+      if (tap?.ball && tap.before === null) tap.before = JSON.stringify(armature.serialize());
       const to = dragPoint.sub(moving.from).add(moving.root);
       armature.root.position.copy(armature.root.parent ? armature.root.parent.worldToLocal(to) : to);
       // As the gizmo's own change does: the pins re-solved, the feet
@@ -1304,6 +1423,37 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
       claimForLight(e);
       return;
     }
+    // A long press whose timer a busy page had not run by the lift: the events' own
+    // times say it was one, and it pins now.
+    if (pinPress && e.pointerId === pinPress.id) {
+      const press = pinPress;
+      cancelPinPress();
+      if (e.type === 'pointerup' && eventTime(e) - press.downAt >= LONG_PRESS_MS) longPin(press);
+    }
+    if (pinHeld === e.pointerId) {
+      // The lift of a press that pinned: no tap, no selection, no drag.
+      pinHeld = -1;
+      const held = heldPress;
+      heldPress = null;
+      if (held && e.type === 'pointerup' && eventTime(e) - held.downAt < LONG_PRESS_MS) {
+        // The timer ran first on a busy page: by the events' own times this was a tap. The pin goes back, with its step.
+        armature.setPinned(held.chain, held.was);
+        dropStep();
+        selectHandle(held.chain);
+        lastRingTap = { chain: held.chain, at: held.downAt, x: held.x, y: held.y };
+      }
+      tap = null;
+      reaching = null;
+      viewer.setOrbitEnabled(true);
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        // Never captured (synthetic events): nothing to release.
+      }
+      paintHandles();
+      viewer.invalidate();
+      return;
+    }
     let tapped: typeof tap = null;
     if (tap && e.pointerId === tap.id) {
       if (e.type === 'pointerup' && !travelled(e)) tapped = tap;
@@ -1330,7 +1480,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
       if (tapped.before !== null) {
         armature.restore(JSON.parse(tapped.before) as ArmatureState);
       }
-      selectHandle(tapped.ball);
+      // A tap on the hips' box selects the hips, with the move and the turn gizmo; any other, its handle.
+      if (tapped.ball === ROOT_BALL) select(armature.root.name);
+      else {
+        selectHandle(tapped.ball);
+        // A tap on a ring: a second one close to it pins the hand or foot.
+        if (handles.has(tapped.ball) && tapped.at !== undefined) lastRingTap = { chain: tapped.ball, at: tapped.at, x: tapped.x, y: tapped.y };
+      }
     } else {
       commit();
     }
@@ -1342,6 +1498,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
   listen(canvas, 'pointerdown', onPointerDown, true);
   listen(canvas, 'pointermove', onPointerMove, true);
   listen(window, 'pointerup', onPointerUp, true);
+  // A second finger anywhere on the page cancels a long press waiting on the first.
+  listen(window, 'pointerdown', (e) => {
+    if (pinPress && e.pointerId !== pinPress.id) cancelPinPress();
+  }, true);
   listen(window, 'pointercancel', onPointerUp, true);
 
   // --- history + autosave ----------------------------------------------------
@@ -1384,6 +1544,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     histButtons.refresh();
   };
   /** Start the history over, from the figure as it stands. */
+  /** The newest step of the history forgotten, with the state as it now stands taken as the one it left. */
+  const dropStep = (): void => {
+    undoStack.pop();
+    last = snap();
+    histButtons.refresh();
+  };
   const clearHistory = (): void => {
     if (pendingStep) clearTimeout(pendingStep);
     pendingStep = 0;
@@ -1604,6 +1770,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
       armature.setPlacement(placement);
       armature.plantFeet = plant;
       for (const id of pinned) armature.setPinned(id, true);
+      // Where the figure now stands, the head looks straight ahead again.
+      armature.placeLook();
     }
     viewer.adoptMesh(armature.mesh);
     if (suspended) armature.mesh.visible = figureShown;
@@ -1738,7 +1906,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
   const turnJoint = (bone: string, xyz: [number, number, number], slider = false): void => {
     armature.setPoseEuler(bone, xyz[0], xyz[1], xyz[2]);
     armature.followAims(bone);
-    armature.applyPins(undefined, armature.plantFeet && !armature.isFoot(bone));
+    const byHand = armature.isLookBone(bone);
+    if (byHand) armature.carryLook();
+    armature.applyPins(undefined, armature.plantFeet && !armature.isFoot(bone), !byHand);
     placeControls();
     syncHandles();
     // A slider's drag is one step, taken when it rests (commitSoon).
@@ -2384,7 +2554,23 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
       freeRotateOn: freeRotate.length === 0,
       /** Where the move gizmo sits in the world, if it is up. */
       moveAt: attached.has(moveTc) && moveTc.object ? moveTc.object.getWorldPosition(new Vector3()).toArray() : null,
+      /** Where the rotate gizmo sits in the world, if it is up. */
+      rotateAt: attached.has(rotateTc) && rotateTc.object ? rotateTc.object.getWorldPosition(new Vector3()).toArray() : null,
     }),
+    /** Which gizmo, and which of its handles, a press at this page point would take, as a press decides; null for none. */
+    gizmoHit: (x: number, y: number): { mode: string; axis: string } | null => {
+      for (const tc of controls) {
+        if (!tc.enabled) continue;
+        const t = tc as unknown as {
+          _getPointer(ev: { clientX: number; clientY: number; button: number }): { x: number; y: number; button: number };
+          pointerHover(p: { x: number; y: number; button: number }): void;
+          axis: string | null;
+        };
+        t.pointerHover(t._getPointer({ clientX: x, clientY: y, button: 0 }));
+        if (t.axis) return { mode: tc.mode, axis: t.axis };
+      }
+      return null;
+    },
     /** The gizmo handle a press at this page point would take ('X', 'Y', 'XYZ'...), as a press decides; null for none. */
     gizmoAxis: (x: number, y: number): string | null => {
       for (const tc of controls) {

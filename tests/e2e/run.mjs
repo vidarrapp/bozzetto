@@ -17,6 +17,7 @@ import { join, resolve } from 'node:path';
 import { checks, launch, serve } from './lib.mjs';
 import { suites as accounts } from './accounts.mjs';
 import { suites as armatureControls } from './armatureControls.mjs';
+import { suites as armatureHandles } from './armatureHandles.mjs';
 import { suites as armatureTap } from './armatureTap.mjs';
 import { suites as saveKey } from './saveKey.mjs';
 import { suites as armatureProjects } from './armatureProjects.mjs';
@@ -81,6 +82,7 @@ import { suites as workspaceTabs } from './workspaceTabs.mjs';
 const suites = {
   ...smoke,
   ...armatureControls,
+  ...armatureHandles,
   ...armatureTap,
   ...saveKey,
   ...armatureProjects,
