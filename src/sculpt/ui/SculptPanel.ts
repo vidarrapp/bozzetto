@@ -63,6 +63,23 @@ export class SculptPanel extends SidePanel {
     this.buildShiftSmooth(this.body);
   }
 
+  /**
+   * The Library button in the panel's heading: it opens the Asset library
+   * on its Tools tab. Small, after the tool's name; the page that owns the
+   * window says what it opens.
+   */
+  setLibraryButton(open: () => void): void {
+    const header = this.title.parentElement;
+    if (!header || header.querySelector('.panel__libbtn')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'panel__libbtn';
+    btn.dataset.role = 'library-open';
+    btn.textContent = 'Library';
+    btn.addEventListener('click', open);
+    header.appendChild(btn);
+  }
+
   // --- Brush: per-brush pressure dynamics + active-tool extras ------------
 
   private buildBrush(body: HTMLElement): void {

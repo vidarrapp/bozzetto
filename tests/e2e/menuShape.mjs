@@ -12,7 +12,7 @@ const HELP = ['Help topics', 'Hotkeys', 'About and credits'];
 export const SCULPT_FILE = 'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
 const VIEW_LOOKS = 'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools';
 const RESET_BAR = '|Reset tool bar';
-const VIEW_WORKSPACES = 'Hide interface|Armature|Sculpt|Paint|Present';
+const VIEW_WORKSPACES = 'Asset library|Hide interface|Armature|Sculpt|Paint|Present';
 export const SCULPT_VIEW = {
   sculpt: `${VIEW_LOOKS}${RESET_BAR}|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|${VIEW_WORKSPACES}`,
   paint: `${VIEW_LOOKS}${RESET_BAR}|Scene panel|Layers panel|Tool panel|Material panel|Reference panel|${VIEW_WORKSPACES}`,
@@ -31,7 +31,7 @@ const FILE_RANK = new Map([
 const viewRank = (label) => {
   if (label === 'Frame selected' || label === 'Frame all') return 0;
   if (['Wireframe', 'Shadows', 'Poly group colours', 'Details', 'Move light', 'References', 'Arrange references', 'Hotkeys on tools', 'Reset tool bar'].includes(label)) return 1;
-  if (/ panel$/.test(label) || label === 'Hide interface') return 2;
+  if (/ panel$/.test(label) || label === 'Asset library' || label === 'Hide interface') return 2;
   if (['Armature', 'Sculpt', 'Paint', 'Present'].includes(label)) return 3;
   return -1;
 };

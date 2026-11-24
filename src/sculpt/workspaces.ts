@@ -209,6 +209,7 @@ export function sculptWorkspaces(p: SculptPage): Workspace[] {
       toolKeys: true,
       toolBar: id === 'present' ? undefined : { isDefault: () => toolBars.isDefault(id), reset: () => resetToolBar(id) },
       details: true,
+      assetLibrary: { get: () => p.studio.library.isOpen(), toggle: () => p.studio.library.toggle() },
       panels: panelsOf(id),
       moveLight: { get: () => input.isLightArmed(), toggle: () => input.armLight(!input.isLightArmed()) },
       hideInterface: p.hideInterface,
