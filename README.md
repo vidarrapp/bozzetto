@@ -182,9 +182,18 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 - **The hips are one box.** The box round the hips is the box the hips show when selected. Tap it to select the hips and turn them with the rings, drag it to move the whole figure.
 - **Pin a hand or foot with a double-click or a long press.** On a ring, a double-click or double-tap, or holding it still for a moment, pins it or lets it go.
 
+### v0.7.11
+
+- **Asset library.** A window that floats over the view and stays open while you work. Open it with the **Library** button in the Tool panel or **View**, then **Asset library**. Its Tools tab shows every tool, Sculpt and Paint, and a tap takes one in hand. Press and hold a tool there and drag it onto the tool bar to put it at that place. Materials, Lighting and HDRIs come to it in a later version.
+- **Take a tool off the tool bar.** Drag it off the bar and let go, and it is off the bar and still in the library, with an **Undo**. The bar can be emptied, and **View**, then **Reset tool bar**, brings every tool back.
+- **A tool in hand that is not on the bar** shows as one extra tile at the end of the tools, with a dashed line and no number. Drag it onto the bar to keep it.
+- **Ten tools on a bar.** A tool bar holds ten tools, one for each number key. A full bar takes no more and says so.
+- **A tool's menu.** Press and hold a tool on the bar, or in the library, and let go without moving, and a small menu opens with its settings and Add to or Remove from tool bar.
+
 ### v0.7.10
 
 - **A reference behind the model is the right way up.** A picture set to Behind the model was drawn upside down, and moved down when its frame was moved up. It now sits under its frame.
+- **References are not lost when another is removed.** On Safari, a picture kept from an earlier visit could lose its thumbnail when a later one was removed, and be gone after a reload. Pictures are now held apart from the device's storage once they are read back.
 - **One row of tools on a reference.** Opacity is in the row of icons over the picture. The blend mode moved to the picture's card in the Reference panel.
 - **Tapping a body part in Armature.** After a figure was posed or moved, taps on its hands, arms, feet, neck and head often selected nothing. They select the part again.
 - **Ctrl+S saves.** Signed in, it is Save to library, in Sculpt, Paint, Present and Armature. Signed out, it keeps the copy in this browser straight away instead of within the minute.

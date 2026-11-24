@@ -8,8 +8,9 @@
 //   nothing lifts mid-stroke.
 // dockMove: place 2 to place 6 by mouse, Pencil and finger: the order, the
 //   digits, the keys 1 to 9, the badges, tips, hotkey guide and Preferences.
-// dockCancel: a drop off the bar, Esc, a cancelled pointer, the window losing
-//   focus and a second pointer all put the tool back.
+// dockCancel: Esc, a cancelled pointer, the window losing focus and a second
+//   pointer all put the tool back (a drop off the bar takes the tool off it:
+//   assetLibrary.mjs).
 // dockKeep: kept on the device and per workspace, a stored order repaired,
 //   with saving off it holds for the visit and says so once, Reset tool bar
 //   and its Undo.
@@ -347,7 +348,7 @@ export const suites = {
       const after = await bar(p);
       t.eq(after.filter((b) => b.place).map((b) => `${b.place}:${b.badge}:${b.tip}`).join(' '), MOVED.map((_, i) => `${i + 1}:${i + 1}:${i + 1}`).join(' '), `${kind}: badges, tips and places follow the order`);
       t.eq(await inHand(p), handBefore, `${kind}: the move picked nothing (the tool in hand stays in hand)`);
-      t.eq(JSON.parse((await stored(p)) ?? 'null')?.sculpt?.join(), MOVED.join(), `${kind}: and the order is kept`);
+      t.eq(JSON.parse((await stored(p)) ?? 'null')?.sculpt?.ids?.join(), MOVED.join(), `${kind}: and the order is kept`);
       // The keys follow.
       for (let i = 0; i < MOVED.length; i++) {
         await p.keyboard.press(KEYS[i]);
@@ -403,15 +404,6 @@ export const suites = {
 
     await boot(page, base);
     const mouse = await pointer(page, 'mouse');
-
-    // Let go anywhere else.
-    await overBar(page, mouse, 'mouse');
-    for (const [x, y] of along(await centre(page, 'bz.flatten'), [600, 260], 4)) await mouse.move(x, y);
-    await wait(page, 200);
-    const off = await page.evaluate(() => ['bz.clay', 'bz.inflate'].map((id) => document.querySelector(`.sculpt-toolbar__btn[data-tool="${id}"]`).style.transform));
-    t.ok(off.every((s) => !s || /translate3d\(0px/.test(s) || s === ''), `off the bar the others close up again (${off.join(' | ')})`);
-    await mouse.up();
-    await same(page, 'let go off the bar');
 
     // Esc.
     await overBar(page, mouse, 'mouse');
@@ -477,7 +469,7 @@ export const suites = {
     t.eq(defaults, null, 'with the default order nothing is stored');
     await move('bz.move', 'bz.flatten');
     const rec = JSON.parse(await stored(page));
-    t.ok(rec.v === 1 && rec.sculpt.join() === MOVED.join() && !('paint' in rec), `the order is stored for Sculpt only (${JSON.stringify(rec)})`);
+    t.ok(rec.v === 2 && rec.sculpt.ids.join() === MOVED.join() && rec.sculpt.known.join() === SCULPT_BAR.join() && !('paint' in rec), `the order is stored for Sculpt only, with the tools the app knew (${JSON.stringify(rec)})`);
 
     // Survives a reload.
     await openForInput(page, base);
@@ -495,7 +487,7 @@ export const suites = {
     t.eq((await order(page, 'paint')).join(), paintOrder.join(), "moving Paint's tool changes Paint's bar");
     t.eq((await order(page, 'sculpt')).join(), MOVED.join(), "and not Sculpt's");
     const both = JSON.parse(await stored(page));
-    t.ok(both.sculpt.join() === MOVED.join() && both.paint.join() === paintOrder.join(), 'both are stored');
+    t.ok(both.sculpt.ids.join() === MOVED.join() && both.paint.ids.join() === paintOrder.join(), 'both are stored');
     await page.keyboard.press('1');
     t.eq(await inHand(page), 'bz.erase', "in Paint the key 1 picks what is first on Paint's bar");
     await page.keyboard.press('Shift+2');
@@ -532,7 +524,7 @@ export const suites = {
     await page.click('[data-role="tool-bar-undo"]');
     await wait(page, 200);
     t.eq((await order(page)).join(), MOVED.join(), 'Undo puts the order back');
-    t.eq(JSON.parse(await stored(page)).sculpt.join(), MOVED.join(), 'and keeps it');
+    t.eq(JSON.parse(await stored(page)).sculpt.ids.join(), MOVED.join(), 'and keeps it');
     t.eq(await page.evaluate(() => document.querySelectorAll('[data-role="tool-bar-note"]').length), 0, 'the notice goes with it');
 
     // Paint's own Reset, from Paint.
