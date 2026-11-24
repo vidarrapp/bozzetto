@@ -991,6 +991,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
    */
   let pinPress: { id: number; chain: string; x: number; y: number; downAt: number; timer: number; waits: number } | null = null;
   let pinHeld = -1;
+  /** The press that pinned, to put the pin back if its lift turns out (by the events' own times) to have come before the time ran out. */
+  let heldPress: { chain: string; was: boolean; downAt: number; x: number; y: number } | null = null;
   let lastRingTap: { chain: string; at: number; x: number; y: number } | null = null;
   const DOUBLE_TAP_MS = 350;
   /** How far apart a double-click's two presses may be, in CSS pixels: tight for a mouse, wider for a finger or the Pencil. */
@@ -1167,6 +1169,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     tap = null;
     reaching = null;
     pinHeld = press.id;
+    heldPress = { chain: press.chain, was: armature.isPinned(press.chain), downAt: press.downAt, x: press.x, y: press.y };
     togglePin(press.chain);
     paintHandles();
     viewer.invalidate();
@@ -1427,6 +1430,15 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     if (pinHeld === e.pointerId) {
       // The lift of a press that pinned: no tap, no selection, no drag.
       pinHeld = -1;
+      const held = heldPress;
+      heldPress = null;
+      if (held && e.type === 'pointerup' && eventTime(e) - held.downAt < LONG_PRESS_MS) {
+        // The timer ran first on a busy page: by the events' own times this was a tap. The pin goes back, with its step.
+        armature.setPinned(held.chain, held.was);
+        dropStep();
+        selectHandle(held.chain);
+        lastRingTap = { chain: held.chain, at: held.downAt, x: held.x, y: held.y };
+      }
       tap = null;
       reaching = null;
       viewer.setOrbitEnabled(true);
@@ -1483,6 +1495,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
   listen(canvas, 'pointerdown', onPointerDown, true);
   listen(canvas, 'pointermove', onPointerMove, true);
   listen(window, 'pointerup', onPointerUp, true);
+  // A second finger anywhere on the page cancels a long press waiting on the first.
+  listen(window, 'pointerdown', (e) => {
+    if (pinPress && e.pointerId !== pinPress.id) cancelPinPress();
+  }, true);
   listen(window, 'pointercancel', onPointerUp, true);
 
   // --- history + autosave ----------------------------------------------------
@@ -1525,6 +1541,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     histButtons.refresh();
   };
   /** Start the history over, from the figure as it stands. */
+  /** The newest step of the history forgotten, with the state as it now stands taken as the one it left. */
+  const dropStep = (): void => {
+    undoStack.pop();
+    last = snap();
+    histButtons.refresh();
+  };
   const clearHistory = (): void => {
     if (pendingStep) clearTimeout(pendingStep);
     pendingStep = 0;
