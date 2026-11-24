@@ -1,4 +1,4 @@
-import { Box3, Group, Mesh, Plane, Quaternion, Raycaster, Vector2, Vector3, Object3D } from 'three';
+import { Box3, Group, Mesh, Plane, Quaternion, Raycaster, Sphere, Vector2, Vector3, Object3D } from 'three';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { float, normalLocal, positionLocal } from 'three/tsl';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
