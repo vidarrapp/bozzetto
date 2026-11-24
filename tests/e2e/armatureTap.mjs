@@ -25,12 +25,20 @@ async function tapPart(page, bone) {
   return page.evaluate(() => window.__armature.selected());
 }
 
+/**
+ * Tap every part that can be seen. A part with no point in view (behind another, or under an open panel) is
+ * not a miss, but most of the figure must be in view for the result to mean anything.
+ */
 async function tapAll(page) {
   const missed = [];
+  let seen = 0;
   for (const bone of PARTS) {
     const got = await tapPart(page, bone);
+    if (got === 'not in view') continue;
+    seen++;
     if (got !== bone) missed.push(`${bone} gave ${got}`);
   }
+  if (seen < PARTS.length - 3) missed.push(`only ${seen} of ${PARTS.length} parts were in view`);
   return missed;
 }
 
