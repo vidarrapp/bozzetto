@@ -747,6 +747,7 @@ async function armatureHandlesPin(page, base, t) {
       const dragged = await pinned(p, 'hand.R');
       t.ok(!dragged.pinned && dragged.pose !== s.pose, `${tag}: a press that travels first is a drag, and does not pin`);
       await p.evaluate(() => window.__armature.undo());
+      await wait(p, 500); // an undo puts the state back a moment later
       // A tap does not pin.
       await ptr.down(r[0], r[1]);
       await ptr.up();
