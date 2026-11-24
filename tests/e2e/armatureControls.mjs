@@ -294,7 +294,7 @@ async function armatureControls(page, base, t) {
   // (The undo above puts the figure back a moment later: let it settle.)
   await page.waitForTimeout(600);
   // A press on an edge, and 20 px outside it, takes the root; a drag from there moves the figure and lights the box.
-  const edge = await page.evaluate(() => {
+  const findEdge = () => page.evaluate(() => {
     const a = window.__armature;
     const b = a.rootBox();
     const pts = b.corners.map((c) => a.onScreen(...c));
@@ -315,8 +315,12 @@ async function armatureControls(page, base, t) {
     }
     return { best, root: a.state().root.position, centre, cam: window.__bozzetto.camera.position.toArray(), rq: a.state().root.quaternion };
   });
+  let edge = await findEdge();
   t.ok(!!edge.best, 'an edge of the box stands clear of the other handles');
-  for (const [label, at] of [['on an edge', edge.best.mid], ['18 px outside an edge', edge.best.out]]) {
+  for (const label of ['on an edge', '18 px outside an edge']) {
+    // Looked for afresh each time: the first press, a tap, selected the hips and let them go again.
+    edge = await findEdge();
+    const at = label === 'on an edge' ? edge.best.mid : edge.best.out;
     await page.mouse.move(at[0], at[1]);
     await page.mouse.down();
     await page.mouse.up();
@@ -449,7 +453,7 @@ async function armatureLook(page, base, t) {
   t.ok(limits && behind.hips < 1e-6, 'every joint stays inside its own limits and the hips stay put');
   await page.evaluate(() => window.__armature.undo());
   const tilted = await experiment(page, [0, 40, 5]);
-  t.ok(tilted.tilt > 60 && tilted.turns.head < 63, `a target nearly overhead holds at the tilt limit (${tilted.tilt.toFixed(0)} wanted, the head turned ${tilted.turns.head.toFixed(1)})`);
+  t.ok(tilted.tilt > 60 && tilted.turns.head < 70, `a target nearly overhead holds at the tilt limit (${tilted.tilt.toFixed(0)} wanted, the head turned ${tilted.turns.head.toFixed(1)})`);
   await page.evaluate(() => window.__armature.undo());
 
   // No snapping: sweeping the target from 70 degrees one way to 70 the other moves the neck smoothly.

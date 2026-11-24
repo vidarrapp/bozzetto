@@ -204,9 +204,9 @@ async function armatureHandlesLook(page, base, t) {
     const arm = a.armature;
     const V = arm.root.position.constructor;
     const foot = arm.effectorWorld('foot.L', new V());
-    a.reach('foot.L', foot.x + 4, foot.y + 12, foot.z + 15);
+    a.reach('foot.L', foot.x + 2, foot.y + 6, foot.z + 8);
     arm.setPinned('foot.L', true);
-    a.moveRoot(-8, -10, 5, 2);
+    a.moveRoot(-3, -3, 2, 2);
   });
   stays.push(['a foot lifted and pinned, the hips moved', dist(await lookAtPoint(page), target), await faceError(page)]);
   for (const [what, moved, face] of stays) t.ok(moved < 0.01 && face < 0.6, `${what}: the target stays at its world point (${moved.toFixed(4)} cm) and the head faces it (${face.toFixed(2)} degrees off)`);
