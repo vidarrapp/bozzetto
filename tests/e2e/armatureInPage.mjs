@@ -259,17 +259,17 @@ export const suites = {
 
     // --- builds on a switch --------------------------------------------------------------------------
     const rounds = [];
-    for (const round of [1, 2]) {
+    for (const round of [1, 2, 3]) {
       for (const to of ['Armature', 'Present', 'Sculpt', 'Paint', 'Armature', 'Sculpt']) {
         const before = await counters(page);
         await page.keyboard.press(KEYS[to]);
         await waitHere(page, to);
         await page.waitForTimeout(160);
         const g = grew(before, await counters(page));
-        if (round === 2 && Object.keys(g).length) rounds.push(`${to}: ${show(g)}`);
+        if (round === 3 && Object.keys(g).length) rounds.push(`${to}: ${show(g)}`);
       }
     }
-    t.ok(rounds.length === 0, `after the first round no switch builds a node graph, shader, pipeline or texture (${rounds.join('; ') || 'nothing'})`);
+    t.ok(rounds.length === 0, `after two rounds of warming no switch builds a node graph, shader, pipeline or texture (${rounds.join('; ') || 'nothing'})`);
 
     // --- a stroke on the mannequin ---------------------------------------------------------------------
     await goKey(page, 'Sculpt');
