@@ -773,7 +773,7 @@ figure, with a stroke of 2 px (3 px when orange) and a faint soft shade
 under it (`--bz-view-shade-line`, no hard dark border) so it reads over pale clay, and
 each has an invisible pick circle 44 px across.
 
-- **Reach** (hands, feet): a ring that faces the camera, 22 px in radius (RING_RADIUS). Pinned, a small
+- **Reach** (hands, feet): a ring that faces the camera, 22 px in radius (RING_RADIUS), centred on the middle of the hand's or foot's own geometry as posed (the middle of the part's box; the reach itself is aimed at the effector point, and a press keeps its offset from it, so nothing jumps). Pinned, a small
   dot in its middle. A tap selects it, with the move gizmo. A double-click or double-tap, or a Pencil or finger press held
   still for LONG_PRESS_MS (600 ms; a second finger, or travel past 4 px, cancels it; a mouse has the double-click), pins it or frees it, one undo step; the long press acts while the press is still
   down, and its lift does nothing more. The double-tap window is 350 ms and 24 px (6 px for a mouse).
@@ -784,10 +784,17 @@ each has an invisible pick circle 44 px across.
   selects the hips and brings up the move arrows and the turn rings together, at the box's middle; the hips
   turn about that middle, and pinned and planted feet hold. A press that drags moves the whole figure in the
   screen plane and leaves the selection as it was. The box takes the press before the part under it.
-- **Pole** (knee, elbow): an arrowhead out from the joint along the way it
-  points, half the limb segment above it away (in front of a knee, behind
-  an elbow), pointing away from the joint, the way it aims, joined to it by a thin dashed
-  line. Dragging it turns the joint toward it.
+- **Pole** (knee, elbow): an arrowhead on a point the person places, joined to the joint by a thin
+  dashed line. It starts out from the joint, half the limb segment above it away (in front of a
+  knee, behind an elbow). Dragging it moves it in the plane that faces the camera through where it
+  is, anywhere on the screen, under the pointer (never onto the limb's line: within a centimetre of
+  it the target stays); the joint turns toward it. The point is held in the frame of what the limb
+  hangs from (the pelvis for a leg, the chest for an arm), not in the world, so it goes with the
+  body when the hips are moved or turned and stays on the body while a hand or foot moves
+  (Armature.POLES_IN_BODY_FRAME). It is kept in the record, in every undo step, mirrored by Mirror
+  pose and symmetry, put back out from the joint by Reset pose; turning a joint of the limb by hand,
+  or the panel's Aim, carries it out along the way the joint now points, at its distance. Tapped it is
+  selected, and its move gizmo moves it. Dimmer while the joint cannot bend toward it.
 - **Look-at** (head): the same arrowhead and dashed line, to a point in the
   scene (kept in the record, in every undo step, mirrored by Mirror pose and
   put back a head and a half in front of the face by Reset pose; a record with
