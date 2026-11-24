@@ -63,12 +63,12 @@ async function armatureTap(page, base, t) {
   missed = await tapAll(page);
   t.ok(missed.length === 0, `moved and posed, every part is still selected by a tap on it${missed.length ? ` (${missed.join('; ')})` : ''}`);
 
-  // And back again: the first place is not forgotten either.
+  // And to the other side, still raised: the bounds follow the figure wherever it goes next.
   await page.evaluate(() => {
     const a = window.__armature;
     const b = a.armature.bounds();
     const h = b.max.y - b.min.y;
-    a.moveRoot(-h * 0.5, -h * 0.25, 0);
+    a.moveRoot(-h * 0.4, 0, 0);
   });
   await page.waitForTimeout(400);
   missed = await tapAll(page);

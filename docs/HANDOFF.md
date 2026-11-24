@@ -125,6 +125,7 @@
 
 ## Later
 
+- Armature reach at a joint limit: a foot or hand pinned past what the limits allow ends 2 to 4 cm further from its pin than the best pose a coarse search finds (measured 2026-11-24 on two mannequins, pelvis dragged 24 to 60 cm across). It settles and does not flicker, but the solver gives a little away at a limit; worth a look when the reach solver is next worked on.
 - To build from the answers of 2026-11-17: a bold label on a field whose value differs from its default. (The look target held at its world point is being built, see the decision of 2026-11-18 above.) (Built 2026-11-18: the albedo over a white Base, Merge down by the layers' own colours, the depth test for Project.)
 - A contrast brush (2026-11-17, Vidar): strengthens or flattens the relief under it, its result kept on an ordinary sculpt layer; this is his answer to blend modes on sculpt layers. Designed in docs/plans/tool-library-and-nodes.md, section 6; it comes with the tool editor.
 - Thumbnails on layer rows (2026-11-17).

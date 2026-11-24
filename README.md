@@ -175,6 +175,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 ### v0.7.10
 
 - **A reference behind the model is the right way up.** A picture set to Behind the model was drawn upside down, and moved down when its frame was moved up. It now sits under its frame.
+- **References are not lost when another is removed.** On Safari, a picture kept from an earlier visit could lose its thumbnail when a later one was removed, and be gone after a reload. Pictures are now held apart from the device's storage once they are read back.
 - **One row of tools on a reference.** Opacity is in the row of icons over the picture. The blend mode moved to the picture's card in the Reference panel.
 - **Tapping a body part in Armature.** After a figure was posed or moved, taps on its hands, arms, feet, neck and head often selected nothing. They select the part again.
 - **Ctrl+S saves.** Signed in, it is Save to library, in Sculpt, Paint, Present and Armature. Signed out, it keeps the copy in this browser straight away instead of within the minute.

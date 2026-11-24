@@ -414,7 +414,10 @@ const pastReach = (page) =>
     a.commit();
     const pin = a.state().pins['foot.L'];
     a.moveRoot(0.2 * arm.scale, -0.3 * arm.scale, 0, 30);
-    a.moveRoot(0.24 * arm.scale, 0, 0, 30);
+    // 60 cm across on a 1.80 m figure: well past the reach of the hip's 0.7.10 ranges. (24 cm, which this used
+    // until then, is now only just past it: the grid's best there is under 2 cm, and the solver's 2 to 4 cm,
+    // measured 2026-11-24, is the few centimetres it gives away at a limit rather than a share of a long miss.)
+    a.moveRoot(0.6 * arm.scale, 0, 0, 30);
     const miss = dist(a.handlePosition('foot.L'), pin);
     const names = arm.boneNames();
     const was = names.map((n) => arm.bones.get(n).quaternion.clone());
