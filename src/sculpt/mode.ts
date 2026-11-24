@@ -2548,15 +2548,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   studio.start('sculpt');
   // /?sculpt=1&paint=1 reopens in Paint, as the address Paint keeps while it is up.
   if (new URLSearchParams(window.location.search).get('paint') === '1') studio.go('paint');
+  // The hotkey guide (H) swaps to the sculpt table while the mode is active.
+  window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));
+
   // /?armature=1 opens the page on Armature: the code is fetched now and the page waits for it, so
   // the first frame the person sees is Armature's.
   if (armatureAddress) {
     studio.go('armature');
     await armatureSlot.ready();
   }
-
-  // The hotkey guide (H) swaps to the sculpt table while the mode is active.
-  window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));
 
   return () => {
     // Before the viewer's own look is put back below, or the session's would

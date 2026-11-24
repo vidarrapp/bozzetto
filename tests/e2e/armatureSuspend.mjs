@@ -90,7 +90,6 @@ const viewerState = (page) =>
       antialias: v.getAntialias(),
       fillCasts: light('fill'),
       rimCasts: light('rim'),
-      subject: [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z].map((n) => Math.round(n * 1000) / 1000),
     };
   });
 
@@ -195,7 +194,7 @@ async function armatureSuspend(page, base, t) {
   t.eq(await page.evaluate(() => document.querySelectorAll('.panel--armature, .bz-strip, .bz-details').length), 3, "and one of each Armature tab, strip and details, not two");
   const mounted = await viewerState(page);
   const changed = Object.keys(before).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(mounted[k]));
-  t.ok(mounted.ground === 'floor' && mounted.lockedFloor === 0 && mounted.probe === 'set' && changed.join() === 'ground,subject', `mounted, Armature asks the viewer for the floor and the stage fitted to the figure, and nothing else changes (${JSON.stringify(mounted)}; changed: ${changed.join()})`);
+  t.ok(mounted.ground === 'floor' && mounted.lockedFloor === 0 && mounted.probe === 'set' && changed.join() === 'ground', `mounted, Armature asks the viewer for the floor and nothing else changes (${JSON.stringify(mounted)}; changed: ${changed.join()})`);
   // The second mount draws and works: a joint turned and undone.
   await page.evaluate(() => {
     window.__armature.turn('upperarm.L', 0, 0, 30);

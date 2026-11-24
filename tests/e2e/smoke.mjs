@@ -6097,7 +6097,10 @@ export const suites = {
     row = await sliderRow(page, 'Armature', 'Size');
     t.ok((await size()) === 4 && row.readout === '400%', `500% is held at the figure's 400% (${await size()}, ${row.readout})`);
     // No Render tab in Armature: the light is set through the viewer, as the Lighting tab's slider would.
+    // The look is the page's: it is kept by the scene's look store (an input event is what asks it to), not the armature record.
     await page.evaluate(() => window.__bozzetto.lighting.setIntensity('key', 6));
+    await page.evaluate(() => document.dispatchEvent(new Event('input', { bubbles: true })));
+    await page.waitForTimeout(1800);
     await page.evaluate(() => window.__armature.save());
 
     await openArmature(page, base);
@@ -6106,7 +6109,7 @@ export const suites = {
     await page.evaluate(() => window.__armature.select('upperarm.L'));
     row = await sliderRow(page, 'Armature', 'Size');
     t.ok((await size()) === 4 && row.readout === '400%' && row.thumb === 2, `after a reload the part is still 400%, pinned (${await size()}, ${row.readout})`);
-    t.ok((await keyLight(page)).intensity === 6, 'and the light intensity of 6 comes back with the saved armature');
+    t.ok((await keyLight(page)).intensity === 6, 'and the light intensity of 6 comes back with the scene\'s look');
 
     // R scales the selected part in the view (owner request): a scale
     // gizmo whose handle along the bone is the part's length and whose two

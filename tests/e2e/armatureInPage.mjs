@@ -213,6 +213,8 @@ export const suites = {
       for (const to of NAMES) {
         if (from === to) continue;
         await (pair % 2 ? goPath : goKey)(page, from);
+        await page.evaluate(() => window.__bozzetto.haltOrbit());
+        await page.waitForTimeout(250);
         const cam1 = await cam(page);
         await (pair % 2 ? goKey : goPath)(page, to);
         pair++;
@@ -230,7 +232,8 @@ export const suites = {
     // Armature entered a second time from a moved Sculpt view keeps that view.
     await goKey(page, 'Sculpt');
     await page.evaluate(() => window.__bozzetto.orbitAzimuth(50));
-    await page.waitForTimeout(400);
+    await page.evaluate(() => window.__bozzetto.haltOrbit());
+    await page.waitForTimeout(500);
     const moved = await cam(page);
     t.ok(moved !== camFirst, 'the view was moved in Sculpt');
     await goKey(page, 'Armature');
@@ -249,7 +252,10 @@ export const suites = {
       return { dx: c[0] - (b.min[0] + b.max[0]) / 2, dy: c[1] - (b.min[1] + b.max[1]) / 2, dz: c[2] - (b.min[2] + b.max[2]) / 2 };
     });
     t.ok(Math.hypot(framed.dx, framed.dy, framed.dz) < 3 && (await cam(page)) !== moved, `F in Sculpt frames the selected object (the camera's target is at its centre: ${show(framed)})`);
+    // F framed the sphere tightly: the camera back onto the whole figure for what follows.
     await goKey(page, 'Armature');
+    await page.evaluate(() => window.__armature.frame());
+    await page.waitForTimeout(800);
     await goKey(page, 'Sculpt');
 
     // --- pose, selection and panels through a round trip ----------------------------------------
