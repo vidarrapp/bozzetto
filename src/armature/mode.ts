@@ -1279,8 +1279,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
             if (down.size === 1) {
               tap = { id: e.pointerId, x: e.clientX, y: e.clientY, target: null, ball: ball.id, before: null, at: eventTime(e) };
               // Held still, it pins when the time runs out, with the press still down.
+              // (A mouse has the double-click; a mouse button held still is not the gesture, and a slow first move of a drag must not be taken for it.)
               cancelPinPress();
-              pinPress = { id: e.pointerId, chain: ball.id, x: e.clientX, y: e.clientY, downAt: eventTime(e), timer: window.setTimeout(pinHeldDown, LONG_PRESS_MS), waits: 0 };
+              if (e.pointerType !== 'mouse') pinPress = { id: e.pointerId, chain: ball.id, x: e.clientX, y: e.clientY, downAt: eventTime(e), timer: window.setTimeout(pinHeldDown, LONG_PRESS_MS), waits: 0 };
             }
           }
         }

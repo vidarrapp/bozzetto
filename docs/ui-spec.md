@@ -772,9 +772,8 @@ under it (`--bz-view-shade-line`, no hard dark border) so it reads over pale cla
 each has an invisible pick circle 44 px across.
 
 - **Reach** (hands, feet): a ring that faces the camera, 22 px in radius (RING_RADIUS). Pinned, a small
-  dot in its middle. A tap selects it, with the move gizmo. A double-click or double-tap, or a press held
-  still for LONG_PRESS_MS (600 ms, by the events' own times; a second finger, or travel past the tap
-  distance, cancels it), pins it or frees it, one undo step; the long press acts while the press is still
+  dot in its middle. A tap selects it, with the move gizmo. A double-click or double-tap, or a Pencil or finger press held
+  still for LONG_PRESS_MS (600 ms; a second finger, or travel past 4 px, cancels it; a mouse has the double-click), pins it or frees it, one undo step; the long press acts while the press is still
   down, and its lift does nothing more. The double-tap window is 350 ms and 24 px (6 px for a mouse).
   The pole targets, the look-at target and the hip box do not pin.
 - **Root**: a wire box (12 edges), the same box the pelvis part shows when it is selected (the part's own

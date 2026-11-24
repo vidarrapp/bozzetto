@@ -36,6 +36,11 @@ async function pointer(page, kind) {
         await page.mouse.down();
       },
       move: (x, y) => page.mouse.move(x, y),
+      drag: async (x, y, pts) => {
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        for (const [px, py] of pts) await page.mouse.move(px, py);
+      },
       up: () => page.mouse.up(),
       cancel: () => page.mouse.up(),
       second: async () => {},
@@ -52,6 +57,10 @@ async function pointer(page, kind) {
         await pen('mousePressed', x, y, 1);
       },
       // Two taps with every command sent at once, in order: a slow software frame cannot stretch the gap between them.
+      drag: async (x, y, pts) => {
+        await Promise.all([pen('mouseMoved', x, y, 0), pen('mousePressed', x, y, 1), ...pts.map(([px, py]) => pen('mouseMoved', px, py, 1))]);
+        at = pts[pts.length - 1];
+      },
       doubleTap: async (x, y, x2, y2) => {
         await Promise.all([pen('mouseMoved', x, y, 0), pen('mousePressed', x, y, 1), pen('mouseReleased', x, y, 0), pen('mouseMoved', x2, y2, 0), pen('mousePressed', x2, y2, 1), pen('mouseReleased', x2, y2, 0)]);
       },
@@ -75,6 +84,10 @@ async function pointer(page, kind) {
     move: async (x, y) => {
       at = [x, y];
       await touch('touchMove', [pt(x, y)]);
+    },
+    drag: async (x, y, pts) => {
+      await Promise.all([touch('touchStart', [pt(x, y)]), ...pts.map(([px, py]) => touch('touchMove', [pt(px, py)]))]);
+      at = pts[pts.length - 1];
     },
     doubleTap: async (x, y, x2, y2) => {
       await Promise.all([touch('touchStart', [pt(x, y)]), touch('touchEnd', []), touch('touchStart', [pt(x2, y2)]), touch('touchEnd', [])]);
@@ -702,42 +715,63 @@ async function armatureHandlesPin(page, base, t) {
   await page.mouse.up();
   t.eq(await page.evaluate(() => JSON.stringify(window.__armature.armature.serialize().pins)), pinsBefore, 'and neither does the hip box');
 
-  // Long press, held still, by the mouse, the Pencil and a finger: pins under the finger, the lift does nothing more.
-  await eachKind(page, base, t, async (p, kind, ptr) => {
-    const tag = `by ${kind}`;
-    const r = await ringAt(p, 'hand.R');
-    const s = await pinned(p, 'hand.R');
-    await ptr.down(r[0], r[1]);
-    await wait(p, 800);
-    const during = await pinned(p, 'hand.R');
-    t.ok(during.pinned && during.dot && during.undo === s.undo + 1, `${tag}: a long press pins the hand while the press is still down`);
-    await ptr.up();
-    await wait(p, 200);
-    const lifted = await pinned(p, 'hand.R');
-    t.ok(lifted.pinned && lifted.sel === null && lifted.undo === during.undo && lifted.pose === s.pose, `${tag}: the lift changes nothing: no selection, no move, no second step`);
-    // Held again it frees it.
-    await ptr.down(r[0], r[1]);
-    await wait(p, 800);
-    await ptr.up();
-    await wait(p, 200);
-    t.ok(!(await pinned(p, 'hand.R')).pinned, `${tag}: held again, it is freed`);
-    // A press that travels before the time is a drag and never pins.
-    await ptr.down(r[0], r[1]);
-    for (let k = 1; k <= 5; k++) await ptr.move(r[0] + k * 9, r[1] - k * 5);
-    await wait(p, 800);
-    await ptr.up();
-    await wait(p, 200);
-    const dragged = await pinned(p, 'hand.R');
-    t.ok(!dragged.pinned && dragged.pose !== s.pose, `${tag}: a press that travels first is a drag, and does not pin`);
-    await p.evaluate(() => window.__armature.undo());
-    // A tap does not pin.
-    await ptr.down(r[0], r[1]);
-    await wait(p, 100);
-    await ptr.up();
-    await wait(p, 600);
-    const tap = await pinned(p, 'hand.R');
-    t.ok(!tap.pinned && tap.sel === 'hand.R', `${tag}: a tap selects the hand and pins nothing`);
-  });
+  // Long press, held still, by the Pencil and a finger: pins under the finger, the lift does nothing more.
+  // (A mouse has the double-click: a held mouse button pins nothing.)
+  await eachKind(
+    page,
+    base,
+    t,
+    async (p, kind, ptr) => {
+      const tag = `by ${kind}`;
+      const r = await ringAt(p, 'hand.R');
+      const s = await pinned(p, 'hand.R');
+      await ptr.down(r[0], r[1]);
+      await wait(p, 800);
+      const during = await pinned(p, 'hand.R');
+      t.ok(during.pinned && during.dot && during.undo === s.undo + 1, `${tag}: a long press pins the hand while the press is still down`);
+      await ptr.up();
+      await wait(p, 200);
+      const lifted = await pinned(p, 'hand.R');
+      t.ok(lifted.pinned && lifted.sel === null && lifted.undo === during.undo && lifted.pose === s.pose, `${tag}: the lift changes nothing: no selection, no move, no second step`);
+      // Held again it frees it.
+      await ptr.down(r[0], r[1]);
+      await wait(p, 800);
+      await ptr.up();
+      await wait(p, 200);
+      t.ok(!(await pinned(p, 'hand.R')).pinned, `${tag}: held again, it is freed`);
+      // A press that travels before the time is a drag and never pins (the first moves sent with the press, so a slow frame cannot hold them back).
+      await ptr.drag(r[0], r[1], [1, 2, 3, 4, 5].map((k) => [r[0] + k * 9, r[1] - k * 5]));
+      await wait(p, 800);
+      await ptr.up();
+      await wait(p, 200);
+      const dragged = await pinned(p, 'hand.R');
+      t.ok(!dragged.pinned && dragged.pose !== s.pose, `${tag}: a press that travels first is a drag, and does not pin`);
+      await p.evaluate(() => window.__armature.undo());
+      // A tap does not pin.
+      await ptr.down(r[0], r[1]);
+      await ptr.up();
+      await wait(p, 700);
+      const tap = await pinned(p, 'hand.R');
+      t.ok(!tap.pinned && tap.sel === 'hand.R', `${tag}: a tap selects the hand and pins nothing`);
+    },
+    ['pen', 'touch'],
+  );
+  await eachKind(
+    page,
+    base,
+    t,
+    async (p, kind, ptr) => {
+      const r = await ringAt(p, 'hand.R');
+      // A mouse held still for a long time pins nothing, and its lift is a tap.
+      await ptr.down(r[0], r[1]);
+      await wait(p, 800);
+      await ptr.up();
+      await wait(p, 300);
+      const held = await pinned(p, 'hand.R');
+      t.ok(!held.pinned && held.sel === 'hand.R', 'a mouse held still pins nothing: its lift is a tap that selects the hand');
+    },
+    ['mouse'],
+  );
 
   // Two taps, the double-tap, by the Pencil and the finger.
   await eachKind(
