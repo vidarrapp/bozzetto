@@ -989,7 +989,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
    * double), whose lift does nothing more; `lastRingTap` is the last tap on
    * a ring, which a second press close to it in time and place completes.
    */
-  let pinPress: { id: number; chain: string; x: number; y: number; downAt: number; timer: number } | null = null;
+  let pinPress: { id: number; chain: string; x: number; y: number; downAt: number; timer: number; waits: number } | null = null;
   let pinHeld = -1;
   let lastRingTap: { chain: string; at: number; x: number; y: number } | null = null;
   const DOUBLE_TAP_MS = 350;
@@ -1174,6 +1174,16 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
   function pinHeldDown(): void {
     const press = pinPress;
     if (!press) return;
+    // A page busy with a frame runs this timer ahead of events that came in
+    // before it ran out: a move that was made in time, a second finger. Where
+    // the browser can say so, those are let through first (a few turns of the
+    // loop at most), since they are what cancels the press.
+    const scheduling = (navigator as Navigator & { scheduling?: { isInputPending?: (o?: { includeContinuous?: boolean }) => boolean } }).scheduling;
+    if (press.waits < 40 && scheduling?.isInputPending?.({ includeContinuous: true })) {
+      press.waits++;
+      press.timer = window.setTimeout(pinHeldDown, 5);
+      return;
+    }
     press.timer = 0;
     longPin(press);
   }
@@ -1265,7 +1275,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
               tap = { id: e.pointerId, x: e.clientX, y: e.clientY, target: null, ball: ball.id, before: null, at: eventTime(e) };
               // Held still, it pins when the time runs out, with the press still down.
               cancelPinPress();
-              pinPress = { id: e.pointerId, chain: ball.id, x: e.clientX, y: e.clientY, downAt: eventTime(e), timer: window.setTimeout(pinHeldDown, LONG_PRESS_MS) };
+              pinPress = { id: e.pointerId, chain: ball.id, x: e.clientX, y: e.clientY, downAt: eventTime(e), timer: window.setTimeout(pinHeldDown, LONG_PRESS_MS), waits: 0 };
             }
           }
         }

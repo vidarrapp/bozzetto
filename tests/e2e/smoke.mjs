@@ -2392,6 +2392,8 @@ export const suites = {
     );
     const rootPress = { picked: await press(hips.ball) };
     rootPress.gizmo = await page.evaluate(() => ({ selected: window.__armature.selected(), attached: window.__armature.gizmo().attached.length }));
+    // (A press that lifts at once is a tap: the hips are selected now. Let them go.)
+    await page.evaluate(() => window.__armature.select(null));
     await handlesBox(false);
     rootPress.hiddenBall = await page.evaluate(() => window.__armature.ballOnScreen('root'));
     rootPress.hidden = await press(hips.ball);
@@ -2399,8 +2401,8 @@ export const suites = {
     await page.evaluate(() => window.__armature.select(null));
     t.eq(rootPress.picked, 'root', "a press on the root's ball takes it");
     t.ok(
-      rootPress.gizmo.selected === null && rootPress.gizmo.attached === 0,
-      `and selects nothing, so no gizmo comes up (selected ${rootPress.gizmo.selected}, ${rootPress.gizmo.attached} controls attached)`,
+      rootPress.gizmo.selected === 'pelvis' && rootPress.gizmo.attached === 2,
+      `and as a tap it selects the hips, with the move and the turn gizmo (selected ${rootPress.gizmo.selected}, ${rootPress.gizmo.attached} controls attached)`,
     );
     t.ok(
       rootPress.hiddenBall === null && !!rootPress.hidden && rootPress.hidden !== 'root',

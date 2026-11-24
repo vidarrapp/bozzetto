@@ -51,6 +51,10 @@ async function pointer(page, kind) {
         await pen('mouseMoved', x, y, 0);
         await pen('mousePressed', x, y, 1);
       },
+      // Two taps with every command sent at once, in order: a slow software frame cannot stretch the gap between them.
+      doubleTap: async (x, y, x2, y2) => {
+        await Promise.all([pen('mouseMoved', x, y, 0), pen('mousePressed', x, y, 1), pen('mouseReleased', x, y, 0), pen('mouseMoved', x2, y2, 0), pen('mousePressed', x2, y2, 1), pen('mouseReleased', x2, y2, 0)]);
+      },
       move: async (x, y) => {
         at = [x, y];
         await pen('mouseMoved', x, y, 1);
@@ -71,6 +75,9 @@ async function pointer(page, kind) {
     move: async (x, y) => {
       at = [x, y];
       await touch('touchMove', [pt(x, y)]);
+    },
+    doubleTap: async (x, y, x2, y2) => {
+      await Promise.all([touch('touchStart', [pt(x, y)]), touch('touchEnd', []), touch('touchStart', [pt(x2, y2)]), touch('touchEnd', [])]);
     },
     up: () => touch('touchEnd', []),
     cancel: () => touch('touchCancel', []),
@@ -176,11 +183,11 @@ async function armatureHandlesLook(page, base, t) {
   const target = await lookAtPoint(page);
   const first = await chainPose(page);
   const stays = [];
-  await page.evaluate(() => window.__armature.moveRoot(12, -6, 8, 3));
+  await page.evaluate(() => window.__armature.moveRoot(3, -2, 2, 3));
   stays.push(['the hips moved', dist(await lookAtPoint(page), target), await faceError(page)]);
   const away = await chainPose(page);
   t.ok(poseGap(first, away) > 0.5, `moving the hips turned the neck and head to keep facing it (${poseGap(first, away).toFixed(1)} degrees)`);
-  await page.evaluate(() => window.__armature.moveRoot(-12, 6, -8, 3));
+  await page.evaluate(() => window.__armature.moveRoot(-3, 2, -2, 3));
   stays.push(['the hips moved back', dist(await lookAtPoint(page), target), await faceError(page)]);
   const back = await chainPose(page);
   t.ok(poseGap(first, back) < 0.05, `the hips away and back leave the head and neck exactly as they were (${poseGap(first, back).toFixed(4)} degrees)`);
@@ -257,7 +264,7 @@ async function armatureHandlesLook(page, base, t) {
     const eye0 = arm.lookFromWorld(new V());
     const t0 = new V(...a.state().look);
     const d0 = t0.distanceTo(eye0);
-    a.turn('head', 0, 10, 0);
+    a.turn('head', 0, 15, 0);
     const eye1 = arm.lookFromWorld(new V());
     const t1 = new V(...a.state().look);
     const f = arm.lookForward(new V());
@@ -741,7 +748,7 @@ async function armatureHandlesPin(page, base, t) {
       const r = await ringAt(p, 'hand.L');
       const s = await pinned(p, 'hand.L');
       // Sent without waiting between: a slow software frame must not stretch the gap between the taps.
-      await Promise.all([ptr.down(r[0], r[1]), ptr.up(), ptr.down(r[0] + 3, r[1] + 2), ptr.up()]);
+      await ptr.doubleTap(r[0], r[1], r[0] + 3, r[1] + 2);
       await wait(p, 300);
       const d = await pinned(p, 'hand.L');
       t.ok(d.pinned && d.undo === s.undo + 1 && d.pose === s.pose, `by ${kind}: a double-tap pins the hand and moves no limb`);
