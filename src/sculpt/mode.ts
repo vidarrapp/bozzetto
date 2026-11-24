@@ -2489,13 +2489,22 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       }
       if (!asked) {
         asked = true;
-        void askWindow({
+        // Asked once the press has ended: the window over the view would take the release, and the
+        // press would never be let go of.
+        let shown = false;
+        const ask = (): void => {
+          if (shown) return;
+          shown = true;
+          void askWindow({
           title: 'Remesh "Figure" to sculpt it?',
           text: 'Sculpting needs a surface of its own. The armature keeps its pose, and you can make another figure from it later.',
           yes: 'Remesh',
-        }).then((yes) => {
-          if (yes) void remeshFigure(figureSettings.resolution);
-        });
+          }).then((yes) => {
+            if (yes) void remeshFigure(figureSettings.resolution);
+          });
+        };
+        window.addEventListener('pointerup', () => window.setTimeout(ask, 0), { once: true });
+        window.addEventListener('pointercancel', () => window.setTimeout(ask, 0), { once: true });
       }
       return true;
     };
