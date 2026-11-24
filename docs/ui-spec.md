@@ -586,19 +586,40 @@ Tool, with Material before it.
   shows its digit, even with Hotkeys on tools off. Along the bar the others
   slide aside (transform, 140ms ease-out, none with reduced motion) and
   their badges show the digit they will have; letting go puts the tool there
-  (no notice; the tool in hand stays in hand). Letting go off the bar (more
-  than 56px above it or 24px past its ends), Esc, a cancelled pointer, the
+  (no notice; the tool in hand stays in hand). Esc, a cancelled pointer, the
   window losing focus or a second pointer going down fly the ghost back and
-  change nothing. A long press that ends without moving drops the tile back
-  and opens nothing yet. Nothing lifts mid-stroke, and the number keys wait
-  while a tool is lifted. Each workspace's order is kept through
-  `deviceStore` as `bozzetto-toolbar` (`{ v: 1, sculpt?, paint? }`, only an
-  order that differs from the default), read at start and made safe (unknown
-  ids and repeats dropped, tools a stored order lacks appended in the default
-  order); with saving off it holds for the visit and one notice says it will
-  not be kept. **View > Reset tool bar** (Sculpt and Paint, greyed while the
-  bar is the default) puts the default order back with a notice that has
-  Undo.
+  change nothing. Nothing lifts mid-stroke, and the number keys wait while a
+  tool is lifted.
+- **Taking a tool off the bar.** Letting go of a tile lifted from the bar
+  more than 56px above it or 24px past its ends takes the tool off that
+  bar. Out of the zone the ghost dims to half, so the outcome shows before
+  letting go, and the others close the gap and show the digits they will
+  have. On letting go the ghost shrinks away (160ms) and a notice says
+  "Clay is off the tool bar. It is still in the library." with Undo, which
+  puts the tool back in its old place. A bar may be emptied; Select,
+  Transform and Calipers stay. Each workspace's order is kept through
+  `deviceStore` as `bozzetto-toolbar`, `{ v: 2, sculpt?: { ids, known },
+  paint?: { ids, known } }`, only for an order that differs from the default.
+  `known` is the list of tools the app had for that bar when the record was
+  written: on load, only tools that are in the default bar and not in
+  `known` are appended (a tool a later version added); tools that are not in
+  the registry, not brushes of that workspace, or repeats are dropped. A
+  `v: 1` record (`{ sculpt?: ids, paint?: ids }`) is read as before, every
+  missing tool appended. With saving off the order holds for the visit and
+  one notice says it will not be kept. **View > Reset tool bar** (Sculpt and
+  Paint, greyed while the bar is the default) puts the default order back,
+  removed tools included, with a notice that has Undo.
+- **A tool in hand that is not on the bar** shows as one extra tile after
+  the last tool of the bar (before Transform), orange as the tool in hand,
+  with no digit and a dashed line inside it that says it is not kept. Its
+  name tip reads "Rake, not on the tool bar". Picking another tool makes it
+  go; lifting it and putting it on the bar keeps the tool there.
+- **The tile's menu.** A long press on a tile that ends without moving
+  (the lift is the long press; it did not go further than 8px) opens a small
+  menu at the tile in the app's menu look: **Tool settings** (takes the
+  tool in hand and opens the Tool panel) and **Remove from tool bar**, or
+  **Add to tool bar** for the extra tile. It closes on a tap outside, on Esc
+  and on a choice.
 - **Calipers** (hotkey C) is the last button, after Transform. It is not
   a brush: it measures between two points on the model and edits
   nothing. Its icon is the Uicons ruler until a drawn calipers glyph is
@@ -620,6 +641,57 @@ Tool, with Material before it.
   trash. A mirrored one shows a line under it with the other length and
   the difference. A delete is not a sculpt undo step; the section
   offers Undo for the last one deleted.
+
+
+### Asset library window
+
+- **One floating window**, "Asset library", over the view (`src/library`,
+  owned by the Studio shell so every workspace can open it). It has no
+  backdrop: the view under it stays live, a stroke on the model works with
+  it open, and only presses that start on the window are its own. Raised
+  grey with the 1px border and shadow of a window (docs/ui-foundations.md),
+  at z-index 30: above the panels, below the menus, the notices and every
+  asking window.
+- **Place and size.** About 420 by 480px, right of the middle, under the
+  strip and clear of the tool bar and the edge column. Dragged by its title
+  row (mouse, finger, Pencil; the row owns its touches) and resized from
+  the lower right corner (a 44px square). It is kept inside the view when
+  the page is resized. Place, size and last tab are kept through
+  `deviceStore` as `bozzetto-library`, `{ v: 1, x, y, w, h, tab }`; the
+  window itself does not reopen after a reload.
+- **Opening and closing.** A small **Library** button in the heading of the
+  Tool panel, and **View > Asset library**, a toggle in Sculpt, Paint and
+  Present (no key). The × in the title row is an icon button with the label
+  Close. Esc closes it when the focus is inside it. Tab hides it with the
+  rest of the interface; it is not closed by the panels' first Tab.
+- **Tabs and where from.** Tools, Materials, Lighting and HDRIs, always all
+  four. A tab's body is a view registered for it (`AssetLibrary.register`:
+  `mount`, `refresh`, `dispose`); a tab with none says one quiet line, for
+  example "Materials come to the library in a later version." Under the
+  tabs, two buttons, **Bozzetto** and **Mine** (the Community comes with a
+  later step and is not shown; room is left), and a **Search** field that
+  filters the tiles showing by name as you type ("Nothing called that." when
+  none match). Mine says "Copies you make of a tool show here." until there
+  are copies.
+- **The Tools tab, Bozzetto.** Every tool a bar can hold, in two groups
+  with small headings, **Sculpt** and **Paint**, the workspace you are in
+  first. A tile is at least 64px, the tool's icon with its name under it
+  and a small square in the corner while the tool is on its bar. The tool in
+  hand has the orange tile, as on the bar. **Tap** takes the tool in hand.
+  A tool of the other workspace is dimmed, and a tap on it says "This is a
+  Paint tool. It is used in Paint." (or the Sculpt wording) in the window's
+  foot and does nothing else; in Present a tap says "Tools are not used in
+  Present."
+- **Lifting from the window** is the dock's (same long press, same mouse
+  drag; only a tool of the workspace you are in lifts, and nothing lifts
+  mid-stroke). The tile stays and dims. Over the bar the gap opens at the
+  insertion point exactly as for a move: for a tool that is not on the bar
+  the bar's box widens and the tiles go where the layout will put them, so
+  nothing jumps when the order is set. Letting go on the bar puts the tool
+  at that place (a tool already on the bar moves there); letting go anywhere
+  else flies the ghost back to its tile. A long press on a tile that ends
+  without moving opens its menu: **Use**, and **Add to tool bar** or
+  **Remove from tool bar**.
 
 ### Edge controls
 

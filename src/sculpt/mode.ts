@@ -31,7 +31,7 @@ import type { SavedScene, SceneLink } from './bridge/ScenePersist';
 import type { BrushSymmetry, SymmetryAxis } from './bridge/symmetry';
 import { WorldScaleBrush } from './bridge/worldScale';
 import { buildToolTable, readToolTable, TOOLS_REV } from './tools/toolSettings';
-import { toolBars } from './tools/bars';
+import { sanitizeOrder, toolBars } from './tools/bars';
 import { TOOLS } from './tools/registry';
 import { TransformGizmo, type GizmoMode, type GizmoParts } from './bridge/transform';
 import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
@@ -44,6 +44,7 @@ import { suspensionText } from '../net/account';
 import { isProjectId } from '../net/ids';
 import { takeOpen } from '../ui/openToken';
 import { SculptToolbar } from './ui/SculptToolbar';
+import { ToolsView } from '../library/ToolsView';
 import { MeasureOverlay } from './ui/MeasureOverlay';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
@@ -1861,6 +1862,20 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // out with it until two objects are selected.
   scenePanel.onRefresh = () => modelPanel?.setMergeEnabled(!!scenePanel?.canMerge());
   sculptPanel = new SculptPanel(session, input, viewer);
+  // The Asset library's Tools tab reads the tool bar (the tool in hand, the dock), and the Tool panel's heading opens it.
+  studio.library.register(
+    'tools',
+    new ToolsView({
+      workspace: () => toolbar.workspace(),
+      inHand: () => toolbar.inHand(),
+      pick: (id) => toolbar.pick(id),
+      canUse: () => studio.now() !== 'present',
+      lift: (e, id, tile, menu) => toolbar.liftFromLibrary(e, id, tile, menu),
+      swallowing: () => toolbar.swallowing,
+      onState: (fn) => toolbar.onState(fn),
+    }),
+  );
+  sculptPanel.setLibraryButton(() => studio.library.open('tools'));
   sculptPanel.onGizmoParts = (parts) => {
     try {
       deviceStore.set('bozzetto-gizmo-parts', JSON.stringify(parts));
@@ -2250,7 +2265,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     gizmo, // transform modes, for the console and the tests
     present, // Present mode, its turntable and Save image
     /** The table of tools and the bars' order, for the console and the tests. */
-    tools: { registry: TOOLS, bars: toolBars },
+    tools: { registry: TOOLS, bars: toolBars, sanitizeOrder },
     /** The Paint workspace, for the console and the tests. */
     paintWorkspace: { enter: () => enterPaint(), leave: () => leavePaint(), isOn: () => paintOn },
     blend: blendModule, // the blend arithmetic, for the tests

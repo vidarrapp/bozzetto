@@ -1,29 +1,16 @@
 // Flaticon uicons, solid straight (fi-ss-*), for the brushes and for the
 // Negative button (circle-half-stroke: one style for every icon, owner
-// call). Whole style sheets are imported
-// for upgrade-proof font URLs; each font only downloads when one of its
-// glyphs first renders (sculpt mode). Attribution lives in the README.
-import '../../ui/icons';
+// call); toolIcon.ts draws them. Attribution lives in the README.
 import type { InputShell } from '../bridge/InputShell';
 import { eventTime, liftedOn, LONG_PRESS_MS, onTap, TAP_CLICK_MS } from '../../ui/dom';
 import { chordLabel, keymap } from '../../ui/keymap';
 import { slotAction, toolBars } from '../tools/bars';
-import { toolById, type ToolDef, type Workspace } from '../tools/registry';
+import { toolByEngine, toolById, type ToolDef, type Workspace } from '../tools/registry';
 import { Dock } from './dockDrag';
-import { tellNotKept } from './dockNotes';
-
-// Inline-SVG overrides: an ./icons/<slot>.svg (slots below, e.g. flatten.svg
-// or negative.svg) replaces that button's font glyph at build time. This is
-// the route for icons the npm uicons release does not ship; see icons/README.
-const svgIcons = import.meta.glob('./icons/*.svg', {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>;
-
-function svgFor(slot: string): string | null {
-  return svgIcons[`./icons/${slot}.svg`] ?? null;
-}
+import { addToBar, removeFromBar, tellNotKept } from './dockNotes';
+import { setPanel } from './panelMemory';
+import { openTileMenu } from './tileMenu';
+import { toolIcon } from './toolIcon';
 
 /**
  * The tool bar: the Select tool, the brushes and Transform in one
@@ -198,6 +185,13 @@ export class SculptToolbar {
     isStroking: () => this.input.isStroking(),
     nameOf: (id) => toolById(id)?.name ?? '',
     previewOrder: (ids) => this.previewOrder(ids),
+    inHand: (id) => this.inHandId() === id,
+    extra: () => this.extraTile(),
+    fixed: () => ({
+      lead: [this.selectBtn].filter((b) => !b.hidden),
+      trail: [this.extraTile(), this.transformBtn, this.measureBtn].filter((b): b is HTMLButtonElement => !!b && !b.hidden),
+    }),
+    menu: (id, tile) => this.openMenu(id, tile),
   });
 
   constructor(private readonly input: InputShell) {
@@ -294,7 +288,11 @@ export class SculptToolbar {
   /** The button of a brush on a workspace's bar, made on first need. */
   private brushButton(id: string, ws: Workspace): HTMLButtonElement | null {
     const have = this.btns.get(id);
-    if (have) return have;
+    if (have) {
+      // A tile that was the extra one is a tool of the bar now.
+      have.classList.remove('sculpt-toolbar__btn--extra');
+      return have;
+    }
     const def = toolById(id);
     if (!def || def.kind !== 'brush' || def.engine === null || !def.icon) return null;
     const engine = def.engine;
@@ -317,10 +315,19 @@ export class SculptToolbar {
    */
   private layout(): void {
     const ordered: HTMLButtonElement[] = [this.selectBtn];
+    const extra = this.extraId();
+    const extraBtn = (ws: Workspace): HTMLButtonElement | null => {
+      if (!extra || toolById(extra)?.workspace !== ws) return null;
+      const b = this.brushButton(extra, ws);
+      b?.classList.add('sculpt-toolbar__btn--extra');
+      return b;
+    };
     for (const id of toolBars.order('sculpt')) {
       const b = this.brushButton(id, 'sculpt');
       if (b) ordered.push(b);
     }
+    const sculptExtra = extraBtn('sculpt');
+    if (sculptExtra) ordered.push(sculptExtra);
     ordered.push(this.transformBtn, this.measureBtn);
     // Paint's buttons wait for the first time Paint is entered; after that they follow the bar too.
     if (this.paintBuilt) {
@@ -328,6 +335,8 @@ export class SculptToolbar {
         const b = this.brushButton(id, 'paint');
         if (b) ordered.push(b);
       }
+      const paintExtra = extraBtn('paint');
+      if (paintExtra) ordered.push(paintExtra);
     }
     // Buttons of a tool taken off a bar go away; they come back by being put on one again.
     const keep = new Set(ordered);
@@ -338,8 +347,39 @@ export class SculptToolbar {
       }
     }
     this.center.append(...ordered);
+    this.shownExtra = extra;
     this.applyVisibility();
     this.paintKeys();
+  }
+
+  /** The tool whose tile stands as the extra one, as the last layout had it. */
+  private shownExtra: string | null = null;
+
+  /**
+   * The tool in hand, when there is one: the engine's tool, unless the Select
+   * tool or the Calipers are up, and only one of this workspace.
+   */
+  private inHandId(): string | null {
+    if (this.selectOn) return null;
+    const def = toolByEngine(this.input.currentToolIndex());
+    if (!def || def.kind !== 'brush') return null;
+    if (def.workspace === 'paint' ? !this.paintOn : this.paintOn || this.measureOn) return null;
+    return def.id;
+  }
+
+  /** The tool in hand that is on no bar of its workspace: it stands as one extra tile, with no digit, until another tool is picked. */
+  private extraId(): string | null {
+    const id = this.inHandId();
+    const def = id ? toolById(id) : undefined;
+    if (!id || !def?.workspace || def.engine === null || !def.icon) return null;
+    return toolBars.placeOf(def.workspace, id) > 0 ? null : id;
+  }
+
+  /** The extra tile on show, or undefined. */
+  private extraTile(): HTMLButtonElement | undefined {
+    const id = this.shownExtra;
+    const b = id ? this.btns.get(id) : undefined;
+    return b && b.classList.contains('sculpt-toolbar__btn--extra') && !b.hidden ? b : undefined;
   }
 
   private paintBuilt = false;
@@ -351,7 +391,7 @@ export class SculptToolbar {
       const def = toolById(id);
       if (!def) continue;
       if (def.kind === 'mode') btn.hidden = paint && id !== 'bz.select';
-      else btn.hidden = toolBars.placeOf('paint', id) > 0 ? !paint : paint;
+      else btn.hidden = def.workspace === 'paint' ? !paint : paint;
     }
   }
 
@@ -367,7 +407,7 @@ export class SculptToolbar {
       let place = 0;
       if (def.kind === 'mode') action = def.keyAction ?? null;
       else {
-        const own: Workspace = toolBars.placeOf('paint', id) > 0 ? 'paint' : 'sculpt';
+        const own: Workspace = def.workspace === 'paint' ? 'paint' : 'sculpt';
         place = toolBars.placeOf(own, id);
         action = place >= 1 && place <= 10 ? slotAction(place) : null;
       }
@@ -375,7 +415,10 @@ export class SculptToolbar {
       setButtonKey(btn, chord);
       if (place) btn.dataset.place = String(place);
       else delete btn.dataset.place;
-      btn.setAttribute('aria-label', keyedName(def.label, chord));
+      const extra = btn.classList.contains('sculpt-toolbar__btn--extra');
+      btn.setAttribute('aria-label', extra ? `${def.name}, not on the tool bar` : keyedName(def.label, chord));
+      const tipName = btn.querySelector('.bz-tip__name');
+      if (tipName) tipName.textContent = extra ? `${def.name} \u00b7 not on the tool bar` : def.name;
     }
   }
 
@@ -412,17 +455,20 @@ export class SculptToolbar {
     this.paintOn = paint;
     this.applyVisibility();
     this.root.classList.toggle('sculpt-toolbar--paint', paint);
+    this.layout();
     this.refresh();
     window.dispatchEvent(new Event('bozzetto:shell-layout'));
   }
 
   /** Reflect the active brush, and Negative's arm or latch, on the buttons. */
   private refresh(): void {
+    // A tool in hand that is not on the bar gets its tile; another tool in hand takes it away.
+    if (this.extraId() !== this.shownExtra) this.layout();
     const active = this.input.currentToolIndex();
     for (const [id, btn] of this.btns) {
       const def = toolById(id);
       if (!def || def.kind !== 'brush') continue;
-      const onPaint = toolBars.placeOf('paint', id) > 0;
+      const onPaint = def.workspace === 'paint';
       // With the Select tool up no brush is the active one, whatever the
       // vendor's current tool index still says (nor with the Calipers up,
       // on Sculpt's bar).
@@ -435,6 +481,68 @@ export class SculptToolbar {
     this.negativeBtn.classList.toggle('sculpt-toolbar__btn--active', latched);
     this.negativeBtn.classList.toggle('sculpt-toolbar__btn--armed', !latched && this.input.getNegativeArmed());
     this.keepInView();
+    for (const fn of [...this.listeners]) fn();
+  }
+
+  private readonly listeners = new Set<() => void>();
+
+  /** Hear the tool in hand, the workspace or the bar change (the Asset library marks its tiles by it). */
+  onState(fn: () => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  /** The workspace whose bar is showing. */
+  workspace(): Workspace {
+    return this.paintOn ? 'paint' : 'sculpt';
+  }
+
+  /** The tool in hand, by id, or null (the Select tool, the Calipers, none). */
+  inHand(): string | null {
+    return this.inHandId();
+  }
+
+  /** Take a tool in hand, as a tap on its tile does. */
+  pick(id: string): void {
+    const engine = toolById(id)?.engine;
+    if (engine !== undefined && engine !== null) this.input.selectBrush(engine);
+  }
+
+  /** Nothing is lifted or picked while a stroke is under way. */
+  isStroking(): boolean {
+    return this.input.isStroking();
+  }
+
+  /** A press on a tile of the Asset library that may lift (dockDrag.ts); `menu` is what its long press without moving opens. */
+  liftFromLibrary(e: PointerEvent, id: string, tile: HTMLElement, menu: () => void): void {
+    this.dock.beginFromWindow(e, id, tile, menu);
+  }
+
+  /** Whether the last press on a library tile was a lift or a slip, and so not a tap. */
+  get swallowing(): boolean {
+    return this.dock.swallowing;
+  }
+
+  /** Take a tool in hand and open the Tool panel on it. */
+  showSettings(id: string): void {
+    this.pick(id);
+    setPanel('sculpt', true);
+  }
+
+  /** The menu of a tile on the bar: its settings, and taking it off the bar (or keeping it, if it is the extra tile). */
+  private openMenu(id: string, tile: HTMLElement): void {
+    const def = toolById(id);
+    if (!def?.workspace) return;
+    const ws = def.workspace;
+    const kept = toolBars.placeOf(ws, id) > 0;
+    openTileMenu(
+      tile,
+      [
+        { label: 'Tool settings', action: () => this.showSettings(id) },
+        kept ? { label: 'Remove from tool bar', action: () => removeFromBar(ws, id) } : { label: 'Add to tool bar', action: () => addToBar(ws, id) },
+      ],
+      true,
+    );
   }
 
   /** Where the bar scrolls sideways (a phone), the tool in hand is brought to its middle. */
@@ -466,21 +574,7 @@ function toolButton(key: string, title: string, slot: string, icon: string, tip?
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'sculpt-toolbar__btn';
-  const svg = svgFor(slot);
-  if (svg) {
-    // Inline SVG from the repo (trusted content); CSS recolors it via
-    // currentColor and sizes it like the font glyphs.
-    const holder = document.createElement('span');
-    holder.className = 'sculpt-toolbar__svg';
-    holder.setAttribute('aria-hidden', 'true');
-    holder.innerHTML = svg;
-    btn.appendChild(holder);
-  } else {
-    const glyph = document.createElement('i');
-    glyph.className = `fi ${icon}`;
-    glyph.setAttribute('aria-hidden', 'true');
-    btn.appendChild(glyph);
-  }
+  btn.appendChild(toolIcon(slot, icon));
   if (key) {
     // The hotkey digit stays visible as a corner badge (and as the button
     // text the headless suite matches on).

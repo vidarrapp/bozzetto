@@ -38,6 +38,8 @@ export interface ViewHooks {
   toolKeys?: boolean;
   /** Reset tool bar: the default order back on this workspace's bar (greyed out while it is the default). */
   toolBar?: { isDefault: () => boolean; reset: () => void };
+  /** The Asset library window, a toggle (no key for now). */
+  assetLibrary?: { get: () => boolean; toggle: () => void };
   /** The panels this mode has, in the order of the menu: [id, name]. */
   panels: Array<[id: string, name: string, enabled?: () => boolean]>;
   /** Keep the panels as given, not in the order of the other places' tabs (the viewer's Lighting is at the right). */
@@ -117,6 +119,7 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
   group(...looks);
 
   const hide = h.hideInterface;
+  const library = h.assetLibrary;
   group(
     ...(h.panelsInOrder ? [...h.panels] : [...h.panels].sort((a, b) => panelRank(a[0]) - panelRank(b[0]))).map(
       ([id, name, enabled]): MenuItem => ({
@@ -126,6 +129,7 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
         toggle: (on) => setPanel(id, on),
       }),
     ),
+    ...(library ? [{ label: 'Asset library', checked: library.get, toggle: () => library.toggle() } satisfies MenuItem] : []),
     { label: 'Hide interface', key: keyFor('ui.chrome'), action: hide },
   );
 

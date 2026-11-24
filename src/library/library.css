@@ -1,0 +1,376 @@
+/* The Asset library window (library/AssetLibrary.ts, docs/ui-spec.md).
+   A floating window over the view: raised grey with the 1px border and shadow
+   every window has (docs/ui-foundations.md), above the panels (14, 15) and
+   under the menus (40), the notices and every asking window (200 and up).
+   It has no backdrop: only a press that starts on it is its own. */
+.lib-window {
+  position: fixed;
+  z-index: 30;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bz-raised);
+  color: var(--bz-text);
+  box-shadow: var(--bz-raised-shadow);
+  font: 400 13px/16px var(--bz-font);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  outline: none;
+}
+
+.lib-window[hidden] {
+  display: none;
+}
+
+.lib-window.is-dragging {
+  cursor: grabbing;
+}
+
+/* The title row is the handle: it owns its touches, so a finger or the Pencil moves the window and nothing scrolls. */
+.lib-title {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 0 0 16px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.lib-title__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 16px/20px var(--bz-font);
+}
+
+.lib-close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--bz-text-2);
+  cursor: pointer;
+}
+
+.lib-close .fi {
+  font-size: 22px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.lib-close:hover {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+}
+
+.lib-close:focus-visible,
+.lib-tab:focus-visible,
+.lib-where:focus-visible,
+.lib-tile:focus-visible,
+.lib-search:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
+}
+
+.lib-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--bz-sep);
+}
+
+/* The tab in front is the lighter one: grey by tone, orange is for the tool in hand. */
+.lib-tab {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+  cursor: pointer;
+}
+
+.lib-tab:hover {
+  color: var(--bz-text);
+}
+
+.lib-tab.is-on {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+  font-weight: 600;
+}
+
+.lib-from {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.lib-from[hidden] {
+  display: none;
+}
+
+.lib-wheres {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+}
+
+.lib-where {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bz-control);
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+  cursor: pointer;
+}
+
+.lib-where:hover {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+}
+
+.lib-where.is-on {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+  font-weight: 600;
+}
+
+.lib-search {
+  flex: 1 1 80px;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 32px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-bottom: 1px solid var(--bz-line);
+  border-radius: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.lib-search::-webkit-search-cancel-button {
+  display: none;
+}
+
+.lib-search::placeholder {
+  color: var(--bz-text-hint);
+}
+
+.lib-bodies {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.lib-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 12px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bz-line) transparent;
+}
+
+.lib-body[hidden] {
+  display: none;
+}
+
+/* A quiet line: what a tab says while it has nothing, and what a search that finds nothing says. */
+.lib-later {
+  margin: 8px 4px;
+  color: var(--bz-text-hint);
+  font: 400 13px/18px var(--bz-font);
+}
+
+.lib-later[hidden] {
+  display: none;
+}
+
+.lib-foot {
+  flex: 0 0 auto;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 6px 16px 6px 12px;
+  border-top: 1px solid var(--bz-sep);
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+}
+
+/* --- the Tools tab: a heading and a grid of tiles for each workspace --- */
+.lib-group[hidden] {
+  display: none;
+}
+
+.lib-group__head {
+  margin: 8px 4px 4px;
+  color: var(--bz-text-2);
+  font: 400 11px/16px var(--bz-font-mono);
+}
+
+.lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 4px;
+}
+
+/* A tile: the tool's icon, its name under it. 64px least, so a finger hits it; it owns its touches, so a long press lifts it. */
+.lib-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-sizing: border-box;
+  min-width: 64px;
+  min-height: 64px;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 400 12px/13px var(--bz-font);
+  text-align: center;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.lib-tile[hidden] {
+  display: none;
+}
+
+.lib-tile .fi {
+  font-size: 22px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.lib-tile .sculpt-toolbar__svg {
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+}
+
+.lib-tile__name {
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+@media (hover: hover) {
+  .lib-tile:hover {
+    background: var(--bz-hover);
+  }
+}
+
+/* A tool of the other workspace: dimmed, and a tap says where it is used. */
+.lib-tile.is-other {
+  color: var(--bz-text-3);
+}
+
+/* The mark: a small square in the corner for a tool that is on the bar. */
+.lib-tile__mark {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  background: var(--bz-text-2);
+  display: none;
+}
+
+.lib-tile.is-kept .lib-tile__mark {
+  display: block;
+}
+
+/* The tool in hand, as on the bar: orange, its icon and name black. */
+.lib-tile.is-hand,
+.lib-tile.is-hand:hover {
+  background: var(--bz-orange);
+  color: var(--bz-on-accent);
+}
+
+.lib-tile.is-hand .lib-tile__mark {
+  background: var(--bz-on-accent);
+}
+
+/* The tile a lifted tool came from stays and dims. */
+.lib-tile.dock-origin {
+  opacity: 0.4;
+}
+
+/* The resize corner: a 44px square for a finger, two short lines to see. */
+.lib-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 44px;
+  height: 44px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.lib-grip::before {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 12px;
+  height: 12px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M11 4 4 11M11 8 8 11' stroke='%235c5c5c' stroke-width='1.5' fill='none'/%3E%3C/svg%3E") no-repeat;
+}
+
+/* The window goes with the rest of the interface when it is hidden (Tab), and slides no way: it fades. */
+body.chrome-hidden .lib-window {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease-out,
+    visibility 0s linear 0.2s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.chrome-hidden .lib-window {
+    transition: none;
+  }
+}
+
+/* The menu of a tile stands over the window and the bar. */
+.file-menu.tile-menu {
+  z-index: 41;
+  min-width: 160px;
+}
