@@ -676,7 +676,8 @@ Tool, with Material before it.
 - **The Tools tab, Bozzetto.** Every tool a bar can hold, in two groups
   with small headings, **Sculpt** and **Paint**, the workspace you are in
   first. A tile is at least 64px, the tool's icon with its name under it
-  and a small square in the corner while the tool is on its bar. The tool in
+  and, while the tool is on its bar, its key there in the corner (the bar's
+  own digit; a dot for a place with no plain key). The tool in
   hand has the orange tile, as on the bar. **Tap** takes the tool in hand.
   A tool of the other workspace is dimmed, and a tap on it says "This is a
   Paint tool. It is used in Paint." (or the Sculpt wording) in the window's

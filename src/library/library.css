@@ -301,14 +301,14 @@
   color: var(--bz-text-3);
 }
 
-/* The mark: a small square in the corner for a tool that is on the bar. */
+/* The mark of a tool that is on the bar: its key there, the same digit the bar shows (owner, 2026-11-24:
+   a bare square said nothing). A place with no key of its own shows a dot. */
 .lib-tile__mark {
   position: absolute;
-  top: 5px;
+  top: 4px;
   right: 5px;
-  width: 6px;
-  height: 6px;
-  background: var(--bz-text-2);
+  font: 400 11px/1 var(--bz-font-mono);
+  color: var(--bz-text-2);
   display: none;
 }
 
@@ -324,7 +324,7 @@
 }
 
 .lib-tile.is-hand .lib-tile__mark {
-  background: var(--bz-on-accent);
+  color: var(--bz-on-accent);
 }
 
 /* The tile a lifted tool came from stays and dims. */

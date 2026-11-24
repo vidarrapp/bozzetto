@@ -1,5 +1,6 @@
 import { onTap } from '../ui/dom';
-import { DEFAULT_BARS, toolBars } from '../sculpt/tools/bars';
+import { DEFAULT_BARS, slotAction, toolBars } from '../sculpt/tools/bars';
+import { chordLabel, keymap } from '../ui/keymap';
 import { TOOLS, toolById, type ToolDef, type Workspace } from '../sculpt/tools/registry';
 import { addToBar, removeFromBar } from '../sculpt/ui/dockNotes';
 import { openTileMenu } from '../sculpt/ui/tileMenu';
@@ -64,6 +65,7 @@ export class ToolsView implements LibraryView {
   private readonly mine = document.createElement('p');
   private offState: (() => void) | null = null;
   private offBars: (() => void) | null = null;
+  private offKeys: (() => void) | null = null;
 
   constructor(private readonly host: ToolsHost) {}
 
@@ -99,6 +101,8 @@ export class ToolsView implements LibraryView {
     body.appendChild(root);
     this.offState = this.host.onState(() => this.paint());
     this.offBars = toolBars.onChange(() => this.paint());
+    // A key rebound in Preferences shows on the tiles as it does on the bar.
+    this.offKeys = keymap.onChange(() => this.paint());
     this.refresh();
   }
 
@@ -185,7 +189,11 @@ export class ToolsView implements LibraryView {
     const usable = this.host.canUse();
     for (const t of this.tiles) {
       const own = t.def.workspace === ws && usable;
-      const kept = t.def.workspace ? toolBars.placeOf(t.def.workspace, t.def.id) > 0 : false;
+      const place = t.def.workspace ? toolBars.placeOf(t.def.workspace, t.def.id) : 0;
+      const kept = place > 0;
+      // The key of its place on the bar, as the bar's own badge has it; a dot where the place has no plain key.
+      const chord = place >= 1 && place <= 10 ? keymap.chordFor(slotAction(place)) : null;
+      t.mark.textContent = !kept ? '' : chord && !chord.includes('+') ? (chord.length === 1 ? chord : chordLabel(chord)) : '•';
       t.el.classList.toggle('is-hand', own && hand === t.def.id);
       t.el.classList.toggle('is-other', !own);
       t.el.classList.toggle('is-kept', kept);
@@ -198,6 +206,8 @@ export class ToolsView implements LibraryView {
     this.offBars?.();
     this.offState = null;
     this.offBars = null;
+    this.offKeys?.();
+    this.offKeys = null;
     this.root?.remove();
     this.root = null;
     this.tiles.length = 0;
