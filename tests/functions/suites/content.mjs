@@ -98,6 +98,29 @@ const withGroups = (h, edit, { v = 2, levels = 1, len, colors = false } = {}) =>
   edit?.(groups, h);
 };
 
+/**
+ * Give the scene's object sculpt layers (SavedMesh.layers, layersRecord.ts):
+ * version 2 by default, as the app writes them. One layer that moved two
+ * vertices (u32 ids, f32 displacements, three a vertex), and with `full` a
+ * group and a layer inside it with a mask (u8 values and u32 run lengths,
+ * one of each a run). `edit` then has its way with them.
+ */
+const withLayers = (h, edit, { v = 2, full = false } = {}) => {
+  const add = (t, n) => {
+    const end = h.buffers.reduce((e, b) => Math.max(e, b.off + b.len * (b.t === 'u8' ? 1 : 4)), 0);
+    h.buffers.push({ t, off: Math.ceil(end / 4) * 4, len: n });
+    return { __buf: h.buffers.length - 1 };
+  };
+  const items = [{ name: 'Layer 1', weight: 1, visible: true, ids: add('u32', 2), vals: add('f32', 6) }];
+  if (full) {
+    items.push({ name: 'Group 1', weight: 1, visible: true, kind: 'group' });
+    items.push({ name: 'Layer 2', weight: 0.5, visible: true, parent: 1, ids: add('u32', 1), vals: add('f32', 3), maskVals: add('u8', 3), maskLens: add('u32', 3) });
+  }
+  const layers = { v, active: 0, items };
+  h.scene.meshes[0].layers = layers;
+  edit?.(layers, h);
+};
+
 export async function run({ checks, on, off, compileShared, repo }) {
   const member = new Browser(on, { ip: '198.51.100.60', clock: { now: T + 60_000 } });
   member.jar.set('__Host-bz_session', seededToken('cn-member'));
@@ -174,6 +197,11 @@ export async function run({ checks, on, off, compileShared, repo }) {
     [bozz({ edit: (h) => withSource(h, (src) => (src.faceSizes = [3])) }), /OBJ numbering record/, 'an OBJ record whose face sizes are no array'],
     // The poly groups (SavedMesh.groups), one thing wrong at a time.
     [bozz({ edit: (h) => withGroups(h, (g) => (g.v = 3)) }), /bad poly groups \(a version/, 'poly groups of a version there is not'],
+    [bozz({ edit: (h) => withLayers(h, (l) => (l.v = 3)) }), /bad layers \(not a record this app reads/, 'sculpt layers of a version there is not'],
+    [bozz({ edit: (h) => withLayers(h, (l, hh) => (hh.buffers[l.items[0].vals.__buf].len = 5)) }), /bad layers \(data of the wrong kind or size/, 'a layer whose displacements are not three a vertex'],
+    [bozz({ edit: (h) => withLayers(h, (l, hh) => (hh.buffers[l.items[2].maskLens.__buf].len = 2), { full: true }) }), /bad layers \(a mask of the wrong kind or size/, 'a layer mask with fewer run lengths than values'],
+    [bozz({ edit: (h) => withLayers(h, (l, hh) => (hh.buffers[l.items[2].maskVals.__buf].t = 'f32'), { full: true }) }), /bad layers \(a mask of the wrong kind or size/, 'a layer mask whose values are floats'],
+    [bozz({ edit: (h) => withLayers(h, (l) => delete l.items[2].maskLens, { full: true }) }), /bad layers \(a mask of the wrong kind or size/, 'a layer mask with no run lengths'],
     [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.faces.__buf].len = 0)) }), /bad poly groups \(not one group a face of its level 0/, 'poly groups (version 2) for fewer faces than level 0 has'],
     [bozz({ edit: (h) => withGroups(h, null, { levels: 2, len: 4 }) }), /bad poly groups \(not one group a face of its level 0/, 'poly groups (version 2) sized to the top level of two'],
     [bozz({ edit: (h) => withGroups(h, null, { v: 1, levels: 2, len: 1 }) }), /bad poly groups \(not one group a face of its top level/, 'poly groups (version 1) sized to level 0 of two'],
@@ -215,6 +243,13 @@ export async function run({ checks, on, off, compileShared, repo }) {
   t.ok(grouped.status === 201, `a scene with poly groups and their hidden flags (a u8 array) is taken (${grouped.status} ${grouped.json?.reason ?? ''})`);
   const { r: noHidden } = await send(bozz({ edit: (h) => withGroups(h, (g) => delete g.hidden) }));
   t.ok(noHidden.status === 201, `and one with nothing hidden (${noHidden.status} ${noHidden.json?.reason ?? ''})`);
+  // Sculpt layers: version 2 is what the app writes (groups and masks), version 1 what it wrote before.
+  const { r: layered } = await send(bozz({ edit: (h) => withLayers(h) }));
+  t.ok(layered.status === 201, `a scene with sculpt layers of version 2, as the app writes them, is taken (${layered.status} ${layered.json?.reason ?? ''})`);
+  const { r: layeredFull } = await send(bozz({ edit: (h) => withLayers(h, null, { full: true }) }));
+  t.ok(layeredFull.status === 201, `and one with a group and a masked layer (${layeredFull.status} ${layeredFull.json?.reason ?? ''})`);
+  const { r: layeredOld } = await send(bozz({ edit: (h) => withLayers(h, null, { v: 1 }) }));
+  t.ok(layeredOld.status === 201, `and version 1 still is (${layeredOld.status} ${layeredOld.json?.reason ?? ''})`);
   const { r: coloured } = await send(bozz({ edit: (h) => withGroups(h, null, { colors: true }) }));
   t.ok(coloured.status === 201, `and one with group colours, a u32 array of one a group (${coloured.status} ${coloured.json?.reason ?? ''})`);
   const { r: bareGroups } = await send(bozz({ raw: true, edit: (h) => withGroups(h) }));
