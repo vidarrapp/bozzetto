@@ -8,7 +8,7 @@ import type { LookState, Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
 import { GeometrySync } from './bridge/GeometrySync';
-import { TooManyGroups } from './bridge/polyGroups';
+import { GROUPS_LOCKED_NOTICE, TooManyGroups } from './bridge/polyGroups';
 import { InputShell, SPACING_REV, STRENGTH_REV } from './bridge/InputShell';
 import { PROFILE_REV } from './bridge/profile';
 import Enums from '@sculpt-vendor/misc/Enums';
@@ -735,7 +735,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     if (!mesh) return;
     try {
       const g = session.groups.fromMask(mesh);
-      if (g === -1) statusToast('').fail('Mask some faces first: a face whose corners are all masked joins the new group.');
+      if (g === -3) statusToast('').fail(GROUPS_LOCKED_NOTICE);
+      else if (g === -1) statusToast('').fail('Mask some faces first: a face whose corners are all masked joins the new group.');
       else if (g < 0) statusToast('').fail('Too little is masked: groups follow the base mesh, so a base face joins when most of it is masked. Mask more, or step down to level 0.');
       else if (session.groups.lastSnapped) statusToast('').done(`${session.groups.names(mesh)[g]}: the masked faces, to the nearest base-mesh edges`);
       else statusToast('').done(`${session.groups.names(mesh)[g]}: the masked faces`);

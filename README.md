@@ -172,6 +172,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **Poly groups and dynamic topology.** While an object has dynamic topology on, its poly groups are kept but cannot be made or edited. A notice says so.
+
 ### v0.7.11
 
 - **Asset library.** A window that floats over the view and stays open while you work. Open it with the **Library** button in the Tool panel or **View**, then **Asset library**. Its Tools tab shows every tool, Sculpt and Paint, and a tap takes one in hand. Press and hold a tool there and drag it onto the tool bar to put it at that place. Materials, Lighting and HDRIs come to it in a later version.

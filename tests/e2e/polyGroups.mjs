@@ -34,6 +34,11 @@
 // - dynamic topology carries the groups to its triangles and back; a
 //   mirror copy keeps them on the mirrored faces; a voxel remesh moves them
 //   to the new faces by the nearest face;
+// - with dynamic topology on, the groups are locked: every action that
+//   makes or edits them refuses with no undo step, Ctrl+G and the row
+//   actions say so, the Model panel's note shows and its making buttons
+//   are off; hide, isolate, Show all and the colour switch still work; off
+//   again, the actions work;
 // - an OBJ's g lines import as groups, export back unchanged while the
 //   groups are the file's, and as new g lines once they change, which
 //   import again as the same groups; the triangle export writes g lines;
@@ -817,6 +822,122 @@ export const suites = {
       return { wrong, wrongBack, names, tris: tri.length, quads: quadsBefore, same: session.getMesh() === before };
     });
     t.ok(dyn.wrong === 0 && dyn.wrongBack === 0 && dyn.names === 6 && dyn.same, `dynamic topology carries the groups to its ${dyn.tris} triangles and back (${JSON.stringify(dyn)})`);
+
+    // --- locked while dynamic topology is on (owner decision, 2026-11-24) --------------
+    // The groups are kept and follow the triangles, but cannot be made or
+    // edited until dynamic topology is off; showing, hiding and isolating stay.
+    await page.evaluate(() => window.__sculpt.session.toggleDynamicTopology());
+    t.ok(await openPanel(page, 'Model'), 'the Model panel opens for the locked groups');
+    const lockSnap = () =>
+      page.evaluate(() => {
+        const { session } = window.__sculpt;
+        const m = session.getMesh();
+        const g = session.groups;
+        return {
+          dyn: !!m.isDynamic,
+          names: g.names(m).join('|'),
+          hidden: g.hiddenGroups(m).join(','),
+          base: Array.from(g.baseFaces(m)).join(','),
+          undo: session.getStateManager()._curUndoIndex,
+        };
+      });
+    const L0 = await lockSnap();
+    const locked = await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const m = session.getMesh();
+      const G = session.groups;
+      return {
+        fromMask: G.fromMask(m),
+        byAngle: G.byAngle(m, 40),
+        byAngleVote: G.byAngle(m, 40, 'vote'),
+        visible: G.groupVisible(m),
+        auto: G.autoIslands(m),
+        clearAll: G.clearAll(m),
+        removeUnused: G.removeUnused(m),
+        rename: G.rename(m, 1, 'Nope'),
+        colour: G.setColor(m, 1, 0x123456),
+        preview: G.previewColor(m, 1, 0x123456),
+        remove: G.remove(m, 1),
+        uv: session.groupByUVIslands(m),
+      };
+    });
+    const L1 = await lockSnap();
+    t.ok(
+      L0.dyn && locked.fromMask === -3 && locked.byAngle === 0 && locked.byAngleVote === 0 && locked.visible === -1 && locked.auto === 0 && !locked.clearAll && locked.removeUnused === 0 && !locked.rename && !locked.colour && !locked.preview && !locked.remove && locked.uv === 0 && L1.names === L0.names && L1.base === L0.base && L1.undo === L0.undo,
+      `with dynamic topology on, every group action refuses and changes nothing (${JSON.stringify(locked)})`,
+    );
+    const kept = await page.evaluate(() => {
+      const { session, modelPanel } = window.__sculpt;
+      const m = session.getMesh();
+      const G = session.groups;
+      const hid = G.setHidden(m, 0, true);
+      const iso = G.isolate(m, 1);
+      const shown = G.showAll(m);
+      const was = G.isShowing();
+      modelPanel.onGroupColors(!was);
+      const toggled = G.isShowing() !== was;
+      modelPanel.onGroupColors(was);
+      return { hid, iso, shown, toggled };
+    });
+    const S2 = await lockSnap();
+    t.ok(kept.hid && kept.iso === 'isolated' && kept.shown && kept.toggled && S2.undo > L1.undo, `hide, isolate, Show all and the group colours still work while locked (${JSON.stringify(kept)})`);
+    const panel = await page.evaluate(() => {
+      const sec = document.querySelector('[data-role="groups"]');
+      const note = sec.querySelector('.layers-note');
+      const off = (r) => !!document.querySelector(`[data-role="${r}"]`)?.disabled;
+      return {
+        note: !!note && !note.hidden && /Poly groups need dynamic topology off\./.test(note.textContent),
+        off: ['groups-from-mask', 'groups-visible', 'groups-auto', 'groups-by-angle', 'groups-by-uv', 'groups-clear', 'groups-remove-unused'].map(off),
+        eyes: [...sec.querySelectorAll('[data-role="group-eye"]')].filter((b) => !b.disabled).length,
+        colours: !sec.querySelector('input[type="checkbox"]').disabled,
+      };
+    });
+    t.ok(panel.note && panel.off.every(Boolean) && panel.eyes === 6 && panel.colours, `the Groups note says so, the making buttons are off, the eyes and the colour switch stay on (${JSON.stringify(panel)})`);
+    const tapSel = async (sel) => {
+      await page.evaluate((s) => document.querySelector(s)?.scrollIntoView({ block: 'center', behavior: 'instant' }), sel);
+      await frames(page);
+      const box = await page.locator(sel).first().boundingBox();
+      await dev.tap([box.x + box.width / 2, box.y + box.height / 2]);
+      await frames(page);
+    };
+    const noticed = () => page.evaluate(() => [...document.querySelectorAll('.sculpt-toast')].some((e) => /Poly groups need dynamic topology off\./.test(e.textContent)));
+    await page.evaluate(() => document.querySelectorAll('.sculpt-toast').forEach((e) => e.remove()));
+    await tapSel('[data-role="groups-list"] .groups-row[data-group="1"] .groups-row__name');
+    const renameNoticed = await noticed();
+    const renameField = await page.evaluate(() => !!document.querySelector('.groups-row__rename'));
+    await page.evaluate(() => document.querySelectorAll('.sculpt-toast').forEach((e) => e.remove()));
+    await tapSel('[data-role="groups-list"] .groups-row[data-group="5"] [data-role="group-delete"]');
+    const deleteNoticed = await noticed();
+    const afterTaps = await lockSnap();
+    t.ok(renameNoticed && !renameField && deleteNoticed && afterTaps.names === L0.names && afterTaps.base === L0.base && afterTaps.undo === S2.undo, 'a tap on a name or a delete says why and changes nothing');
+    await page.evaluate(() => document.querySelectorAll('.sculpt-toast').forEach((e) => e.remove()));
+    await page.keyboard.press('Control+g');
+    await frames(page);
+    const keyNoticed = await noticed();
+    const afterKey = await lockSnap();
+    t.ok(keyNoticed && afterKey.names === L0.names && afterKey.base === L0.base && afterKey.undo === S2.undo, 'Ctrl+G says the groups are locked and makes none');
+    await page.evaluate(() => window.__sculpt.session.toggleDynamicTopology());
+    await frames(page);
+    const offPanel = await page.evaluate(() => {
+      const sec = document.querySelector('[data-role="groups"]');
+      return {
+        dyn: !!window.__sculpt.session.getMesh().isDynamic,
+        noteHidden: sec.querySelector('.layers-note').hidden,
+        visible: !document.querySelector('[data-role="groups-visible"]').disabled,
+        clear: !document.querySelector('[data-role="groups-clear"]').disabled,
+      };
+    });
+    const unlock = await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const m = session.getMesh();
+      const G = session.groups;
+      const before = G.names(m)[1];
+      const r = G.rename(m, 1, 'Unlocked');
+      const named = G.names(m)[1];
+      session.undo();
+      return { before, r, named, restored: G.names(m)[1] };
+    });
+    t.ok(!offPanel.dyn && offPanel.noteHidden && offPanel.visible && offPanel.clear && unlock.r && unlock.named === 'Unlocked' && unlock.restored === unlock.before, `with dynamic topology off again the note goes and the groups can be edited (${JSON.stringify({ ...offPanel, unlock })})`);
     const mirror = await page.evaluate(() => {
       const { session } = window.__sculpt;
       const cube = session.getMesh();

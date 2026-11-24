@@ -265,6 +265,9 @@ export interface GroupsHost {
 /** Thrown when a change would make more groups than an object may have. */
 export class TooManyGroups extends Error {}
 
+/** The sentence every locked group action says (the Model panel's note says it too). */
+export const GROUPS_LOCKED_NOTICE = 'Poly groups need dynamic topology off.';
+
 export class PolyGroups {
   private readonly records = new WeakMap<SculptMesh, GroupRecord>();
   /**
@@ -300,6 +303,16 @@ export class PolyGroups {
   }
 
   // --- the record -----------------------------------------------------------
+
+  /**
+   * Whether the groups can be made or edited (owner decision, 2026-11-24):
+   * an object with dynamic topology on keeps its groups, which follow the
+   * triangles, but they stay as they are until it is off again. Showing,
+   * hiding and masking by group are not locked.
+   */
+  editable(mesh: SculptMesh): boolean {
+    return !mesh.isDynamic;
+  }
 
   private rec(mesh: SculptMesh): GroupRecord {
     let r = this.records.get(mesh);
@@ -340,6 +353,7 @@ export class PolyGroups {
    * commits it. Returns whether the group is there.
    */
   previewColor(mesh: SculptMesh, g: number, packed: number): boolean {
+    if (!this.editable(mesh)) return false;
     const r = this.rec(mesh);
     fitToNames(r);
     if (g < 0 || g >= r.names.length) return false;
@@ -354,6 +368,7 @@ export class PolyGroups {
    * False when nothing changes.
    */
   setColor(mesh: SculptMesh, g: number, packed: number, before?: number): boolean {
+    if (!this.editable(mesh)) return false;
     const r = this.rec(mesh);
     fitToNames(r);
     if (g < 0 || g >= r.names.length) return false;
@@ -820,9 +835,11 @@ export class PolyGroups {
    * masked faces are rounded down to level 0 by share (roundDown). The
    * mask is cleared in the same undo step (owner call, 2026-11-01: mask
    * from the group afterwards, Ctrl+click). Returns the new group, -1
-   * when no face is masked, -2 when none is left at level 0.
+   * when no face is masked, -2 when none is left at level 0, -3 when the
+   * object has dynamic topology on (the groups are locked).
    */
   fromMask(mesh: SculptMesh): number {
+    if (!this.editable(mesh)) return -3;
     const r = this.rec(mesh);
     const mat = mesh.getMaterials();
     const fAr = mesh.getFaces();
@@ -921,6 +938,7 @@ export class PolyGroups {
    * tests measure both).
    */
   byAngle(mesh: SculptMesh, degrees: number, method: 'level0' | 'vote' = 'level0'): number {
+    if (!this.editable(mesh)) return 0;
     const cos = Math.cos((Math.min(180, Math.max(0, degrees)) * Math.PI) / 180);
     const raw = mesh.getFaceNormals();
     const nScreen = mesh.getNbFaces();
@@ -970,6 +988,7 @@ export class PolyGroups {
    * (the import, which is its own undo step).
    */
   fromLevel0(mesh: SculptMesh, perFace: Uint32Array, names: string[], undoable = true): boolean {
+    if (undoable && !this.editable(mesh)) return false;
     const levels = levelsOf(mesh);
     if (perFace.length !== levels[0].getNbFaces()) return false;
     if (!undoable) {
@@ -992,6 +1011,7 @@ export class PolyGroups {
    * shows.
    */
   groupVisible(mesh: SculptMesh): number {
+    if (!this.editable(mesh)) return -1;
     const r = this.rec(mesh);
     const base = this.baseFaces(mesh);
     let any = false;
@@ -1019,6 +1039,7 @@ export class PolyGroups {
    * Returns how many groups.
    */
   autoIslands(mesh: SculptMesh): number {
+    if (!this.editable(mesh)) return 0;
     const level0 = levelsOf(mesh)[0];
     const n = level0.getNbFaces();
     const nb = faceNeighbours(level0.getFaces(), n, level0.getNbVertices());
@@ -1029,6 +1050,7 @@ export class PolyGroups {
 
   /** Clear all: every face back in one group, "Group 1", nothing hidden. False when that is how it is already. */
   clearAll(mesh: SculptMesh): boolean {
+    if (!this.editable(mesh)) return false;
     if (!this.hasGroups(mesh) && !this.baseFaces(mesh).some((g) => g !== 0)) return false;
     return this.replaceAll(mesh, new Uint32Array(this.baseFaces(mesh).length), [defaultGroupName(0)]);
   }
@@ -1039,6 +1061,7 @@ export class PolyGroups {
    * hidden flags. Returns how many went; 0 changes nothing.
    */
   removeUnused(mesh: SculptMesh): number {
+    if (!this.editable(mesh)) return 0;
     const used = this.used(mesh);
     let unused = 0;
     for (let g = 0; g < used.length; g++) if (!used[g]) unused++;
@@ -1051,6 +1074,7 @@ export class PolyGroups {
   }
 
   rename(mesh: SculptMesh, g: number, name: string): boolean {
+    if (!this.editable(mesh)) return false;
     const clean = name.replace(/[\r\n]+/g, ' ').trim().slice(0, MAX_NAME);
     const r = this.rec(mesh);
     if (!clean || g < 0 || g >= r.names.length || r.names[g] === clean) return false;
@@ -1125,6 +1149,7 @@ export class PolyGroups {
    * down one. The last group cannot go.
    */
   remove(mesh: SculptMesh, g: number): boolean {
+    if (!this.editable(mesh)) return false;
     const r = this.rec(mesh);
     if (g < 0 || g >= r.names.length || r.names.length <= 1) return false;
     const level0 = levelsOf(mesh)[0];

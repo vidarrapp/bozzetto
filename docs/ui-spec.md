@@ -640,6 +640,7 @@ Tool, with Material before it.
   pinned measurement is a lighter grey, a mirror is dashed. All of it is
   interface: Tab and Present hide it. It never takes the Pencil away from
   the model, and two fingers still navigate.
+- **Poly groups and dynamic topology.** With dynamic topology on, an object keeps its groups (they follow the triangles and may drift) but they cannot be made or edited: the Model panel's Groups note says "Poly groups need dynamic topology off." with a Turn off dynamic topology button, the making buttons are off, and Ctrl+G says the same notice. Show, hide, isolate and the colour switch still work.
 - **Measure section** (Model panel, after Poly groups): the pinned
   measurements of the selected object, a row each with its name (tap to
   rename), its length in the mono face, a mirror toggle, the eye and the
