@@ -203,7 +203,7 @@ async function armatureControls(page, base, t) {
   await page.mouse.up();
   const knee1 = await page.evaluate(() => ({ joint: window.__armature.hingePosition('foot.L'), foot: window.__armature.handlePosition('foot.L'), aim: window.__armature.armature.getAim('foot.L'), picked: window.__armature.picked(), target: window.__armature.handleLook('aim:foot.L').position }));
   t.ok(knee1.picked === 'aim:foot.L' && mid.state === 'hot', `dragging the pole target takes it and lights it (${knee1.picked}, ${mid.state})`);
-  t.ok(Math.abs(knee1.aim - knee0.aim) > 5 && dist(knee1.joint, knee0.joint) > 1, `the knee turned (aim ${knee0.aim.toFixed(0)} to ${knee1.aim.toFixed(0)} degrees)`);
+  t.ok(Math.abs(knee1.aim - knee0.aim) > 5 && dist(knee1.joint, knee0.joint) > 0.3, `the knee turned (aim ${knee0.aim.toFixed(0)} to ${knee1.aim.toFixed(0)} degrees)`);
   t.ok(dist(knee1.foot, knee0.foot) < 1, `and the foot stayed where it was, within a centimetre (${dist(knee1.foot, knee0.foot).toFixed(3)} cm)`);
   await page.evaluate(() => window.__armature.undo());
 

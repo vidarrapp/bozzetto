@@ -2324,7 +2324,7 @@ export const suites = {
         plantBox: box(reach ?? panel, 'Plant feet')?.checked ?? null,
         pinOffMid: Math.max(dist(a.state().pins['foot.L'], midFoot('L')), dist(a.state().pins['foot.R'], midFoot('R'))),
         handOffTail: dist(a.handlePosition('hand.L'), arm.effectorWorld('hand.L', new V(), 1).toArray()),
-        ballOff: ball ? dist(ball, a.handlePosition('foot.L')) : null,
+        ballOff: ball ? dist(ball, a.ringPosition('foot.L')) : null,
       };
     });
     t.ok(boot.symmetry === false && boot.symmetryBox === false, `symmetry starts off (the figure ${boot.symmetry}, the box ${boot.symmetryBox})`);
@@ -2334,7 +2334,7 @@ export const suites = {
     t.eq(boot.plantBox, true, 'the Reach section shows the Plant feet box, ticked');
     t.ok(boot.pinOffMid < 1e-3, `the feet are held by their middles, halfway from ankle to toe (${boot.pinOffMid.toExponential(1)} off)`);
     t.ok(boot.handOffTail < 1e-6, 'a hand is still held by its tip');
-    t.ok(boot.ballOff !== null && boot.ballOff < 1e-6, `the balls sit on their handles from the start (the left foot's ${boot.ballOff})`);
+    t.ok(boot.ballOff !== null && boot.ballOff < 1e-6, `the rings sit on the middle of their parts from the start (the left foot's ${boot.ballOff})`);
 
     // The handles take the press over the parts near them (owner call): a
     // press within 22 px of a pole target's centre takes it, even off the

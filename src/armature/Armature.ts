@@ -54,6 +54,11 @@ export interface ArmatureState {
   plant?: boolean;
   /** The head's look-at target, a point in the world; absent = in front of the head as it faces. */
   look?: [number, number, number];
+  /**
+   * Each knee's and elbow's pole target, a point in the frame of what the limb hangs from (the pelvis
+   * for a leg, the chest for an arm), by chain id; absent = out from the joint, half the upper segment.
+   */
+  poles?: Record<string, [number, number, number]>;
 }
 
 export interface Proportions {
@@ -85,6 +90,8 @@ const GROUND_BAND = 0.015;
  * scale where they are used (Armature.len).
  */
 const REACHED = 0.0002;
+/** How far inside its limits, in degrees, the aim leaves the limb's base joint. */
+const AIM_MARGIN = 12;
 /** A distance too small to steer by: a fiftieth of a millimetre. */
 const TINY = 2e-5;
 /** What a pass must gain to count as getting closer, and the solver's other hair's breadths. */
@@ -342,6 +349,7 @@ export class Armature {
       this.mesh.bind(this.skeleton);
       this.measureImportedParts();
       this.lookTarget(_pb);
+      this.ensurePoles();
       return;
     }
 
@@ -400,6 +408,7 @@ export class Armature {
     this.skeleton = new Skeleton(skeletonBones);
     this.mesh.bind(this.skeleton); // bind matrix = the identity, inverses from the rest pose
     this.lookTarget(_pb);
+    this.ensurePoles();
   }
 
   /**
@@ -574,6 +583,9 @@ export class Armature {
     this.restAims();
     if (this.plantFeet) this.plantGrounded();
     for (const id of [...this.pins.keys()]) this.setPinned(id, true);
+    // The targets back out from their joints, and the head's in front of it.
+    this.poles.clear();
+    this.ensurePoles();
     this.placeLook();
   }
 
@@ -600,7 +612,13 @@ export class Armature {
       if (def.mirror && def.name.endsWith(`.${from}`)) this.mirrorPoseFrom(def.name);
     }
     const to = from === 'L' ? '.R' : '.L';
-    for (const c of this.rig.ik) if (c.effector.endsWith(to)) this.readAim(c);
+    for (const c of this.rig.ik) {
+      if (!c.effector.endsWith(to)) continue;
+      this.readAim(c);
+      // The copied limb's target is the reflection of its mirror's.
+      const src = c.mirror ? this.chain(c.mirror) : undefined;
+      if (src && this.poleWorld(src, _gt)) this.setPoleWorld(c, this.reflect(_gt));
+    }
     this.mirrorLook();
     this.holdLook();
   }
@@ -702,6 +720,12 @@ export class Armature {
 
   /** Where each chain's knee or elbow points, degrees around the limb. */
   private readonly aims = new Map<string, number>();
+  /**
+   * Each pole target, placed by the person: a point held in the frame of the bone the limb hangs from, so
+   * it goes with the body. Set this to false to hold them in the world instead (one line).
+   */
+  private readonly poles = new Map<string, Vector3>();
+  private static readonly POLES_IN_BODY_FRAME = true;
 
   chains(): IKChainDef[] {
     return this.rig.ik;
@@ -714,7 +738,18 @@ export class Armature {
     );
   }
 
+  /**
+   * Where a chain's knee or elbow is asked to point: the angle round the limb that its pole target
+   * stands at now (the target is held on the body, the limb moves under it), or, with the target
+   * on the limb's line, the last angle that was good.
+   */
   getAim(id: string): number {
+    const c = this.chain(id);
+    const p = c ? this.poleOf(c) : null;
+    if (c && p && this.poleWorld(c, _gt)) {
+      const a = this.angleAround(c, p, _gt);
+      if (a !== null) return wrap180(a);
+    }
     return this.aims.get(id) ?? 0;
   }
 
@@ -728,7 +763,10 @@ export class Armature {
   followAims(bone: string, mirror = this.symmetry): void {
     const other = mirror ? this.defs.get(bone)?.mirror : null;
     for (const c of this.rig.ik) {
-      if (c.links.includes(bone) || (other && c.links.includes(other))) this.readAim(c);
+      if (c.links.includes(bone) || (other && c.links.includes(other))) {
+        this.readAim(c);
+        this.carryPole(c.id);
+      }
     }
   }
 
@@ -768,7 +806,11 @@ export class Armature {
     const c = this.chain(id);
     if (!c?.poleRef) return;
     this.aims.set(id, wrap180(degrees));
-    if (mirror && c.mirror) this.aims.set(c.mirror, wrap180(-degrees));
+    this.turnPoleTo(id, degrees);
+    if (mirror && c.mirror) {
+      this.aims.set(c.mirror, wrap180(-degrees));
+      this.turnPoleTo(c.mirror, -degrees);
+    }
   }
 
   chain(id: string): IKChainDef | undefined {
@@ -854,14 +896,33 @@ export class Armature {
    */
   aimFromPoint(chainId: string, point: Vector3): number | null {
     const c = this.chain(chainId);
-    const hingeIndex = c ? c.links.findIndex((n) => this.defs.get(n)?.kind === 'hinge') : -1;
-    const base = c && hingeIndex >= 0 ? this.bones.get(c.links[hingeIndex + 1]) : undefined;
-    const end = c ? this.bones.get(c.effector) : undefined;
-    if (!c?.poleRef || !base || !end) return null;
+    const p = c ? this.poleOf(c) : null;
+    if (!c || !p) return null;
     this.root.updateMatrixWorld(true);
-    const from = new Vector3().setFromMatrixPosition(base.matrixWorld);
-    const to = new Vector3().setFromMatrixPosition(end.matrixWorld);
-    return this.aroundLimb(c, from, to, point);
+    return this.angleAround(c, p, point);
+  }
+
+  /** aroundLimb for a chain's own joints as they stand (matrices already current), with nothing allocated. */
+  private angleAround(c: IKChainDef, p: { hinge: Bone; base: Bone; end: Bone }, point: Vector3): number | null {
+    const from = _ga.setFromMatrixPosition(p.base.matrixWorld);
+    const axis = _gc.setFromMatrixPosition(p.end.matrixWorld).sub(from);
+    if (axis.lengthSq() < this.len(TINY / 10) ** 2) return null;
+    axis.normalize();
+    const frame = this.limbFrame(c, _gq);
+    const ref = _gd.fromArray(c.poleRef!).applyQuaternion(frame);
+    const zero = _ge.copy(ref).addScaledVector(axis, -ref.dot(axis));
+    if (zero.lengthSq() < 1e-6) {
+      const up = _gf.set(0, 1, 0).applyQuaternion(frame);
+      zero.copy(up).addScaledVector(axis, -up.dot(axis));
+    }
+    if (zero.lengthSq() < 1e-6) return null;
+    zero.normalize();
+    const want = _gh.subVectors(point, from);
+    want.addScaledVector(axis, -want.dot(axis));
+    if (want.lengthSq() < this.len(TINY) ** 2) return null;
+    want.normalize();
+    const side = _gi.crossVectors(zero, want).dot(axis);
+    return (Math.atan2(side, zero.dot(want)) * 180) / Math.PI;
   }
 
   /**
@@ -931,19 +992,14 @@ export class Armature {
   }
 
   /**
-   * Where a chain's pole target sits in the world: out from the knee or
+   * Where a chain's pole target goes when none was placed: out from the knee or
    * elbow, along the way it points (off the line from the hip to the ankle,
    * or the shoulder to the wrist), half the limb segment above the joint
    * away. A limb straight to the millimetre has no bend to read, and the
    * direction is then the aim's own. Dragging the target is aiming the limb:
    * aimFromPoint reads the angle round the limb that a point asks for.
-   *
-   * `byAim` draws it where the aim says whatever the bend, which is what a
-   * target being dragged needs: a joint at the end of what its limits allow
-   * (a locked-out leg twisted as far as the hip goes) stays where it is, and
-   * a target drawn from it would stay with it while the pointer went round.
    */
-  poleTarget(chainId: string, out: Vector3, byAim = false): Vector3 | null {
+  private poleDefault(chainId: string, out: Vector3): Vector3 | null {
     const c = this.chain(chainId);
     const p = c ? this.poleOf(c) : null;
     if (!c || !p) return null;
@@ -955,21 +1011,181 @@ export class Armature {
     axis.normalize();
     const off = _pd.subVectors(joint, from);
     off.addScaledVector(axis, -off.dot(axis));
-    // Where the joint stands off the limb's line: a target drawn by the aim starts from the line, not from there.
-    const lean = _pg.copy(off);
-    if (byAim || off.lengthSq() < this.len(0.002) ** 2) {
-      // Straight, or being aimed: the way the aim says, from the rig's reference direction.
+    if (off.lengthSq() < this.len(0.002) ** 2) {
+      // Straight: the way the aim says, from the rig's reference direction.
       const ref = _pe.fromArray(c.poleRef!).applyQuaternion(this.limbFrame(c, _lq));
       ref.addScaledVector(axis, -ref.dot(axis));
       if (ref.lengthSq() < 1e-6) ref.set(0, 1, 0).addScaledVector(axis, -axis.y);
       ref.normalize();
-      const a = (this.getAim(c.id) * Math.PI) / 180;
+      const a = ((this.aims.get(c.id) ?? 0) * Math.PI) / 180;
       off.copy(ref).multiplyScalar(Math.cos(a)).addScaledVector(_pf.crossVectors(axis, ref), Math.sin(a));
     } else {
       off.normalize();
     }
-    out.copy(joint).addScaledVector(off, joint.distanceTo(from) * POLE_DISTANCE);
-    return byAim ? out.sub(lean) : out;
+    return out.copy(joint).addScaledVector(off, joint.distanceTo(from) * POLE_DISTANCE);
+  }
+
+  /** The bone a chain's limb hangs from: the parent of its top link (the pelvis for a leg, the chest for an arm). */
+  private poleAnchor(c: IKChainDef): Bone | null {
+    const top = this.bones.get(c.links[c.links.length - 1]);
+    return (top?.parent as Bone | null) ?? null;
+  }
+
+  /** A chain's pole target in the world, from where it is held; null with none yet. */
+  private poleWorld(c: IKChainDef, out: Vector3): Vector3 | null {
+    const local = this.poles.get(c.id);
+    const anchor = this.poleAnchor(c);
+    if (!local || !anchor) return null;
+    return out.copy(local).applyMatrix4(Armature.POLES_IN_BODY_FRAME ? anchor.matrixWorld : _identity);
+  }
+
+  /** Hold a world point as a chain's pole target. */
+  private setPoleWorld(c: IKChainDef, point: Vector3): void {
+    const anchor = this.poleAnchor(c);
+    if (!anchor) return;
+    const local = this.poles.get(c.id) ?? new Vector3();
+    local.copy(point);
+    if (Armature.POLES_IN_BODY_FRAME) local.applyMatrix4(_pm.copy(anchor.matrixWorld).invert());
+    this.poles.set(c.id, local);
+  }
+
+  /** Every chain without a pole target gets the one drawn today: out from its joint. */
+  private ensurePoles(): void {
+    this.mesh.updateMatrixWorld(true);
+    for (const c of this.rig.ik) {
+      if (!c.poleRef || this.poles.has(c.id) || !this.poleOf(c)) continue;
+      if (this.poleDefault(c.id, _gt)) this.setPoleWorld(c, _gt);
+    }
+  }
+
+  /**
+   * Where a chain's pole target sits in the world: a point the person placed, held on the body, so
+   * it goes with the hips and the chest and stays where it is on the body while a hand or foot is
+   * moved. The knee or elbow points toward it (getAim).
+   */
+  poleTarget(chainId: string, out: Vector3): Vector3 | null {
+    const c = this.chain(chainId);
+    if (!c || !this.poleOf(c)) return null;
+    this.mesh.updateMatrixWorld(true);
+    if (!this.poles.has(c.id) && this.poleDefault(c.id, _gt)) this.setPoleWorld(c, _gt);
+    return this.poleWorld(c, out);
+  }
+
+  /** How far a limb's joint stands off the line from its base to its end, in scene units. */
+  private jointOffset(p: { hinge: Bone; base: Bone; end: Bone }): number {
+    const from = _gj.setFromMatrixPosition(p.base.matrixWorld);
+    const axis = _gk.setFromMatrixPosition(p.end.matrixWorld).sub(from);
+    if (axis.lengthSq() < 1e-12) return 0;
+    axis.normalize();
+    const off = _gl.setFromMatrixPosition(p.hinge.matrixWorld).sub(from);
+    return off.addScaledVector(axis, -off.dot(axis)).length();
+  }
+
+  /**
+   * Whether the knee or elbow points where its target asks: false while a joint at the end of its
+   * limits cannot bend that way. A limb straight to a few millimetres has no direction to compare.
+   */
+  poleInRange(chainId: string): boolean {
+    const c = this.chain(chainId);
+    const p = c ? this.poleOf(c) : null;
+    if (!c || !p || !this.poleWorld(c, _gt)) return true;
+    if (this.jointOffset(p) < this.len(0.004)) return true;
+    const knee = _gm.setFromMatrixPosition(p.hinge.matrixWorld);
+    const now = this.angleAround(c, p, knee);
+    const want = this.angleAround(c, p, _gt);
+    if (now === null || want === null) return true;
+    return Math.abs(wrap180(now - want)) < 4;
+  }
+
+  /**
+   * Put a chain's pole target at a world point, which is what a drag of it does: the knee or elbow
+   * turns toward it with the hand or foot where it was, and the mirrored limb's target goes to the
+   * reflection when the other side follows. A point on the limb's line (within a centimetre) has no
+   * direction: it is refused, and the target stays where it was. Returns whether it was taken.
+   */
+  placePole(id: string, point: Vector3, mirror = this.symmetry): boolean {
+    const c = this.chain(id);
+    const p = c ? this.poleOf(c) : null;
+    if (!c || !p) return false;
+    this.root.updateMatrixWorld(true);
+    const from = _gj.setFromMatrixPosition(p.base.matrixWorld);
+    const axis = _gk.setFromMatrixPosition(p.end.matrixWorld).sub(from);
+    if (axis.lengthSq() < 1e-12) return false;
+    axis.normalize();
+    const off = _gl.subVectors(point, from);
+    if (off.addScaledVector(axis, -off.dot(axis)).length() < this.len(0.01)) return false;
+    const holds: Array<{ id: string; at: Vector3 }> = [];
+    const hold = (chainId: string): void => {
+      const ch = this.chain(chainId);
+      if (!ch) return;
+      holds.push({ id: chainId, at: this.pins.get(chainId)?.clone() ?? this.effectorWorld(ch.effector, new Vector3()) });
+    };
+    hold(id);
+    this.setPoleWorld(c, point);
+    const a = this.angleAround(c, p, point);
+    if (a !== null) this.aims.set(id, wrap180(a));
+    const other = mirror && c.mirror ? this.chain(c.mirror) : undefined;
+    if (other && this.poleOf(other)) {
+      hold(other.id);
+      this.setPoleWorld(other, this.reflect(point.clone()));
+      const b = this.angleAround(other, this.poleOf(other)!, this.poleWorld(other, _gt)!);
+      if (b !== null) this.aims.set(other.id, wrap180(b));
+    }
+    for (const h of holds) this.reach(h.id, h.at, 10, false);
+    return true;
+  }
+
+  /** A world point reflected across the pelvis's middle, as Mirror pose reflects the limbs; changed in place. */
+  private reflect(point: Vector3): Vector3 {
+    this.root.updateMatrixWorld(true);
+    const n = _gn.set(1, 0, 0).applyQuaternion(this.root.getWorldQuaternion(_gq));
+    const o = _go.setFromMatrixPosition(this.root.matrixWorld);
+    return point.addScaledVector(n, -2 * _gp.subVectors(point, o).dot(n));
+  }
+
+  /**
+   * After a joint of the limb was turned by hand: the target goes out from the joint along the way it
+   * now points, at the distance it had. A limb straight to two millimetres has no way it points, and
+   * the target stays.
+   */
+  private carryPole(chainId: string): void {
+    const c = this.chain(chainId);
+    const p = c ? this.poleOf(c) : null;
+    if (!c || !p) return;
+    this.root.updateMatrixWorld(true);
+    const joint = _gq2v.setFromMatrixPosition(p.hinge.matrixWorld);
+    const from = _gj.setFromMatrixPosition(p.base.matrixWorld);
+    const axis = _gk.setFromMatrixPosition(p.end.matrixWorld).sub(from);
+    if (axis.lengthSq() < 1e-12) return;
+    axis.normalize();
+    const off = _gl.copy(joint).sub(from);
+    off.addScaledVector(axis, -off.dot(axis));
+    if (off.lengthSq() < this.len(0.002) ** 2) return;
+    off.normalize();
+    const had = this.poleWorld(c, _gt) ? _gt.distanceTo(joint) : 0;
+    const dist = had > this.len(TINY) ? had : joint.distanceTo(from) * POLE_DISTANCE;
+    this.setPoleWorld(c, _gt.copy(joint).addScaledVector(off, dist));
+  }
+
+  /** Turn a chain's pole target about the limb's line to the angle `degrees`, keeping its distance. */
+  private turnPoleTo(chainId: string, degrees: number): void {
+    const c = this.chain(chainId);
+    const p = c ? this.poleOf(c) : null;
+    if (!c || !p) return;
+    this.root.updateMatrixWorld(true);
+    if (!this.poles.has(c.id) && this.poleDefault(c.id, _gt)) this.setPoleWorld(c, _gt);
+    if (!this.poleWorld(c, _gt)) return;
+    let now = this.angleAround(c, p, _gt);
+    if (now === null) {
+      if (!this.poleDefault(c.id, _gt)) return;
+      this.setPoleWorld(c, _gt);
+      now = this.angleAround(c, p, _gt);
+      if (now === null) return;
+    }
+    const from = _gj.setFromMatrixPosition(p.base.matrixWorld);
+    const axis = _gk.setFromMatrixPosition(p.end.matrixWorld).sub(from).normalize();
+    _gt.sub(from).applyQuaternion(_gq.setFromAxisAngle(axis, (wrap180(degrees - now) * Math.PI) / 180)).add(from);
+    this.setPoleWorld(c, _gt);
   }
 
   // --- the head's look-at ---------------------------------------------------
@@ -1244,6 +1460,22 @@ export class Armature {
     return out.set(0, rest.length * p.length * at, 0).applyMatrix4(b.matrixWorld);
   }
 
+  /**
+   * Where a chain's ring is drawn: the middle of its hand's or foot's own geometry as posed (the middle
+   * of the part's box, which is what the highlight shows), so the ring sits on the part. The reach
+   * itself is still aimed at the effector point, effectorWorld.
+   */
+  ringWorld(chainId: string, out: Vector3): Vector3 {
+    const c = this.chain(chainId);
+    if (!c) return out.set(0, 0, 0);
+    const g = this.partGeometry.get(c.effector);
+    const part = this.partBones.get(c.effector);
+    if (!g || !part) return this.effectorWorld(c.effector, out);
+    this.mesh.updateMatrixWorld(true);
+    if (!g.boundingBox) g.computeBoundingBox();
+    return g.boundingBox!.getCenter(out).applyMatrix4(part.matrixWorld);
+  }
+
   /** Where a bone's joint, its head, is in the world. */
   jointWorld(bone: string, out = new Vector3()): Vector3 | null {
     const b = this.bones.get(bone);
@@ -1480,16 +1712,19 @@ export class Armature {
     let least = off();
     let improved = false;
     let stall = 0;
+    let solved = false;
     for (let i = 0; i < iterations; i++) {
       if (twoBone) this.bendHinge(c, hingeIndex, target, mirror, at);
-      // The aim gets the first passes; the rest belong to position. An aim
-      // the joint cannot twist to would otherwise push every pass while
-      // the descent pulls back, and the two would never settle - so the
-      // hand's place wins and the aim is honoured as far as it reaches.
-      if (twoBone && i < 2) this.aimHinge(c, hingeIndex, target, mirror);
+      // Position first. The aim is laid on after, below: a knee asked to point
+      // where its joints cannot take it (the target is held on the body, so the
+      // ask changes as the body moves) would otherwise push every pass while the
+      // descent pulls back, and the hand's place would be lost to it.
       this.turnLinks(c, target, at, mirror, hinge, null, 1);
       const d = off();
-      if (d < this.len(REACHED)) return;
+      if (d < this.len(REACHED)) {
+        solved = true;
+        break;
+      }
       // The pass that left the point nearest is the one kept. A pass can
       // leave it further off on the way there - the triangle and the aim
       // both move it, and the swings make up for that over the next pass
@@ -1499,10 +1734,23 @@ export class Armature {
         improved = true;
         this.keepPoses(held, best);
         stall = 0;
-      } else if ((!twoBone || i >= 2) && ++stall >= 2) break;
+      } else if (i >= 2 && ++stall >= 2) break; // (the first passes are the solver's warm-up: they do not count as stalling)
     }
-    this.restorePoses(held, best);
-    if (least >= this.len(REACHED)) this.settle(c, target, at, mirror, hinge, held, start, improved ? best : null, off);
+    if (!solved) {
+      this.restorePoses(held, best);
+      if (least >= this.len(REACHED)) this.settle(c, target, at, mirror, hinge, held, start, improved ? best : null, off);
+    }
+    // The aim, as far as it is free: the knee or elbow turns about the line to the
+    // target toward where it is asked to point, and is put back if that cost the
+    // hand or foot its place.
+    if (twoBone && off() < this.len(REACHED) * 2) {
+      const placed = this.keepPoses(held);
+      const was = off();
+      if (this.aimHinge(c, hingeIndex, target, mirror)) {
+        this.turnLinks(c, target, at, mirror, hinge, null, 2);
+        if (off() > was + this.len(REACHED)) this.restorePoses(held, placed);
+      }
+    }
   }
 
   /**
@@ -1692,17 +1940,17 @@ export class Armature {
    * allow, and no further: the whole turn clamped axis by axis is some
    * other turn, one that carries the hand or foot off its mark.
    */
-  private aimHinge(c: IKChainDef, hingeIndex: number, target: Vector3, mirror: boolean): void {
+  private aimHinge(c: IKChainDef, hingeIndex: number, target: Vector3, mirror: boolean): boolean {
     const baseName = c.links[hingeIndex + 1];
     const base = this.bones.get(baseName);
     const hinge = this.bones.get(c.links[hingeIndex]);
     const end = this.bones.get(c.effector);
     const rest = this.rest.get(baseName);
-    if (!c.poleRef || !base || !hinge || !end || !rest) return;
+    if (!c.poleRef || !base || !hinge || !end || !rest) return false;
     this.root.updateMatrixWorld(true);
     const basePos = new Vector3().setFromMatrixPosition(base.matrixWorld);
     const axis = new Vector3().subVectors(target, basePos);
-    if (axis.lengthSq() < this.len(TINY / 10) ** 2) return;
+    if (axis.lengthSq() < this.len(TINY / 10) ** 2) return false;
     axis.normalize();
     const now = this.aroundLimb(
       c,
@@ -1710,9 +1958,9 @@ export class Armature {
       new Vector3().setFromMatrixPosition(end.matrixWorld),
       new Vector3().setFromMatrixPosition(hinge.matrixWorld),
     );
-    if (now === null) return; // a straight limb has no bend plane
+    if (now === null) return false; // a straight limb has no bend plane
     const delta = wrap180(this.getAim(c.id) - now);
-    if (Math.abs(delta) < 0.05) return;
+    if (Math.abs(delta) < 0.05) return false;
     const baseQ = base.getWorldQuaternion(new Quaternion());
     // pose = restLocal^-1 * parentWorld^-1 * turnedWorld
     const toPose = new Quaternion();
@@ -1726,7 +1974,13 @@ export class Armature {
       turned.copy(baseQ).premultiply(swing).premultiply(toPose);
       return _e.setFromQuaternion(turned, 'XYZ');
     };
-    const fits = (e: Euler): boolean => within(e.x / RAD, l.x) && within(e.y / RAD, l.y) && within(e.z / RAD, l.z);
+    // The aim does not take the base joint to the very end of its limits: a hip flung to a corner of its box
+    // has nowhere to go when the foot is pulled the next way, and the foot is lost. It stops short of them.
+    const room = (r: [number, number]): [number, number] => (r[1] - r[0] > 2 * AIM_MARGIN ? [r[0] + AIM_MARGIN, r[1] - AIM_MARGIN] : r);
+    const lx = room(l.x);
+    const ly = room(l.y);
+    const lz = room(l.z);
+    const fits = (e: Euler): boolean => within(e.x / RAD, lx) && within(e.y / RAD, ly) && within(e.z / RAD, lz);
     let part = 1;
     if (!fits(poseFor(delta))) {
       let lo = 0;
@@ -1738,9 +1992,10 @@ export class Armature {
       }
       part = lo;
     }
-    if (Math.abs(delta * part) < 0.05) return;
+    if (Math.abs(delta * part) < 0.05) return false;
     const e = poseFor(delta * part);
     this.setPoseEuler(baseName, e.x / RAD, e.y / RAD, e.z / RAD, mirror);
+    return true;
   }
 
   /**
@@ -1905,6 +2160,8 @@ export class Armature {
     const aims: NonNullable<ArmatureState['aims']> = {};
     for (const [id, a] of this.aims) if (a) aims[id] = +a.toFixed(2);
     const look = this.lookTarget(_pb);
+    const poles: NonNullable<ArmatureState['poles']> = {};
+    for (const [id, v] of this.poles) poles[id] = [+v.x.toFixed(4), +v.y.toFixed(4), +v.z.toFixed(4)];
     return {
       v: 1,
       preset: this.rig.id,
@@ -1914,6 +2171,7 @@ export class Armature {
       pins,
       aims,
       plant: this.plantFeet,
+      poles,
       ...(look ? { look: [+look.x.toFixed(4), +look.y.toFixed(4), +look.z.toFixed(4)] as [number, number, number] } : {}),
     };
   }
@@ -1981,6 +2239,12 @@ export class Armature {
       this.lookTarget(_pb);
     }
     this.lookReached = true;
+    // The pole targets as saved, the others out from their joints.
+    this.poles.clear();
+    for (const [id, v] of Object.entries(state.poles ?? {})) {
+      if (this.chain(id) && Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === 'number' && Number.isFinite(x))) this.poles.set(id, new Vector3(v[0], v[1], v[2]));
+    }
+    this.ensurePoles();
   }
 
   dispose(): void {
@@ -2116,7 +2380,6 @@ const _pc = new Vector3();
 const _pd = new Vector3();
 const _pe = new Vector3();
 const _pf = new Vector3();
-const _pg = new Vector3();
 const _ph = new Vector3();
 const _lf = new Vector3();
 const _lf2 = new Vector3();
@@ -2138,6 +2401,26 @@ const LOOK_SETTLED = Math.cos((0.02 * Math.PI) / 180);
 /** A target the head is within a degree of facing is in range; one further off is past what the head can turn to. */
 const LOOK_IN_RANGE = Math.cos((1 * Math.PI) / 180);
 const _ldAll: Quaternion[] = [];
+// Scratch for the pole targets, which are read on every move of a drag.
+const _ga = new Vector3();
+const _gc = new Vector3();
+const _gd = new Vector3();
+const _ge = new Vector3();
+const _gf = new Vector3();
+const _gh = new Vector3();
+const _gi = new Vector3();
+const _gj = new Vector3();
+const _gk = new Vector3();
+const _gl = new Vector3();
+const _gm = new Vector3();
+const _gn = new Vector3();
+const _go = new Vector3();
+const _gp = new Vector3();
+const _gt = new Vector3();
+const _gq2v = new Vector3();
+const _gq = new Quaternion();
+const _pm = new Matrix4();
+const _identity = new Matrix4();
 
 function poseTurn(e: [number, number, number], out: Quaternion): Quaternion {
   return out.setFromEuler(_te.set(e[0], e[1], e[2], 'XYZ'));

@@ -176,6 +176,11 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **The rings sit on the hands and feet.** Each ring is centred on its hand or foot, not off to one side.
+- **Knee and elbow targets are points you place.** Drag one anywhere on the screen and the knee or elbow turns toward it. It no longer jumps to the joint when you press it. It stays where you put it on the body, goes with the hips and the chest, and follows a joint you turn by hand.
+
 ### v0.7.14
 
 - **Scenes with sculpt layers save to the library.** The site's upload check still expected the first layers format and refused a scene with sculpt layers as damaged. It takes both formats now.
