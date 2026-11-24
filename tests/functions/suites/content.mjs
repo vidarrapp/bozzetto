@@ -200,7 +200,7 @@ export async function run({ checks, on, off, compileShared, repo }) {
     [bozz({ edit: (h) => withLayers(h, (l) => (l.v = 3)) }), /bad layers \(not a record this app reads/, 'sculpt layers of a version there is not'],
     [bozz({ edit: (h) => withLayers(h, (l, hh) => (hh.buffers[l.items[0].vals.__buf].len = 5)) }), /bad layers \(data of the wrong kind or size/, 'a layer whose displacements are not three a vertex'],
     [bozz({ edit: (h) => withLayers(h, (l, hh) => (hh.buffers[l.items[2].maskLens.__buf].len = 2), { full: true }) }), /bad layers \(a mask of the wrong kind or size/, 'a layer mask with fewer run lengths than values'],
-    [bozz({ edit: (h) => withLayers(h, (l, hh) => (hh.buffers[l.items[2].maskVals.__buf].t = 'f32'), { full: true }) }), /bad layers \(a mask of the wrong kind or size/, 'a layer mask whose values are floats'],
+    [bozz({ edit: (h) => withLayers(h, (l) => (l.items[2].maskVals = l.items[2].vals), { full: true }) }), /bad layers \(a mask of the wrong kind or size/, 'a layer mask whose values are floats (the layer\'s own displacements)'],
     [bozz({ edit: (h) => withLayers(h, (l) => delete l.items[2].maskLens, { full: true }) }), /bad layers \(a mask of the wrong kind or size/, 'a layer mask with no run lengths'],
     [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.faces.__buf].len = 0)) }), /bad poly groups \(not one group a face of its level 0/, 'poly groups (version 2) for fewer faces than level 0 has'],
     [bozz({ edit: (h) => withGroups(h, null, { levels: 2, len: 4 }) }), /bad poly groups \(not one group a face of its level 0/, 'poly groups (version 2) sized to the top level of two'],
