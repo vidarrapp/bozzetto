@@ -12,22 +12,15 @@
 //                   as the app's own rig table
 import { openArmature } from './lib.mjs';
 
-const PARTS = ['head', 'neck', 'chest', 'upperarm.L', 'forearm.L', 'hand.R', 'thigh.L', 'shin.R', 'foot.L', 'foot.R'];
+const PARTS = ['head', 'neck', 'chest', 'upperarm.L', 'forearm.L', 'hand.L', 'hand.R', 'thigh.L', 'shin.R', 'foot.L', 'foot.R'];
 
-/** Where the middle of a bone is on the page. */
-const partAt = (page, bone) =>
-  page.evaluate((bone) => {
-    const a = window.__armature;
-    const v = a.armature.effectorWorld(bone, a.armature.root.position.clone(), 0.5);
-    return a.onScreen(v.x, v.y, v.z);
-  }, bone);
-
-/** Tap empty space, then the part; what is selected afterwards. */
+/** Tap where the part is in view (a point the figure's own surface says is that part), after letting go of what was selected. */
 async function tapPart(page, bone) {
-  await page.mouse.click(8, 500);
+  await page.keyboard.press('Escape');
   await page.waitForTimeout(60);
-  const [x, y] = await partAt(page, bone);
-  await page.mouse.click(x, y);
+  const at = await page.evaluate((bone) => window.__armature.partSpot(bone), bone);
+  if (!at) return 'not in view';
+  await page.mouse.click(at[0], at[1]);
   await page.waitForTimeout(120);
   return page.evaluate(() => window.__armature.selected());
 }
@@ -100,14 +93,15 @@ async function armatureRanges(page, base, t) {
   t.ok(Math.max(...l.foot.x.map(Math.abs)) >= 70, `the ankle points a foot to at least 70 degrees (${l.foot.x})`);
   t.ok(span(l.spine.x) >= 90 && span(l.upperarm.x) >= 250, `the spine and the shoulder have a dancer's range (${l.spine.x}, ${l.upperarm.x})`);
   t.ok(span(l.forearm.y) >= 150, `the forearm twists most of a half turn (${l.forearm.y})`);
-  // A thigh turned back by 70 degrees stays there (it used to stop at 30).
+  // A thigh turned back by 70 degrees stays there (it used to stop at 30). Set on the joint itself: through the
+  // mode, Plant feet would stand the foot back on the floor and take the turn back out.
   const held = await page.evaluate(() => {
-    const a = window.__armature;
-    const lim = a.armature.limitsOf('thigh.L').x;
+    const arm = window.__armature.armature;
+    const lim = arm.limitsOf('thigh.L').x;
     const back = Math.abs(lim[0]) < Math.abs(lim[1]) ? lim[0] : lim[1]; // the smaller side is the way back
     const want = Math.sign(back) * 70;
-    a.turn('thigh.L', want, 0, 0);
-    return { want, got: a.state().pose['thigh.L'][0] };
+    arm.setPoseEuler('thigh.L', want, 0, 0);
+    return { want, got: arm.getPoseEuler('thigh.L')[0] };
   });
   t.near(held.got, held.want, 0.5, `a thigh turned 70 degrees back holds there (${held.got})`);
   t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);

@@ -622,27 +622,30 @@ export const suites = {
     t.ok(row.slider && row.right && row.inRow, `Opacity is in the row of icons, to their right (${JSON.stringify(row)})`);
     t.ok(!row.under && !row.blend && !row.look, 'and there is no row under the picture, no blend select in the view and no Look pop-up');
     // The blend is chosen on the picture's card in the Reference panel: Behind the model, Normal, the modes in Photoshop's order.
+    const panelWasOpen = await page.evaluate(() => !document.querySelector('.panel--reference').classList.contains('panel--collapsed'));
     await openPanel(page);
-    t.ok(await visible(page, '.ref-card .ref-card__blend'), 'the card in the Reference panel has the blend select');
-    const opts = await page.evaluate(() => {
+    const card = await page.evaluate(() => `.ref-card[data-id="${window.__sculpt.reference.board.inView()[0].id}"] .ref-card__blend`);
+    t.ok(await visible(page, card), 'the card in the Reference panel has the blend select');
+    const opts = await page.evaluate((card) => {
       const g = [[]];
-      for (const o of document.querySelectorAll('.ref-card .ref-card__blend option')) {
+      for (const o of document.querySelectorAll(`${card} option`)) {
         if (o.disabled) g.push([]);
         else g[g.length - 1].push(o.textContent);
       }
       return g.map((x) => x.join(',')).join('|');
-    });
+    }, card);
     t.eq(
       opts,
       'Behind the model,Normal|Darken,Multiply,Color Burn|Lighten,Screen,Color Dodge,Linear Dodge (Add)|Overlay,Soft Light,Hard Light|Difference,Exclusion|Hue,Saturation,Color,Luminosity',
       'the blend select lists Behind the model, Normal and the CSS-matched modes in Photoshop’s order, groups between lines',
     );
-    await page.selectOption('.ref-card .ref-card__blend', 'multiply');
+    await page.selectOption(card, 'multiply');
     await page.waitForTimeout(300);
     t.eq(await page.evaluate(() => window.__sculpt.reference.board.inView()[0].blend), 'multiply', 'choosing there sets the blend on the picture');
     await shot(page, 'panel-blend');
     await openPanel(page, false);
     await shot(page, 'one-row');
+    await openPanel(page, panelWasOpen);
     // Pixels: Normal against Multiply, read from a real screenshot of the view as composed. Locked first, so no outline is in it.
     await setLookBlend(page, 'normal');
     await lock(page);

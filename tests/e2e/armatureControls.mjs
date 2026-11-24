@@ -156,31 +156,41 @@ async function armatureControls(page, base, t) {
     );
   }
 
-  // A pole drag turns the joint as the old aim drag did, for the same points.
-  const same = await page.evaluate((before) => {
+  // A pole drag turns the joint exactly as setting the aim that point asks for does (aimFromPoint, then the
+  // chain's aim), for the same points. (Until 0.7.10 the positions were compared with ones recorded from the
+  // old aim drag; the wider joint limits of 0.7.10 move them, the equivalence holds.)
+  const same = await page.evaluate((offsets) => {
     const a = window.__armature;
     const arm = a.armature;
     const V = arm.root.position.constructor;
-    const out = {};
+    const d = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+    let worst = 0;
+    let where = '';
     for (const id of ['foot.L', 'hand.R']) {
-      arm.resetPose();
-      a.commit();
-      const hinge = arm.hingeWorld(id, new V());
-      [0, 1, 2, 3].forEach((i) => {
-        const key = `${id}#${i}`;
-        const off = before[key].off;
-        a.pole(id, hinge.x + off[0], hinge.y + off[1], hinge.z + off[2]);
-        const now = arm.hingeWorld(id, new V()).toArray();
-        const eff = arm.effectorWorld(arm.chain(id).effector, new V()).toArray();
-        out[key] = { hinge: now, eff };
-      });
+      for (const [i, off] of offsets.entries()) {
+        arm.resetPose();
+        a.commit();
+        const hinge = arm.hingeWorld(id, new V());
+        const point = new V(hinge.x + off[0], hinge.y + off[1], hinge.z + off[2]);
+        const angle = arm.aimFromPoint(id, point);
+        a.aim(id, angle);
+        const want = { hinge: arm.hingeWorld(id, new V()).toArray(), eff: arm.effectorWorld(arm.chain(id).effector, new V()).toArray() };
+        arm.resetPose();
+        a.commit();
+        a.pole(id, point.x, point.y, point.z);
+        const got = { hinge: arm.hingeWorld(id, new V()).toArray(), eff: arm.effectorWorld(arm.chain(id).effector, new V()).toArray() };
+        const gap = Math.max(d(want.hinge, got.hinge), d(want.eff, got.eff));
+        if (gap > worst) {
+          worst = gap;
+          where = `${id}#${i}`;
+        }
+      }
     }
     arm.resetPose();
     a.commit();
-    return out;
-  }, BEFORE);
-  const worst = Math.max(...Object.entries(BEFORE).map(([k, v]) => Math.max(dist(same[k].hinge, v.hinge), dist(same[k].eff, v.eff))));
-  t.ok(worst < 2e-4, `a pole drag to the same points leaves every knee, elbow and hand where the aim drag put them (worst ${worst.toExponential(1)} cm)`);
+    return { worst, where };
+  }, Object.values(BEFORE).slice(0, 4).map((v) => v.off));
+  t.ok(same.worst < 2e-4, `a pole drag leaves every knee, elbow and hand where setting the aim that point asks for puts them (worst ${same.worst.toExponential(1)} cm${same.where ? `, ${same.where}` : ''})`);
 
   // And by the pointer: press on the left knee's target, drag it round the limb.
   const knee0 = await page.evaluate(() => ({ at: window.__armature.ballOnScreen('aim:foot.L'), joint: window.__armature.hingePosition('foot.L'), foot: window.__armature.handlePosition('foot.L'), aim: window.__armature.armature.getAim('foot.L') }));
