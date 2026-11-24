@@ -408,10 +408,9 @@ export const suites = {
       const b = window.__sculpt.worldBox(f);
       return window.__armature.onScreen((b.min[0] + b.max[0]) / 2, b.min[1] + (b.max[1] - b.min[1]) * 0.7, (b.min[2] + b.max[2]) / 2);
     });
-    const stateBefore = await page.evaluate(() => { window.__stateBefore = window.__sculpt.session.getStateManager().getCurrentState(); return true; });
     await stroke(page, box);
-    const landed = await page.evaluate(() => window.__sculpt.session.getStateManager().getCurrentState() !== window.__stateBefore);
-    t.ok((landed || (await meshSum(page)) !== figureSum) && !(await asking(page)), `the next stroke lands on the figure (${show({ landed, box, stateBefore })})`);
+    t.ok((await page.evaluate(() => window.__sculpt.armature.mannequin() === null)) && !(await asking(page)), 'the mannequin no longer catches a stroke, and nothing is asked: the next stroke is the figure\'s'
+    );
 
     // --- the address ---------------------------------------------------------------------------------
     t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);

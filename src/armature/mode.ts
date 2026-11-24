@@ -379,7 +379,12 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     // The camera comes to the figure, the view's angle kept (and the stage is fitted to it: viewerNeeds' subjectFit).
     viewer.frameBounds(box);
   };
-  frame();
+  // The first entry frames the figure from the default three-quarter view, as the armature always opened;
+  // framing afterwards (F, A) keeps the angle.
+  {
+    const box = armature.bounds();
+    if (!box.isEmpty()) viewer.fitSubject(box);
+  }
 
   // --- selection + gizmos ---------------------------------------------------
   const canvas = viewer.renderer.domElement;
