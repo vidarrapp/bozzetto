@@ -108,6 +108,16 @@ async function touchPage(page, base) {
   return { p, ctx, errors };
 }
 
+/** Pointer events made in the page in one go: [type, id, x, y, pointerType]; a down on the canvas, a lift on the window, as the browser's own arrive. */
+const firePointers = (page, events) =>
+  page.evaluate((evs) => {
+    const canvas = window.__bozzetto.renderer.domElement;
+    for (const [type, id, x, y, pointerType] of evs) {
+      const target = type === 'pointerdown' ? canvas : window;
+      target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: id, pointerType, isPrimary: id === 11, clientX: x, clientY: y, button: 0, buttons: type === 'pointerup' ? 0 : 1 }));
+    }
+  }, events);
+
 const KINDS = ['mouse', 'pen', 'touch'];
 
 /** Runs `body(page, kind, pointer)` for each kind of pointer, the finger on a page of its own. */
@@ -748,9 +758,11 @@ async function armatureHandlesPin(page, base, t) {
       t.ok(!dragged.pinned && dragged.pose !== s.pose, `${tag}: a press that travels first is a drag, and does not pin`);
       await p.evaluate(() => window.__armature.undo());
       await wait(p, 500); // an undo puts the state back a moment later
-      // A tap does not pin.
-      await ptr.down(r[0], r[1]);
-      await ptr.up();
+      // A tap does not pin. Sent as a finger's or the Pencil's own events are, a few milliseconds apart by their own
+      // times: through the browser's input pipeline each waits for the page to be done with the one before, and a busy
+      // software frame makes a quick tap 1 to 2 seconds long.
+      const r2 = await ringAt(p, 'hand.R');
+      await firePointers(p, [['pointerdown', 11, r2[0], r2[1], kind], ['pointerup', 11, r2[0], r2[1], kind]]);
       await wait(p, 700);
       const tap = await pinned(p, 'hand.R');
       t.ok(!tap.pinned && tap.sel === 'hand.R', `${tag}: a tap selects the hand and pins nothing`);
@@ -794,14 +806,13 @@ async function armatureHandlesPin(page, base, t) {
   // A second finger cancels a pending long press.
   const { p, ctx } = await touchPage(page, base);
   try {
-    const ptr = await pointer(p, 'touch');
     const r = await ringAt(p, 'hand.R');
-    await ptr.down(r[0], r[1]);
-    await wait(p, 30);
-    await ptr.second();
-    await wait(p, 700);
+    await firePointers(p, [['pointerdown', 11, r[0], r[1], 'touch']]);
+    await wait(p, 40);
+    await firePointers(p, [['pointerdown', 12, r[0] + 150, r[1] - 100, 'touch']]);
+    await wait(p, 750);
     t.ok(!(await pinned(p, 'hand.R')).pinned, 'a second finger down cancels a pending long press');
-    await ptr.cancel();
+    await firePointers(p, [['pointerup', 12, r[0] + 150, r[1] - 100, 'touch'], ['pointerup', 11, r[0], r[1], 'touch']]);
   } finally {
     await ctx.close();
   }
