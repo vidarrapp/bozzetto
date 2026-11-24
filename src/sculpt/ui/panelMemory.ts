@@ -164,6 +164,11 @@ export class WorkspacePanels {
     this.apply();
   }
 
+  /** Open the current workspace's panels again: a panel that did not exist when it was entered is built now (Armature, loaded on first use). */
+  reapply(): void {
+    this.apply();
+  }
+
   /** Stop recording what the panels do (the page is put away); `resume` carries on from the state they have. */
   pause(): void {
     this.paused = true;

@@ -617,7 +617,7 @@ export const suites = {
       t.ok(await p.locator('[data-setting="interactionLook"] input[value="full"]').isChecked(), 'and the screen still shows it');
     });
 
-    // ---- Import OBJ and Send to Sculpt need saving on: the question again, then the action goes on ----
+    // ---- Import OBJ needs saving on: the question again, then the action goes on ----
     await inContext(page, DESKTOP, t, async (p, ctx) => {
       const dir = mkdtempSync(join(tmpdir(), 'bozzetto-obj-'));
       const obj = join(dir, 'Tetra piece.obj');
@@ -654,6 +654,8 @@ export const suites = {
       t.eq(await p.evaluate(() => localStorage.getItem('bozzetto-device-choice')), 'keep', 'and saving is on');
       rmSync(dir, { recursive: true, force: true });
     });
+    // ---- Remesh to a figure makes the figure in the page: nothing crosses the device's storage, so
+    // with saving off it asks nothing, changes no page, and still writes nothing ----
     await inContext(page, DESKTOP, t, async (p) => {
       await p.goto(`${base}/?armature=1`, { waitUntil: 'domcontentloaded' });
       await waitWindow(p);
@@ -661,20 +663,16 @@ export const suites = {
       await p.click('.bz-device-off');
       await p.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
       await p.waitForTimeout(800);
-      void p.evaluate(() => window.__armature.send(64));
-      await waitWindow(p);
-      t.eq(await p.textContent('.bz-device__why'), 'Send to Sculpt needs to keep the figure on this device.', 'Send to Sculpt with saving off asks the question again, with the reason');
-      await p.keyboard.press('Escape');
-      await p.waitForTimeout(500);
-      t.ok((await p.locator('.bz-device').count()) === 0 && new URL(p.url()).searchParams.get('sculpt') === null, 'Esc cancels it');
-      void p.evaluate(() => window.__armature.send(64));
-      await waitWindow(p);
-      await p.click('.bz-device-keep');
-      await p.waitForURL((u) => u.searchParams.get('sculpt') === '1', { timeout: 60_000 });
-      await sculptReady(p);
+      await p.evaluate(() => {
+        window.__marker = 'same page';
+      });
+      await p.evaluate(() => window.__armature.remesh(64));
+      await p.waitForFunction(() => window.__sculpt.session.getMeshes().some((m) => window.__sculpt.session.getMeshName(m) === 'Figure'), null, { timeout: 120_000 });
       await p.waitForTimeout(800);
-      const meshes = await p.evaluate(() => window.__sculpt.session.getMeshes().length);
-      t.ok(meshes >= 1, `Keep on this device sends the figure, and it arrives in Sculpt (${meshes} object)`);
+      t.ok((await p.locator('.bz-device').count()) === 0, 'Remesh to a figure with saving off asks no question: nothing is kept for it');
+      t.ok((await p.evaluate(() => window.__marker)) === 'same page' && new URL(p.url()).searchParams.get('armature') === '1', 'and the page does not change');
+      const held = await device(p);
+      t.ok(held.local.length === 0 && held.dbs.length === 0 && held.workers === 0 && held.caches.length === 0, `and still nothing is written to the device (${JSON.stringify(held)})`);
     });
   },
 };

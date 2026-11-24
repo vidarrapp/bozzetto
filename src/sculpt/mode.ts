@@ -1,8 +1,9 @@
-import { Box3, Color as ThreeColor, Euler, Matrix4, Quaternion, Sphere, Vector3 } from 'three';
+import { Box3, Color as ThreeColor, Euler, Matrix4, Quaternion, Raycaster, Sphere, Vector2, Vector3 } from 'three';
 import { mat4 } from 'gl-matrix';
-import { CM_PER_M, formatLength, LEGACY_ARMATURE_SCALE, UNITS } from '../viewer/units';
+import { CM_PER_M, formatLength, LEGACY_ARMATURE_SCALE, UNITS, type UnitsMarker } from '../viewer/units';
 import { lookTimes } from '../viewer/lookUnits';
-import { hasArmature, type SculptHandoff } from '../armature/persist';
+import { armatureWorkspace, type ArmatureSlot } from '../armature/workspace';
+import type { ArmatureHost } from '../armature/host';
 import { STUDIO_BG } from '../viewer/Environment';
 import type { LookState, Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
@@ -14,7 +15,7 @@ import { PROFILE_REV } from './bridge/profile';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { SculptSession } from './bridge/SculptSession';
-import { formatBytes, RemeshTooLarge } from './bridge/remeshBudget';
+import { boxOfPositions, checkRemesh, RemeshTooLarge } from './bridge/remeshBudget';
 import {
   ScenePersist,
   SMOOTH_REV,
@@ -139,9 +140,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // this one", where the autosave is only "carry on where I was". A missing
   // or unreadable one falls back rather than failing the boot.
   const query = new URLSearchParams(window.location.search);
-  const libParam = query.get('lib');
-  const projectParam = query.get('project');
-  const templateParam = query.get('template');
+  // An address for Armature (`?armature=1`) opens the page on that workspace, and its project=,
+  // template= and scope= are an armature's, left on the address for Armature to read: they open
+  // nothing here.
+  const armatureAddress = query.get('armature') === '1' && query.get('sculpt') !== '1';
+  const libParam = armatureAddress ? null : query.get('lib');
+  const projectParam = armatureAddress ? null : query.get('project');
+  const templateParam = armatureAddress ? null : query.get('template');
   // Ids go into storage keys and request paths: a parameter that is not
   // one (net/ids) opens nothing, and the boot goes on as if it were not
   // there.
@@ -396,6 +401,19 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // keeps are cheap to read once a frame (see liveWorldBox).
   const shadowBox = new Box3();
   const shadowCorner = new Vector3();
+  // Armature, a workspace of this page, loaded on first use (armature/workspace.ts): until then
+  // the scene has no armature and none of it is drawn; once it has, the posed mannequin is one
+  // more thing the shadows fit.
+  let armatureSlot: ArmatureSlot | null = null;
+  /** Whether a figure stood in the scene when the mannequin was last shown or hidden for it. */
+  let figureWas = false;
+  /** The mannequin goes or comes back when a figure stands in the scene or does not (a remesh, its undo, its redo). */
+  const syncFigure = (): void => {
+    if (armatureSlot?.present() && figureMade() !== figureWas) {
+      figureWas = !figureWas;
+      armatureSlot.figureChanged();
+    }
+  };
   viewer.setShadowSubject(() => {
     shadowBox.makeEmpty();
     for (const mesh of session.getMeshes()) {
@@ -404,6 +422,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       shadowBox.expandByPoint(shadowCorner.set(b[0], b[1], b[2]));
       shadowBox.expandByPoint(shadowCorner.set(b[3], b[4], b[5]));
     }
+    armatureSlot?.shadowBox(shadowBox);
     return shadowBox.isEmpty() ? null : shadowBox;
   });
 
@@ -781,6 +800,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       viewer.setSculptMatrix(new Matrix4().fromArray(active.getMatrix()));
     }
     reconcile();
+    syncFigure();
     scenePanel?.refresh();
     sculptPanel?.refreshState();
     modelPanel?.refreshState();
@@ -834,7 +854,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let syncedNow: () => boolean = () => false;
   /** The copy on this device written now, without the autosave's wait (the Save key for a guest); false when saving on this device is off. Set once the autosave exists. */
   let keepNow: () => Promise<boolean> = async () => false;
-  let goArmature: () => Promise<void> = async () => undefined;
 
   // The opt-in hardware input log, for bugs that only exist on a real
   // tablet: Preferences > Diagnostics, or ?inputdebug=1 for the page. It is
@@ -891,6 +910,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sculptPanel?.tickChannels();
     // Present's turntable, before the controls as the coast is.
     present?.tick();
+    // A figure made, or its step undone or redone: the mannequin goes or comes back.
+    syncFigure();
   };
   // After the controls and the pivot re-centring, so everything that hangs
   // off the camera uses the camera this frame renders with: the light rig
@@ -1123,6 +1144,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
 
   // F and A, and View > Frame selected and Frame all.
+  /** Framing fits the stage to what is framed; the posed mannequin, while it is drawn, is part of what the stage is fitted to (the camera does not move). */
+  const stageTakesMannequin = (): void => {
+    const b = new Box3();
+    if (armatureSlot?.shadowBox(b)) viewer.fitSubject(b.union(viewer.subjectBounds()), false);
+  };
   const frameModel = (): void => {
     const active = session.getMesh();
     if (!active) return;
@@ -1131,6 +1157,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // Only what shows: hidden poly groups are left out of the framing.
     const box = visibleWorldBox(active, session.groups.hiddenFaces(active));
     viewer.frameBounds(box);
+    stageTakesMannequin();
     // Framing re-centres deliberately, so it also resets what you orbit
     // around; otherwise the next drag would swing away from the framing.
     box.getCenter(pivot);
@@ -1143,6 +1170,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     endPivotOrbit();
     editEpoch = -1;
     viewer.frameBounds(box);
+    stageTakesMannequin();
     box.getCenter(pivot);
   };
   const input = new InputShell(session, container, cursor, {
@@ -1645,11 +1673,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // What this device kept for the scene that opened: the autosave's pictures on a reload, a
   // library project's by its id (none when they were added on another device), nothing for a
   // template, an OBJ or anything else that opened as a new scene.
+  // The pictures of the old Armature board (the one board of the page now) are added once, whichever way the scene opened.
   if (openedExplicitly || objMesh) {
-    if (bootLink) void referenceBoard.restore({ project: bootLink.id });
-    else void referenceBoard.clear();
+    void (bootLink ? referenceBoard.restore({ project: bootLink.id }) : referenceBoard.clear()).then(() => referenceBoard.adoptKept('armature'));
   } else {
-    void referenceBoard.restore({ current: true }).then(() => referenceBoard.bindProject(bootLink?.id ?? null));
+    void referenceBoard
+      .restore({ current: true })
+      .then(() => referenceBoard.bindProject(bootLink?.id ?? null))
+      .then(() => referenceBoard.adoptKept('armature'));
   }
   fileActions.adoptUnsent(bootUnsent);
   // Where File > Close goes: set once the snapshot is defined, below.
@@ -2197,50 +2228,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     persist.markDirty();
     viewer.frameBounds(liveWorldBox(objMesh as unknown as SculptMesh));
   }
-  // A figure sent over from the Armature mode (?handoff=1): voxelised here,
-  // where the remesher lives, and added as an object. A scene with nothing
-  // done to it yet (the default sphere) makes way for the figure.
-  if (new URLSearchParams(window.location.search).get('handoff') === '1') {
-    const { takeHandoff } = await import('../armature/persist');
-    const handoff = await takeHandoff();
-    if (handoff) {
-      // A figure sent for the scene (Armature step of the path) is added to it, work or none.
-      const untouched = !fileActions.hasWork() && !handoff.addToScene;
-      // A scene with nothing in it yet becomes the figure's, on real
-      // units whatever it was; one with work keeps its own scale.
-      if (untouched) session.setUnits(UNITS);
-      const positions = handoffPositions(handoff, session.getUnits() ? (viewer.floorHeight() ?? 0) : null);
-      const voxelise = (resolution: number): ReturnType<SculptSession['addVoxelised']> =>
-        session.addVoxelised(handoff.name, positions, handoff.indices, resolution);
-      let added: ReturnType<typeof voxelise>;
-      try {
-        added = voxelise(handoff.resolution);
-      } catch (err) {
-        // Armature refuses a resolution this device cannot take before it
-        // sends, so this is a figure sent from a roomier device or an older
-        // app. The handoff is already taken: the figure comes at the most
-        // that fits, and says so, rather than not at all.
-        if (!(err instanceof RemeshTooLarge)) throw err;
-        added = voxelise(err.fits);
-        // Said once the page is up: the boot's first frames can hold the
-        // main thread for longer than the notice stays.
-        afterBoot(() =>
-          statusToast('Voxelising the figure...').fail(
-            `The figure was remeshed at ${err.fits}, the most this device can take: ${handoff.resolution} would need about ${formatBytes(err.bytes)}.`,
-          ),
-        );
-      }
-      if (untouched) {
-        for (const m of [...session.getMeshes()]) if (m !== added) session.deleteMesh(m);
-      }
-      persist.markDirty();
-      viewer.frameBounds(liveWorldBox(added as unknown as SculptMesh));
-    }
-    const url = new URL(window.location.href);
-    url.searchParams.delete('handoff');
-    history.replaceState(null, '', url);
-  }
-
   const handle = {
     viewer,
     session,
@@ -2253,6 +2240,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     publishWindow,
     fileMenu,
     studio, // the page's shell: strip, menus, edge column, details, workspaces
+    // Armature, loaded on first use (armature/workspace.ts), what the page gives it, and the figure's state.
+    get armature() {
+      return armatureSlot;
+    },
+    get armatureHost() {
+      return armatureHost;
+    },
+    figure: { settings: () => figureSettings, made: () => figureMade() },
     editMenu: studio.menus.edit,
     viewMenu: studio.menus.view,
     helpMenu: studio.menus.help,
@@ -2333,32 +2328,187 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     return persist.settle();
   };
 
+  // --- Armature, the first workspace of the path ----------------------------------------
+  // Loaded when it is first entered (armature/workspace.ts), so Sculpt starts as it did. The scene
+  // has an armature from then on: its posed mannequin is drawn in every workspace until a figure
+  // has been made from it, listed in the Scene tab, and takes no strokes.
+  /** The resolution the two Remesh to a figure controls share (the Armature tab's and the Model tab's). */
+  const figureSettings = { resolution: 120 };
+  /** The figure last made, and the step of this scene's history that made it. */
+  let figureMesh: SculptMesh | null = null;
+  let figureStep: unknown = null;
   /**
-   * The Armature step of the workspace path. Nothing in a sculpt records an
-   * armature it was sent from (the handoff is taken and deleted on arrival,
-   * and the scene record keeps no link), so every sculpt asks. Yes: the
-   * scene is written as it stands, and Armature opens on a new figure whose
-   * Send to Sculpt adds it to this scene as a new object (&scene=1,
-   * SculptHandoff.addToScene).
+   * Whether a figure made from the mannequin stands in the scene: its step is still in the history
+   * (undoing it brings the mannequin back, redoing it takes it away again) or, once the step has
+   * fallen off the end of a long history, while the object is in the scene.
    */
-  goArmature = async (): Promise<void> => {
-    // A new figure takes the place of the armature kept on this device, as
-    // opening one from the gallery does: say so before it goes.
-    const draft = await hasArmature();
-    const yes = await askWindow({
-      title: 'Make a new armature for this scene?',
-      text:
-        'The figure you send back is added to this scene as a new object. Nothing in the scene is replaced.' +
-        (draft ? ' The armature in progress on this device will be replaced.' : ''),
-      yes: 'New armature',
-      // Replacing the armature kept here loses it; adding to the scene loses nothing.
-      danger: draft,
-    });
-    if (!yes) return;
-    present?.leave();
-    await Promise.all([snapshot(), persist.flush(), storeLook()]);
-    window.location.href = '/?armature=1&scene=1';
+  const figureMade = (): boolean => {
+    if (!figureMesh) return false;
+    const history = session.getStateManager() as unknown as { _undos: unknown[]; _curUndoIndex: number };
+    const at = history._undos.indexOf(figureStep);
+    if (at !== -1) return at <= history._curUndoIndex;
+    return session.getMeshes().includes(figureMesh);
   };
+  /** The nearest paint the page can give a long job before it begins: its notice has been drawn. */
+  const nextPaint = (): Promise<void> => new Promise((ok) => requestAnimationFrame(() => window.setTimeout(ok, 0)));
+  /**
+   * Remesh to a figure: the posed mannequin, baked to world triangles, voxelised at the resolution
+   * into one object named "Figure" in one undo step (a scene with nothing done to it makes way for
+   * it, as it did when a figure was sent over). Priced first: a grid this device cannot spare is
+   * refused with the reason, and nothing changes. Nothing is stored for it but the scene.
+   */
+  const remeshFigure = async (resolution: number): Promise<boolean> => {
+    const bake = armatureSlot?.bake();
+    if (!bake) return false;
+    if (input.isStroking() || gizmo.isDragging()) return false;
+    try {
+      checkRemesh(boxOfPositions(bake.positions), Math.round(resolution));
+    } catch (err) {
+      if (!(err instanceof RemeshTooLarge)) throw err;
+      statusToast('Remeshing...').fail(err.message);
+      return false;
+    }
+    const status = statusToast('Making the figure...');
+    await nextPaint();
+    const t0 = performance.now();
+    // A scene with nothing in it yet becomes the figure's, on real units whatever it was; one with work keeps its own scale.
+    const untouched = !fileActions.hasWork();
+    if (untouched) session.setUnits(UNITS);
+    const floor = session.getUnits() ? (viewer.floorHeight() ?? 0) : null;
+    const positions = handoffPositions({ positions: bake.positions, units: UNITS, floor: viewer.floorHeight() ?? 0 }, floor);
+    let added: ReturnType<SculptSession['addVoxelised']>;
+    try {
+      added = session.addVoxelised('Figure', positions, bake.indices, resolution, untouched ? [...session.getMeshes()] : []);
+    } catch (err) {
+      if (!(err instanceof RemeshTooLarge)) throw err;
+      status.fail(err.message);
+      return false;
+    }
+    figureMesh = added as unknown as SculptMesh;
+    figureStep = session.getStateManager().getCurrentState();
+    persist.markDirty();
+    figureWas = true;
+    armatureSlot?.figureChanged();
+    const ms = performance.now() - t0;
+    perfLog.record('figure remesh', ms, `resolution ${Math.round(resolution)}`);
+    status.done(`Figure made (${(ms / 1000).toFixed(1)} s)`);
+    return true;
+  };
+  /** The page's side of Armature (armature/host.ts). */
+  const armatureHost: ArmatureHost = {
+    viewer,
+    studio,
+    address: {
+      project: armatureAddress && isProjectId(query.get('project')) ? query.get('project') : null,
+      template: armatureAddress && isProjectId(query.get('template')) ? query.get('template') : null,
+      scope: armatureAddress && query.get('scope') === 'admin' ? 'admin' : undefined,
+      sentHere,
+    },
+    applyLook: (look) => applyLookSafely(look),
+    remesh: remeshFigure,
+    mannequinAlbedo: () => library.list()[0].albedo,
+    figureMade,
+    figure: figureSettings,
+    leaveForGallery: () => leaveForGallery(),
+  };
+  /** Which workspace the address names: a reload opens the page on the one it was in. */
+  const setWorkspaceAddress = (armatureOn: boolean): void => {
+    try {
+      const url = new URL(window.location.href);
+      if (armatureOn) {
+        url.searchParams.set('armature', '1');
+        url.searchParams.delete('sculpt');
+        url.searchParams.delete('paint');
+      } else if (url.searchParams.get('armature') === '1') {
+        url.searchParams.delete('armature');
+        url.searchParams.set('sculpt', '1');
+      }
+      window.history.replaceState(window.history.state, '', url);
+    } catch {
+      // An address that cannot be written is not worth failing the switch.
+    }
+  };
+  /**
+   * Sculpt put away for Armature, and back: its tools, its ring and its highlights, its pointer
+   * and its keys (the workspace keys excepted); the Paint workspace is left first, as a way
+   * through Sculpt would.
+   */
+  const holdForArmature = (on: boolean): void => {
+    if (on) {
+      if (paintOn) leavePaint();
+      input.exitSelect();
+      input.exitMeasure();
+      exitTransform();
+      input.held = true;
+      cursor.hide();
+      document.body.classList.add('armature-ws');
+      // The mannequin has no object's material: the Material tab shows its Display section alone.
+      studio.material.setSurfaceShown(false);
+      syncHighlights();
+      setWorkspaceAddress(true);
+    } else {
+      input.held = false;
+      document.body.classList.remove('armature-ws');
+      studio.material.setSurfaceShown(true);
+      input.refreshBrushCursor();
+      setWorkspaceAddress(false);
+    }
+    window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
+  };
+  session.onHistoryStep = syncFigure;
+  armatureSlot = armatureWorkspace({
+    host: armatureHost,
+    hold: (on) => holdForArmature(on),
+    changed: () => {
+      scenePanel?.refresh();
+      modelPanel?.refreshFigure();
+    },
+  });
+  scenePanel!.armatureRow = () => (armatureSlot?.present() && !figureMade() ? { name: armatureSlot.name() } : null);
+  modelPanel!.figure = { settings: figureSettings, shown: () => !!armatureSlot?.present(), remesh: (res) => void remeshFigure(res) };
+  // A press that lands on the posed mannequin is not a stroke: it asks, once a visit, whether to
+  // remesh it into a figure, and the press goes to the view as it does off the model.
+  {
+    const ray = new Raycaster();
+    const ndc = new Vector2();
+    const eye = new Vector3();
+    let asked = false;
+    input.strokeGate = (e) => {
+      const mannequin = armatureSlot?.mannequin();
+      if (!mannequin) return false;
+      const r = canvas.getBoundingClientRect();
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, viewer.camera);
+      const hit = ray.intersectObject(mannequin, false)[0];
+      if (!hit) return false;
+      // An object of the scene in front of it takes the stroke.
+      const picking = session.getPicking();
+      if (picking.intersectionMouseMeshes()) {
+        const p = picking.getIntersectionPoint();
+        if (eye.set(p[0], p[1], p[2]).distanceTo(ray.ray.origin) <= hit.distance) return false;
+      }
+      if (!asked) {
+        asked = true;
+        // Asked once the press has ended: the window over the view would take the release, and the
+        // press would never be let go of.
+        let shown = false;
+        const ask = (): void => {
+          if (shown) return;
+          shown = true;
+          void askWindow({
+          title: 'Remesh "Figure" to sculpt it?',
+          text: 'Sculpting needs a surface of its own. The armature keeps its pose, and you can make another figure from it later.',
+          yes: 'Remesh',
+          }).then((yes) => {
+            if (yes) void remeshFigure(figureSettings.resolution);
+          });
+        };
+        window.addEventListener('pointerup', () => window.setTimeout(ask, 0), { once: true });
+        window.addEventListener('pointercancel', () => window.setTimeout(ask, 0), { once: true });
+      }
+      return true;
+    };
+  }
   // Sculpt, Paint and Present are the page's three workspaces; the shell does the switching,
   // the menus (the View menu's panel list is the workspace's own), the path and the readout.
   for (const ws of sculptWorkspaces({
@@ -2394,7 +2544,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     enterPaint: () => void enterPaint(),
     leavePaint: () => leavePaint(),
     leavePresent,
-    goArmature: () => goArmature(),
+    armature: armatureSlot,
     flush: flushForLeaving,
     hideInterface: () => chrome.set(true),
   })) {
@@ -2407,9 +2557,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   studio.start('sculpt');
   // /?sculpt=1&paint=1 reopens in Paint, as the address Paint keeps while it is up.
   if (new URLSearchParams(window.location.search).get('paint') === '1') studio.go('paint');
-
   // The hotkey guide (H) swaps to the sculpt table while the mode is active.
   window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));
+
+  // /?armature=1 opens the page on Armature: the code is fetched now and the page waits for it, so
+  // the first frame the person sees is Armature's.
+  if (armatureAddress) {
+    studio.go('armature');
+    await armatureSlot.ready();
+  }
 
   return () => {
     // Before the viewer's own look is put back below, or the session's would
@@ -2629,27 +2785,6 @@ function openedLabel(opened: ProjectOpen | null): string {
   return `Opened this device's copy of "${opened?.link?.title}": ${opened?.error}`;
 }
 
-/**
- * Run `fn` once the boot overlay has gone and a frame has been drawn: a
- * notice made before then could spend its whole life behind the overlay,
- * or out-wait a main thread busy with the first frames.
- */
-function afterBoot(fn: () => void): void {
-  const go = (): void => {
-    requestAnimationFrame(() => requestAnimationFrame(fn));
-  };
-  if (!document.getElementById('overlay')) {
-    go();
-    return;
-  }
-  const watch = new MutationObserver(() => {
-    if (document.getElementById('overlay')) return;
-    watch.disconnect();
-    go();
-  });
-  watch.observe(document.documentElement, { childList: true, subtree: true });
-}
-
 /** The boot notice: a line of text, up for ten seconds once it can be seen. */
 function bootToast(text: string): HTMLDivElement {
   const toast = document.createElement('div');
@@ -2688,7 +2823,7 @@ function bootToast(text: string): HTMLDivElement {
  * on that scene's old scale, 50 units a metre, as a figure always arrived
  * there.
  */
-function handoffPositions(h: SculptHandoff, floor: number | null): Float32Array {
+function handoffPositions(h: { positions: Float32Array; units?: UnitsMarker; floor?: number }, floor: number | null): Float32Array {
   const toCm = h.units === 'cm' ? 1 : h.units === 'm' ? CM_PER_M : CM_PER_M / LEGACY_ARMATURE_SCALE;
   const k = floor === null ? toCm / (CM_PER_M / LEGACY_ARMATURE_SCALE) : toCm;
   const lift = floor === null ? 0 : floor - (h.floor ?? 0) * toCm;

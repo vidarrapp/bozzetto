@@ -1240,15 +1240,44 @@ body.bz-shell .bz-edge button:focus-visible > .bz-tip {
   }
 }
 
-/* Armature stands the undo and redo buttons in the same place. */
-body.bz-shell .armature-hist {
-  position: static;
-}
-
 /* The update notice, in the corner of the foot of the screen: beside an open
    right-hand panel (304px now) rather than over its foot (ui/updateNotice). */
 body.bz-shell .update-notice--beside-panel {
   right: calc(316px + env(safe-area-inset-right, 0px));
+}
+
+/* --- Armature, the first workspace (armature/workspace.ts) -----------------------
+   Sculpt's tools are put away: the tool bar's brushes, the brush fields, Solo and Negative on the
+   edge column (Undo, Redo and Arrange stay, the shell's own), the brush ring. Its panels are the
+   shell's to silence (Scene, Model, Layers and Tool); the mannequin's own are the Armature tab,
+   and Material and Reference, the page's. */
+body.armature-ws .sculpt-toolbar__brushes,
+body.armature-ws .bz-edge__fields,
+body.armature-ws .sculpt-solo,
+body.armature-ws .sculpt-toolbar__neg,
+body.armature-ws .sculpt-leveltoast,
+body.armature-ws .sculpt-cursor {
+  visibility: hidden !important;
+  opacity: 0;
+}
+
+/* Scene, Model, Layers and Tool are Sculpt's and Paint's: their tabs leave no gap in the row. */
+body.bz-shell.armature-ws:not(.presenting) :is(.panel--scene, .panel--model, .panel--layers, .panel--sculpt) {
+  display: none;
+}
+
+/* The scene's armature in the Scene tab: its mark where an object has its eye and padlock, and none of their controls. */
+.outliner__row--armature {
+  cursor: default;
+}
+
+.outliner__row--armature .outliner__mark {
+  flex: none;
+  width: 54px;
+  padding-left: 7px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--bz-text-3);
 }
 
 /* --- Present, the third workspace (sculpt/ui/Present.ts) -----------------------

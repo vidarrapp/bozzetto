@@ -29,6 +29,12 @@ export const PANELS: Topic[] = [
     group: G,
     blocks: [
       p('The **Model** panel, on the left, acts on the active object rather than on a tool. It has these sections, from the top. The object\'s colour, roughness and metalness are in the **Material** panel, next to it.'),
+      h('Figure'),
+      p('At the top, only while the scene has an armature (once you have been to **Armature**).'),
+      options(
+        ['Resolution', 'The voxel grid the posed mannequin is remeshed on. It is the same control as in the Armature tab\'s Figure section.'],
+        ['Remesh to a figure', 'Makes one new object named **Figure** from the mannequin as it is posed, in one undo step. Pressed again, it adds **Figure 2**. Until a figure exists the mannequin is drawn in every workspace and listed in the **Scene** tab, and a stroke on it asks first.'],
+      ),
       h('Topology'),
       options(
         ['Dynamic topology', 'Rebuilds the surface under every stroke so it keeps enough triangles where you work. Turning it on asks first, because it replaces the mesh and flattens the subdivision levels to the current resolution. Ctrl+Z undoes the switch. Turning it off is the way back.'],
@@ -171,7 +177,7 @@ export const PANELS: Topic[] = [
     title: 'Reference panel',
     group: G,
     blocks: [
-      p('The **Reference** panel, on the right after Material, holds pictures to look at while you work: a photo of the subject, a drawing, a pose. It is in Sculpt and Armature. It never changes the model.'),
+      p('The **Reference** panel, on the right after Material, holds pictures to look at while you work: a photo of the subject, a drawing, a pose. It is in Sculpt, Paint and Armature, one board for the page: the same pictures in each. Pictures that were on Armature\'s own board before the workspaces joined are added to it once. It never changes the model.'),
       h('Adding pictures'),
       options(
         ['Add picture…', 'Opens the picker. On an iPad or iPhone it offers your Photo Library, Take Photo and Choose File, so you can photograph something and use it at once.'],

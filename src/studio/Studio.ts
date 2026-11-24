@@ -264,7 +264,7 @@ export class Studio {
     this.front = next;
     this.silence(from, next);
     // Idempotent where the workspace has done it itself in its own order (Sculpt's Present).
-    this.panels?.go(to as 'sculpt' | 'paint' | 'present');
+    this.panels?.go(to);
     this.refresh();
     return true;
   }

@@ -5,7 +5,7 @@ import { dynamicNote } from './dynamicNote';
 import { GeometrySync } from '../bridge/GeometrySync';
 import { installSwatchPick } from '../../ui/swatchPick';
 import { checkbox, compactRange, section, numberedRange, type SliderOptions } from '../../ui/Panel';
-import { setSliderValue, type Limits } from '../../ui/sliderEntry';
+import { setSliderValue, sliderValue, type Limits } from '../../ui/sliderEntry';
 
 /** Typed-value limits (sliderEntry). */
 const FRACTION: Limits = { min: 0, max: 1 };
@@ -136,6 +136,14 @@ export class ModelPanel extends SidePanel {
   onGroupColors: ((on: boolean) => void) | null = null;
   /** From mask (Ctrl+G's twin). */
   onGroupFromMask: (() => void) | null = null;
+  /**
+   * Remesh to a figure, from the mannequin of the scene's armature: the Figure section is shown
+   * only while the scene has one (`shown`), its Resolution is the one the Armature tab's control
+   * shares (`settings`), and the button asks the page to make the figure (`remesh`).
+   */
+  figure: { settings: { resolution: number }; shown(): boolean; remesh(resolution: number): void } | null = null;
+  private figureSection?: HTMLElement;
+  private figureInput?: HTMLInputElement;
 
   constructor(
     private readonly session: SculptSession,
@@ -225,6 +233,50 @@ export class ModelPanel extends SidePanel {
     // moves - steps, ctrl+d, undo - since the level count itself changes.
     this.topoBody = div('sculpt-panel__topo');
     sec.appendChild(this.topoBody);
+  }
+
+  /** Remesh to a figure: the posed mannequin of the scene's armature into an object of its own. */
+  private buildFigure(body: HTMLElement): void {
+    const sec = section(body, 'Figure');
+    body.prepend(sec);
+    sec.dataset.role = 'figure';
+    this.figureSection = sec;
+    const res = this.numberedRange(
+      'Resolution',
+      VOXEL_SLIDER.min,
+      VOXEL_SLIDER.max,
+      VOXEL_SLIDER.step,
+      120,
+      (v) => {
+        if (this.figure) this.figure.settings.resolution = v;
+        return String(Math.round(v));
+      },
+      { limits: VOXEL_RESOLUTION },
+    );
+    this.figureInput = res.input;
+    sec.appendChild(res.row);
+    const row = div('sculpt-panel__row');
+    const btn = this.opButton('Remesh to a figure', () => this.figure?.remesh(this.figure.settings.resolution));
+    btn.classList.add('sculpt-panel__btn--wide');
+    btn.dataset.role = 'remesh-figure';
+    btn.title = 'Make a figure from the posed mannequin of the Armature: one object, one undo step';
+    row.appendChild(btn);
+    sec.appendChild(row);
+    const hint = div('sculpt-panel__hint muted');
+    hint.textContent = 'The mannequin is posed in the Armature tab. A figure made from it can be sculpted and painted.';
+    sec.appendChild(hint);
+    sec.hidden = false;
+  }
+
+  /** The Figure section shows while the scene has an armature, with the Resolution the Armature tab shares. */
+  refreshFigure(): void {
+    // Built the first time the scene has an armature: a panel without one has no Figure rows at all.
+    if (!this.figureSection && this.figure?.shown()) this.buildFigure(this.body);
+    if (!this.figureSection) return;
+    this.figureSection.hidden = !this.figure?.shown();
+    if (this.figure && this.figureInput && Math.abs(sliderValue(this.figureInput) - this.figure.settings.resolution) > 1e-6) {
+      setSliderValue(this.figureInput, this.figure.settings.resolution);
+    }
   }
 
   private buildRemesh(body: HTMLElement): void {

@@ -555,20 +555,16 @@ export const suites = {
       t.ok(old.now.every((v, i) => Math.abs(v - old.was[i]) < 1e-2) && old.units === 'cm', `an .armature ${what} opens where it was, in centimetres (root ${old.now.map((v) => v.toFixed(2)).join(', ')}, ${old.units})`);
     }
 
-    // Send to Sculpt keeps the feet on the floor.
+    // Remesh to a figure keeps the feet on the floor, in the same page.
     await page.evaluate(() => window.__armature.save());
-    await Promise.all([
-      page.waitForURL(/handoff=1|sculpt=1/, { timeout: 60_000 }),
-      // The send ends in the page leaving, which can end the call before it answers.
-      page.evaluate(() => window.__armature.send(64)).catch(() => undefined),
-    ]);
-    await page.waitForFunction(() => !!window.__sculpt && window.__sculpt.session.getMeshes().some((m) => window.__sculpt.session.getMeshName(m) === 'Figure'), null, { timeout: 120_000 });
+    await page.evaluate(() => window.__armature.remesh(64));
+    await page.waitForFunction(() => window.__sculpt.session.getMeshes().some((m) => window.__sculpt.session.getMeshName(m) === 'Figure'), null, { timeout: 120_000 });
     const sent = await page.evaluate(() => {
       const { session } = window.__sculpt;
       const fig = session.getMeshes().find((m) => session.getMeshName(m) === 'Figure');
       return { box: window.__sculpt.worldBox(fig), units: session.getUnits(), floor: window.__sculpt.viewer.floorHeight() };
     });
-    t.eq(sent.units, 'cm', 'the figure arrives in a scene on real units');
+    t.eq(sent.units, 'cm', 'the figure stands in a scene on real units');
     t.near(sent.box.max[1] - sent.box.min[1], 169.4, 4, `at its own height (${(sent.box.max[1] - sent.box.min[1]).toFixed(1)} cm)`);
     t.ok(Math.abs(sent.box.min[1] - sent.floor) < 3, `with its feet on the floor (soles at ${sent.box.min[1].toFixed(2)} cm, floor at ${sent.floor})`);
   },

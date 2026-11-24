@@ -369,6 +369,25 @@ export class ReferenceBoard {
     if ('project' in from) this.touch(false);
   }
 
+  /**
+   * Pictures kept under another scope join this board, once: the old Armature board's, now that
+   * the page has one board for every workspace. They go after what is here, and the old record
+   * is let go only when they are in. Nothing happens when this device kept nothing for it.
+   */
+  async adoptKept(scope: 'armature'): Promise<void> {
+    const key = keyCurrent(scope);
+    const rec = await this.read(key);
+    if (!rec) return;
+    const have = new Set(this.items.map((i) => i.id));
+    const items = rec.items.map(cleanItem).filter((i): i is RefItem => !!i && !have.has(i.id));
+    if (items.length) {
+      this.items = [...this.items, ...items].slice(0, MAX_REFERENCES);
+      this.touch();
+      await this.flush();
+    }
+    await this.erase(key);
+  }
+
   private async read(key: string): Promise<Stored | null> {
     if (!mayStore()) return null;
     try {

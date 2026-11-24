@@ -321,6 +321,18 @@ export class Armature {
         const name = imported.boneOrder[i];
         return (name !== undefined ? partIndex.get(name) : undefined) ?? 0;
       });
+      // The sculpt shaders of the page read a colour and the material values off every object.
+      const count = geometry.getAttribute('position').count;
+      if (!geometry.getAttribute('color')) geometry.setAttribute('color', new Float32BufferAttribute(new Array(count * 3).fill(1), 3));
+      if (!geometry.getAttribute('materialsPBR')) {
+        const pbr = new Float32Array(count * 3);
+        for (let i = 0; i < pbr.length; i += 3) {
+          pbr[i] = 0.3;
+          pbr[i + 1] = 0;
+          pbr[i + 2] = 1;
+        }
+        geometry.setAttribute('materialsPBR', new BufferAttribute(pbr, 3));
+      }
       this.mesh = new SkinnedMesh(geometry, material);
       this.mesh.name = 'armature';
       this.mesh.frustumCulled = false;

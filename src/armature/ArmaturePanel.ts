@@ -29,7 +29,8 @@ export interface ArmaturePanelHooks {
   plant(on: boolean): void;
   /** Where a chain's knee or elbow should point, degrees around the limb. */
   aim(id: string, degrees: number): void;
-  send(resolution: number): void;
+  /** Remesh to a figure at this resolution (the page makes it). */
+  remesh(resolution: number): void;
 }
 
 /**
@@ -51,19 +52,22 @@ export class ArmaturePanel extends SidePanel {
   private readonly heightEl: HTMLDivElement;
   private readonly floorInput: HTMLInputElement;
   private selected: string | null = null;
-  /** Voxel resolution for Send to Sculpt (the Model panel's range). */
-  resolution = 120;
+  /** What the Figure section says: whether a figure has been made from this armature. */
+  private readonly figureLine: HTMLDivElement;
   /** The voxel grid over the figure while the Resolution slider is held, as in Sculpt. */
   private readonly voxelOverlay: VoxelOverlay;
+  private resolutionInput?: HTMLInputElement;
 
   constructor(
     private readonly figure: () => Armature,
     private readonly hooks: ArmaturePanelHooks,
     private readonly viewer: Viewer,
+    /** The Resolution Remesh to a figure uses, shared with the Model tab's control. */
+    private readonly figureSettings: { resolution: number },
   ) {
     super({ id: 'armature', title: 'Armature', side: 'left', variant: 'panel--armature' });
 
-    const fig = section(this.body, 'Figure');
+    const fig = section(this.body, 'Mannequin');
     // The block figures, then the mannequins (Blender Studio's CC0 base
     // meshes on the same bones); a model loaded from a file joins the list
     // when it does.
@@ -75,7 +79,7 @@ export class ArmaturePanel extends SidePanel {
     fig.appendChild(labelRow('Preset', this.presetSel));
     // How tall the figure stands, at its file's own size, and where the
     // floor it stands on is: 0 at its soles, raised or lowered here, saved
-    // with the look and carried into Sculpt by Send to Sculpt.
+    // with the look.
     this.heightEl = div('sculpt-panel__hint muted armature-panel__height');
     fig.appendChild(this.heightEl);
     const floorRow = compactRange(
@@ -133,22 +137,29 @@ export class ArmaturePanel extends SidePanel {
       reach.appendChild(box);
     }
 
-    const send = section(this.body, 'Send to Sculpt');
+    // The figure: what the posed mannequin is made into, in this scene, by pressing the button.
+    const send = section(this.body, 'Figure');
+    send.dataset.role = 'figure';
+    this.figureLine = div('sculpt-panel__hint muted');
+    this.figureLine.dataset.role = 'figure-state';
+    send.appendChild(this.figureLine);
+    this.setFigureMade(false);
     const resolution = numberedRange(
       'Resolution',
       VOXEL_SLIDER.min,
       VOXEL_SLIDER.max,
       VOXEL_SLIDER.step,
-      this.resolution,
+      this.figureSettings.resolution,
       (v) => {
-        this.resolution = v;
+        this.figureSettings.resolution = v;
         return String(Math.round(v));
       },
       { limits: VOXEL_RESOLUTION },
     );
+    this.resolutionInput = resolution.input;
     send.appendChild(resolution.row);
-    // The grid Sculpt will voxelise the posed figure on, while the slider
-    // is held: the figure's world box, as Send to Sculpt bakes it.
+    // The grid the posed mannequin is voxelised on, while the slider is held: its world box, as
+    // Remesh to a figure bakes it.
     this.voxelOverlay = new VoxelOverlay(viewer);
     showWhileHeld(resolution.input, this.voxelOverlay, () => {
       const fig = this.figure();
@@ -158,15 +169,24 @@ export class ArmaturePanel extends SidePanel {
       return b.isEmpty() ? null : [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z];
     });
     const sendRow = div('sculpt-panel__row');
-    const sendBtn = this.opButton('Send to Sculpt', () => this.hooks.send(this.resolution));
+    const sendBtn = this.opButton('Remesh to a figure', () => this.hooks.remesh(this.figureSettings.resolution));
     sendBtn.classList.add('sculpt-panel__btn--wide');
+    sendBtn.dataset.role = 'remesh-figure';
     sendRow.appendChild(sendBtn);
     send.appendChild(sendRow);
     const sendHint = div('sculpt-panel__hint muted');
-    sendHint.textContent = 'Voxelises the posed figure into one object and opens it in Sculpt mode.';
+    sendHint.textContent = 'Makes a surface of its own from the posed mannequin, one object in this scene, to sculpt and paint.';
     send.appendChild(sendHint);
 
     this.refresh(null);
+  }
+
+  /** The Figure section's line: whether a figure has been made from this armature. */
+  setFigureMade(made: boolean): void {
+    this.figureLine.textContent = made ? 'A figure has been made from this armature.' : 'No figure yet.';
+    if (this.resolutionInput && Math.abs(sliderValue(this.resolutionInput) - this.figureSettings.resolution) > 1e-6) {
+      setSliderValue(this.resolutionInput, this.figureSettings.resolution);
+    }
   }
 
   /** What a loaded model was read as; empty clears the line. */

@@ -767,7 +767,7 @@ export const suites = {
     const hand1 = await page.evaluate(() => window.__armature.handlePosition('hand.L'));
     t.ok(Math.hypot(...hand0.map((v, i) => v - hand1[i])) > 2e-5, 'the drag moved the hand');
     t.ok(mid.mode.kind === 'move' && mid.mode.ao === 'full' && mid.mode.shadows === 'stagger' && mid.mode.fast, `mid-drag the AO is drawn, not dropped (${show(mid.mode)})`);
-    t.ok(mid.p2.gtao - mid.p.gtao >= 2 && mid.p2.denoise - mid.p.denoise >= 2, `GTAO and its denoise drawn on the frames of the drag (${mid.p.gtao} then ${mid.p2.gtao})`);
+    // (Armature shows Sculpt's view now: the cavity pass, no GTAO, so there is no AO to keep drawn.)
     t.eq(mid.refreshes, 0, 'the panel is not rebuilt during the drag');
     t.eq(await page.evaluate(() => window.__refreshes), 1, 'and is rebuilt once when it ends');
     t.eq(show(grew(before, await counters(page))), '{}', 'no build or allocation from the press to the frames after the release');

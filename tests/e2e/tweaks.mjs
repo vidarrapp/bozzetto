@@ -279,7 +279,7 @@ const setDeviceMemory = (page, mem) =>
 /** The voxel overlay's state: shown, and what it drew. */
 const overlay = (page) =>
   page.evaluate(() => {
-    const o = document.querySelector('.voxel-overlay');
+    const o = document.querySelector('.voxel-overlay:not([hidden])') ?? document.querySelector('.voxel-overlay');
     if (!o) return null;
     return { shown: !o.hidden, ...o.dataset, caption: o.querySelector('.voxel-overlay__caption')?.textContent ?? '' };
   });
@@ -621,12 +621,12 @@ export const suites = {
     t.ok(thin.ok && thin.replaced && thin.verts > 1000, `512 on a thin object is accepted and remeshed (${thin.verts} vertices, box ${thin.box})`);
     t.eq(await failedNotice(page, 1500), null, 'with no notice');
 
-    // Armature: the same range and grid, and the same guard before it sends.
+    // Armature: the same range and grid, and the same guard before it makes the figure.
     await openArmature(page, base);
     await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
     t.ok(await openPanel(page, 'Armature'), 'Armature: its panel opens');
     row = await sliderRow(page, 'Armature', 'Resolution');
-    t.ok(row.min === 16 && row.max === 512, `Send to Sculpt's Resolution runs 16..512 (${row.min}..${row.max})`);
+    t.ok(row.min === 16 && row.max === 512, `the Armature tab's Figure Resolution runs 16..512 (${row.min}..${row.max})`);
     await page.mouse.move(...row.at);
     await page.mouse.down();
     await page.waitForTimeout(200);
@@ -637,30 +637,23 @@ export const suites = {
     t.ok((await overlay(page)).shown === false, 'and goes on release');
     await setDeviceMemory(page, 0.25);
     await clearNotices(page);
-    const url = page.url();
-    await page.evaluate(() => window.__armature.send(512));
+    const names0 = await page.evaluate(() => window.__sculpt.session.getMeshes().map((m) => window.__sculpt.session.getMeshName(m)).join());
+    await page.evaluate(() => window.__armature.remesh(512));
     const sendSaid = await failedNotice(page);
+    const names1 = await page.evaluate(() => window.__sculpt.session.getMeshes().map((m) => window.__sculpt.session.getMeshName(m)).join());
     t.ok(
-      /A remesh at 512 would need about .* more than this device can spare \(about 64 MB\)/.test(sendSaid ?? '') && page.url() === url,
-      `Send to Sculpt at 512 on a 256 MB device is refused before it leaves (${sendSaid})`,
+      /A remesh at 512 would need about .* more than this device can spare \(about 64 MB\)/.test(sendSaid ?? '') && names1 === names0,
+      `Remesh to a figure at 512 on a 256 MB device is refused before anything is built, the scene as it was (${sendSaid})`,
     );
-    // Sent from a roomier device (priced as it left, then the memory
-    // shrinks): Sculpt takes the figure at the most that fits, and says so.
-    await page.evaluate(() => {
-      sessionStorage.setItem('test:deviceMemory', '64');
-      void window.__armature.send(512);
-      sessionStorage.setItem('test:deviceMemory', '0.25');
-    });
-    await page.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
-    const arrived = await failedNotice(page, 60_000);
+    // The same device takes a resolution it has room for, in the same page.
+    await clearNotices(page);
+    await page.evaluate(() => window.__armature.remesh(32));
+    await page.waitForFunction(() => window.__sculpt.session.getMeshes().some((x) => /^Figure/.test(window.__sculpt.session.getMeshName(x))), null, { timeout: 90_000 });
     const figure = await page.evaluate(() => {
       const { session } = window.__sculpt;
       const m = session.getMeshes().find((x) => /^Figure/.test(session.getMeshName(x)));
       return m ? m.getNbVertices() : 0;
     });
-    t.ok(
-      /^The figure was remeshed at \d+, the most this device can take: 512 would need about \d+ MB\.$/.test(arrived ?? '') && figure > 500,
-      `and a figure sent at 512 to a device that cannot take it arrives at the most it can (${arrived}; ${figure} vertices)`,
-    );
+    t.ok(figure > 100, `and at 32 it makes the figure (${figure} vertices)`);
   },
 };

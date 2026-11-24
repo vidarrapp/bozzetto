@@ -204,6 +204,8 @@ export class MaterialControls {
   private readonly cavity: boolean;
   /** Sculpt's Material panel: the Colour choice (albedo and paint, albedo only, paint only) after Mode. */
   private readonly colour: boolean;
+  /** The workspace in front has paint to choose between (Armature's mannequin has none). */
+  private colourOffered = true;
   private cavityHost?: HTMLDivElement;
   /** The cavity strength to come back to after it was switched off (zero is its "off"). */
   private cavityStrength: number = DEFAULT_CAVITY.strength;
@@ -233,6 +235,13 @@ export class MaterialControls {
   }
 
   /** Build the controls again from the viewer's live state. */
+  /** Show or hide the Colour choice (paint against albedo) for the workspace in front. */
+  setColourOffered(on: boolean): void {
+    if (on === this.colourOffered) return;
+    this.colourOffered = on;
+    this.rebuild();
+  }
+
   rebuild(): void {
     const material = this.root;
     while (material.children.length > 1) material.lastElementChild!.remove();
@@ -355,7 +364,7 @@ export class MaterialControls {
     const mats = this.viewer.materials;
     const state = mats.getMaterialState();
 
-    if (this.viewer.getMaterial() === 'lit' && this.colour) {
+    if (this.viewer.getMaterial() === 'lit' && this.colour && this.colourOffered) {
       // A sculpt, in Sculpt, Paint and Present alike: which of the two factors
       // the shader uses. The albedo itself stays per object, in the Surface
       // section; nothing about the paint or the material is changed here.
