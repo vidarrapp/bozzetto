@@ -53,8 +53,16 @@ Sculpt and Paint each have their own bar.
 - **Order.** `[Select q] [tools…] [Transform t] [Calipers c]` in Sculpt,
   `[Select q] [tools…]` in Paint. Select, Transform and Calipers keep their
   places and keys and cannot be lifted.
-- **Keys follow the bar.** `1` to `9` and `0` pick whatever sits in the first
-  ten places. The bar may hold more; those past the tenth have no number key.
+- **Keys follow the bar.** `1` to `9` and `0` pick whatever sits in the ten
+  places. A bar holds ten tools and no more (Vidar, 2026-11-24): a full bar
+  refuses another tool and says so. **Tool groups** are the way to more, for
+  1.0 on the Rust core with the tool copies: one place holding several
+  tools, the place showing the one last used, its key pressed again cycling
+  them (only while that place's tool is in hand, with the new tool's name
+  shown, so a habitual press does not switch tools unseen), a tap on the
+  place already in hand opening the group's tools above the bar for the
+  Pencil, and "Add to group" in the tile's menu before any drop-onto-a-tile
+  gesture.
   Badges, the hotkey guide, Preferences and Help read the place.
 - **Lift:** a long press with Pencil or finger (600 ms, as Carve latches); a
   mouse may also just press and drag. The lifted tile follows the pointer

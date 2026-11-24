@@ -33,7 +33,7 @@
 import { eventTime, LONG_PRESS_MS } from '../../ui/dom';
 import { toolBars } from '../tools/bars';
 import type { Workspace } from '../tools/registry';
-import { tellRemoved } from './dockNotes';
+import { tellFull, tellRemoved } from './dockNotes';
 
 /** A mouse lifts after this much movement. */
 const MOUSE_LIFT_PX = 4;
@@ -317,6 +317,12 @@ export class Dock {
     // A tool that is on no bar of this workspace and is not the extra tile can only come from the window.
     if (from < 0 && !extra && !p.origin.window) return;
     const inserting = from < 0;
+    // A full bar takes no more: the tool is not lifted, and a notice says why.
+    if (inserting && toolBars.isFull(ws)) {
+      tellFull();
+      this.swallowing = true; // the press that asked was a lift, not a tap
+      return;
+    }
     const source = p.origin.tile ?? extra ?? tiles[from];
     if (!source) return;
     // The one read of the layout: where each place is, and where the tile came from.

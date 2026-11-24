@@ -26,6 +26,7 @@ export const BASICS: Topic[] = [
       h('Take a tool off the tool bar'),
       p('Drag a tool off the bar, up or to the side, and the copy you hold dims. Let go and the tool is off the bar. It is still in the **Asset library**, and a notice with an **Undo** puts it back where it was. The bar can be left empty. **View**, then **Reset tool bar**, puts the default tools back in the default order, with an **Undo**.'),
       p('A tool in hand that is not on the bar, because you took it from the library, shows as one extra tile at the end of the tools. It has no number and a dashed line inside it. Drag it onto the bar to keep it; pick another tool and it goes.'),
+      p('A tool bar holds ten tools, one for each number key. A full bar takes no more: a notice says so, and taking one off makes room.'),
       p('**Press and hold** a tool without moving and let go, and a small menu opens at it: **Tool settings** opens the Tool panel on that tool, and **Remove from tool bar** takes it off. For the extra tile, **Add to tool bar** keeps it.'),
       h('What is on the screen in the viewer'),
       list(

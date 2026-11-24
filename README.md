@@ -177,6 +177,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 - **Asset library.** A window that floats over the view and stays open while you work. Open it with the **Library** button in the Tool panel or **View**, then **Asset library**. Its Tools tab shows every tool, Sculpt and Paint, and a tap takes one in hand. Press and hold a tool there and drag it onto the tool bar to put it at that place. Materials, Lighting and HDRIs come to it in a later version.
 - **Take a tool off the tool bar.** Drag it off the bar and let go, and it is off the bar and still in the library, with an **Undo**. The bar can be emptied, and **View**, then **Reset tool bar**, brings every tool back.
 - **A tool in hand that is not on the bar** shows as one extra tile at the end of the tools, with a dashed line and no number. Drag it onto the bar to keep it.
+- **Ten tools on a bar.** A tool bar holds ten tools, one for each number key. A full bar takes no more and says so.
 - **A tool's menu.** Press and hold a tool on the bar, or in the library, and let go without moving, and a small menu opens with its settings and Add to or Remove from tool bar.
 
 ### v0.7.10

@@ -981,6 +981,54 @@ export const suites = {
     await wait(page, 500);
     t.eq(JSON.stringify(grew(before, await counters())), '{}', 'no build, compile or allocation in the view while dragging from the window or off the bar');
   },
+
+  // A bar holds ten tools, one for each key (owner, 2026-11-24). No workspace has ten tools to place yet, so
+  // the limit is lowered here to make a bar full with the tools there are.
+  async libraryFull(page, base, t) {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    const OFF = SCULPT_BAR.filter((id) => id !== 'bz.pinch');
+    await boot(page, base, stripKey({ v: 2, sculpt: { ids: OFF, known: SCULPT_BAR } }));
+    t.eq(await page.evaluate(() => window.__sculpt.tools.bars.limit), 10, 'a bar holds ten tools');
+    t.eq(await page.evaluate(() => window.__sculpt.tools.bars.isFull('sculpt')), false, 'eight tools do not fill it');
+    await page.evaluate(() => {
+      window.__sculpt.tools.bars.limit = 8;
+    });
+    t.eq(await page.evaluate(() => window.__sculpt.tools.bars.isFull('sculpt')), true, 'with room for eight, eight fill it');
+    await openLib(page);
+    await page.keyboard.press('1');
+    await wait(page, 100);
+    // Lifting a ninth from the window: no ghost, the reason said, nothing changed and nothing taken in hand.
+    const hand = await page.evaluate(() => document.querySelector('.sculpt-toolbar__btn--active')?.dataset.tool ?? null);
+    const mouse = await pointer(page, 'mouse');
+    const [px, py] = await tileC(page, 'bz.pinch');
+    await mouse.down(px, py);
+    await mouse.move(px + 8, py);
+    await mouse.move(px + 30, py + 40);
+    await wait(page, 300);
+    t.eq(await ghosts(page), 0, 'a tool is not lifted towards a full bar');
+    t.ok((await notes(page)).some((n) => n === 'The tool bar is full (8 tools). Take one off to add another.'), `and a notice says the bar is full (${(await notes(page)).join(' | ')})`);
+    await mouse.up();
+    await wait(page, 300);
+    t.eq((await order(page)).join(), OFF.join(), 'the bar is as it was');
+    t.eq(await page.evaluate(() => document.querySelector('.sculpt-toolbar__btn--active')?.dataset.tool ?? null), hand, 'and the press picked nothing');
+    // A tool already on the bar still moves along it.
+    const moved = await page.evaluate(() => {
+      const b = window.__sculpt.tools.bars;
+      const ids = [...b.order('sculpt')];
+      b.set('sculpt', [ids[1], ids[0], ...ids.slice(2)]);
+      return b.order('sculpt').slice(0, 2).join();
+    });
+    t.eq(moved, `${OFF[1]},${OFF[0]}`, 'a tool on a full bar can still change places');
+    // The order itself never holds more than the limit, whatever asks.
+    const capped = await page.evaluate((all) => {
+      const b = window.__sculpt.tools.bars;
+      b.set('sculpt', all);
+      return { n: b.order('sculpt').length, clean: window.__sculpt.tools.sanitizeOrder('sculpt', all, all, 8).length, stored: window.__sculpt.tools.sanitizeOrder('sculpt', all, all).length };
+    }, SCULPT_BAR);
+    t.ok(capped.n === 8 && capped.clean === 8 && capped.stored === 9, `nine tools set on a bar of eight keep the first eight, and a stored order is held to the limit too (${JSON.stringify(capped)})`);
+    t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
 };
 
 function OFFLIST() {

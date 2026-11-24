@@ -609,6 +609,11 @@ Tool, with Material before it.
   one notice says it will not be kept. **View > Reset tool bar** (Sculpt and
   Paint, greyed while the bar is the default) puts the default order back,
   removed tools included, with a notice that has Undo.
+- **Ten tools at most.** A bar holds one tool for each of the ten place keys
+  (`ToolBars.limit`). A lift towards a full bar from the window or the extra
+  tile does not start, and the menus' Add to tool bar adds nothing; either way
+  a notice says "The tool bar is full (10 tools). Take one off to add
+  another." Tool groups, for more tools on one key, wait for 1.0.
 - **A tool in hand that is not on the bar** shows as one extra tile after
   the last tool of the bar (before Transform), orange as the tool in hand,
   with no digit and a dashed line inside it that says it is not kept. Its

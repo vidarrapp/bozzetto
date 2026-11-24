@@ -21,7 +21,7 @@ import { toolById, type Workspace } from './registry';
  */
 export const BARS_KEY = 'bozzetto-toolbar';
 
-/** The keys 1 to 9 and 0: a bar may hold more tools than this, and those past the tenth have no key. */
+/** The keys 1 to 9 and 0, and so how many tools a bar holds: one for each key (ToolBars.limit). */
 export const PLACE_COUNT = 10;
 
 /** Today's order, the default of each workspace's bar. */
@@ -58,7 +58,7 @@ export function fitsBar(ws: Workspace, id: string): boolean {
  * comes in, a tool taken off the bar stays off. With no `known` (a v1
  * record) everything missing is appended, as that version always did.
  */
-export function sanitizeOrder(ws: Workspace, raw: unknown, known?: unknown): string[] {
+export function sanitizeOrder(ws: Workspace, raw: unknown, known?: unknown, limit = PLACE_COUNT): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   if (Array.isArray(raw)) {
@@ -70,7 +70,8 @@ export function sanitizeOrder(ws: Workspace, raw: unknown, known?: unknown): str
   }
   const knew = Array.isArray(known) ? new Set(known.filter((k): k is string => typeof k === 'string')) : null;
   for (const id of DEFAULT_BARS[ws]) if (!seen.has(id) && (!knew || !knew.has(id))) out.push(id);
-  return out;
+  // A bar holds a tool for each key and no more (PLACE_COUNT): what a record has past that is left off.
+  return out.slice(0, limit);
 }
 
 export class ToolBars {
@@ -151,6 +152,17 @@ export class ToolBars {
     }
   }
 
+  /**
+   * How many tools a bar holds: one for each of the ten keys (owner, 2026-11-24; more tools on one key are
+   * for tool groups, later). A property so a test can make a bar full with the tools there are.
+   */
+  limit = PLACE_COUNT;
+
+  /** Whether a workspace's bar has a tool in every place it has. */
+  isFull(ws: Workspace): boolean {
+    return this.orders[ws].length >= this.limit;
+  }
+
   /** The ids on a workspace's bar, in order. */
   order(ws: Workspace): readonly string[] {
     return this.orders[ws];
@@ -169,13 +181,15 @@ export class ToolBars {
   /**
    * Put a new order on a bar and keep it on the device (when the person
    * allows that). Ids that are not tools, tools of the other workspace, and
-   * repeats are left out. A bar may be emptied.
+   * repeats are left out, and so is whatever comes after the bar is full
+   * (`limit`). A bar may be emptied.
    */
   set(ws: Workspace, ids: readonly string[]): void {
     const seen = new Set<string>();
     const clean: string[] = [];
     for (const id of ids) {
       if (!fitsBar(ws, id) || seen.has(id)) continue;
+      if (clean.length >= this.limit) break;
       seen.add(id);
       clean.push(id);
     }
