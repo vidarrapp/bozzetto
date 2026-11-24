@@ -95,6 +95,7 @@ const torso = (page) =>
 /** A press, a drag and a release on the view at a page point. */
 async function stroke(page, [x, y]) {
   await page.mouse.move(x - 4, y);
+  await page.waitForTimeout(200); // the hover's pick lands before the press, as a hand's does
   await page.mouse.down();
   await page.mouse.move(x + 40, y + 16, { steps: 12 });
   await page.mouse.up();
@@ -486,10 +487,8 @@ export const suites = {
       same = now === last ? same + 1 : 0;
       last = now;
     }
-    const chest = await page.evaluate(() => {
-      const b = window.__sculpt.worldBox(window.__sculpt.session.getMesh());
-      return window.__armature.onScreen((b.min[0] + b.max[0]) / 2, b.min[1] + (b.max[1] - b.min[1]) * 0.7, (b.min[2] + b.max[2]) / 2 + (b.max[2] - b.min[2]) * 0.2);
-    });
+    // The hips: inside the body whatever the pose and the view, so the press lands on the figure's surface.
+    const chest = await page.evaluate(() => window.__armature.onScreen(...window.__armature.handlePosition('root')));
     const sumFigure = await meshSum(page);
     const stepsBefore = await page.evaluate(() => window.__sculpt.session.getStateManager()._curUndoIndex);
     await stroke(page, chest);
