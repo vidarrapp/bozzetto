@@ -572,6 +572,8 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     // foot being turned by hand is not stood flat again under the gizmo,
     // or no drag of it would show.
     armature.applyPins(undefined, armature.plantFeet && !(joint && armature.isFoot(joint)), !byHand);
+    // The pins may have bent the limb a little further: the target goes out along the way the joint points now.
+    if (joint) armature.followAims(joint);
     syncHandles();
     refreshPanel();
     scheduleSave();
@@ -1906,6 +1908,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     const byHand = armature.isLookBone(bone);
     if (byHand) armature.carryLook();
     armature.applyPins(undefined, armature.plantFeet && !armature.isFoot(bone), !byHand);
+    armature.followAims(bone);
     placeControls();
     syncHandles();
     // A slider's drag is one step, taken when it rests (commitSoon).
