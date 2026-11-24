@@ -63,16 +63,17 @@ async function armatureTap(page, base, t) {
   missed = await tapAll(page);
   t.ok(missed.length === 0, `moved and posed, every part is still selected by a tap on it${missed.length ? ` (${missed.join('; ')})` : ''}`);
 
-  // And to the other side, still raised: the bounds follow the figure wherever it goes next.
+  // And moved again, back over the middle and part of the way down (clear of the open panel at the left):
+  // the bounds follow the figure wherever it goes next.
   await page.evaluate(() => {
     const a = window.__armature;
     const b = a.armature.bounds();
     const h = b.max.y - b.min.y;
-    a.moveRoot(-h * 0.4, 0, 0);
+    a.moveRoot(-h * 0.22, -h * 0.15, 0);
   });
   await page.waitForTimeout(400);
   missed = await tapAll(page);
-  t.ok(missed.length === 0, `moved the other way, the same${missed.length ? ` (${missed.join('; ')})` : ''}`);
+  t.ok(missed.length === 0, `moved again, the same${missed.length ? ` (${missed.join('; ')})` : ''}`);
   t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 }
 
