@@ -3071,11 +3071,12 @@ export const suites = {
 
     // The autosave brings a mannequin back on reload, fetched again, turned
     // as it was: restore once put the root back to rest after setting it.
-    const turnedTo = await page.evaluate(() => {
+    const turnedTo = await page.evaluate(async () => {
       const a = window.__armature.armature;
       const turn = a.root.quaternion.clone().set(0.0593, 0.1492, 0.009, 0.987).normalize();
       a.root.quaternion.premultiply(turn);
-      window.__armature.save();
+      // Waited for: the write is a promise, and a reload that got there first brought the record before it back.
+      await window.__armature.save();
       return a.root.quaternion.toArray();
     });
     await openArmature(page, base);
