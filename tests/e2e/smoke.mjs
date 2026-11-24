@@ -2395,6 +2395,8 @@ export const suites = {
     );
     const rootPress = { picked: await press(hips.ball) };
     rootPress.gizmo = await page.evaluate(() => ({ selected: window.__armature.selected(), attached: window.__armature.gizmo().attached.length }));
+    // (A press that lifts at once is a tap: the hips are selected now. Let them go.)
+    await page.evaluate(() => window.__armature.select(null));
     await handlesBox(false);
     rootPress.hiddenBall = await page.evaluate(() => window.__armature.ballOnScreen('root'));
     rootPress.hidden = await press(hips.ball);
@@ -2402,8 +2404,8 @@ export const suites = {
     await page.evaluate(() => window.__armature.select(null));
     t.eq(rootPress.picked, 'root', "a press on the root's ball takes it");
     t.ok(
-      rootPress.gizmo.selected === null && rootPress.gizmo.attached === 0,
-      `and selects nothing, so no gizmo comes up (selected ${rootPress.gizmo.selected}, ${rootPress.gizmo.attached} controls attached)`,
+      rootPress.gizmo.selected === 'pelvis' && rootPress.gizmo.attached === 2,
+      `and as a tap it selects the hips, with the move and the turn gizmo (selected ${rootPress.gizmo.selected}, ${rootPress.gizmo.attached} controls attached)`,
     );
     t.ok(
       rootPress.hiddenBall === null && !!rootPress.hidden && rootPress.hidden !== 'root',
@@ -2430,7 +2432,8 @@ export const suites = {
     const dragAt = async ([x, y], [dx, dy], mid) => {
       await page.mouse.move(x, y);
       await page.mouse.down();
-      await page.mouse.move(x + dx / 2, y + dy / 2, { steps: 6 });
+      // The first move is past the tap distance at once: held still for 600 ms a ring is pinned, and software frames are slow.
+      await page.mouse.move(x + dx / 2, y + dy / 2, { steps: 1 });
       const during = mid ? await mid() : null;
       await page.mouse.move(x + dx, y + dy, { steps: 6 });
       await page.mouse.up();
@@ -3072,7 +3075,7 @@ export const suites = {
       const a = window.__armature.armature;
       const turn = a.root.quaternion.clone().set(0.0593, 0.1492, 0.009, 0.987).normalize();
       a.root.quaternion.premultiply(turn);
-      // Written before the page goes (the page is now one that has a scene to write as well).
+      // Waited for: the write is a promise, and a reload that got there first brought the record before it back.
       await window.__armature.save();
       return a.root.quaternion.toArray();
     });

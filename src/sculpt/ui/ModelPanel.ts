@@ -1,6 +1,7 @@
 import Enums from '@sculpt-vendor/misc/Enums';
 import { div, onTap } from '../../ui/dom';
-import { hexToPacked, TooManyGroups } from '../bridge/polyGroups';
+import { GROUPS_LOCKED_NOTICE, hexToPacked, TooManyGroups } from '../bridge/polyGroups';
+import { dynamicNote } from './dynamicNote';
 import { GeometrySync } from '../bridge/GeometrySync';
 import { installSwatchPick } from '../../ui/swatchPick';
 import { checkbox, compactRange, section, numberedRange, type SliderOptions } from '../../ui/Panel';
@@ -116,6 +117,9 @@ export class ModelPanel extends SidePanel {
   private uvButton?: HTMLButtonElement;
   private showAllButton?: HTMLButtonElement;
   private clearGroupsButton?: HTMLButtonElement;
+  /** The buttons that make or edit groups: off while the object's groups are locked (dynamic topology on). */
+  private groupMakeButtons: HTMLButtonElement[] = [];
+  private groupsNote?: HTMLDivElement;
   /** Group by angle's threshold, in degrees (owner default 40). */
   private groupAngle = 40;
   /** The group whose name is being typed, so a refresh mid-edit leaves the field be. */
@@ -525,6 +529,9 @@ export class ModelPanel extends SidePanel {
   private buildGroups(body: HTMLElement): void {
     const sec = section(body, 'Poly groups');
     sec.dataset.role = 'groups';
+    // Locked while dynamic topology is on: the note says so, and the buttons that make or edit groups are off.
+    this.groupsNote = dynamicNote(this.session, GROUPS_LOCKED_NOTICE, () => this.refreshGroups());
+    sec.appendChild(this.groupsNote);
     const colors = checkbox('Show group colours (Shift+F)', this.session.groups.isShowing(), (on) => this.onGroupColors?.(on));
     this.groupsColors = colors.querySelector('input') as HTMLInputElement;
     sec.appendChild(colors);
@@ -544,6 +551,7 @@ export class ModelPanel extends SidePanel {
     auto.title = 'A group for each separate piece of the mesh';
     auto.dataset.role = 'groups-auto';
     make.append(fromMask, visible, auto);
+    this.groupMakeButtons = [fromMask, visible, auto];
     sec.appendChild(make);
     const angle = this.numberedRange(
       'Angle',
@@ -566,17 +574,19 @@ export class ModelPanel extends SidePanel {
     this.uvButton.title = 'A group for each UV island (an OBJ imported with texture coordinates)';
     this.uvButton.dataset.role = 'groups-by-uv';
     split.append(byAngle, this.uvButton);
+    this.groupMakeButtons.push(byAngle);
     sec.appendChild(split);
     const clearRow = div('sculpt-panel__row');
     const clear = this.tapButton('Clear all', () => {
       const mesh = this.session.getMesh();
-      if (mesh && this.session.groups.clearAll(mesh)) statusToast('').done('One poly group');
+      if (mesh && !this.locked(mesh) && this.session.groups.clearAll(mesh)) statusToast('').done('One poly group');
     });
     clear.title = 'Every face back in one group, "Group 1", nothing hidden';
     clear.dataset.role = 'groups-clear';
     this.clearGroupsButton = clear;
     const prune = this.tapButton('Remove unused', () => {
       const mesh = this.session.getMesh();
+      if (this.locked(mesh)) return;
       const n = mesh ? this.session.groups.removeUnused(mesh) : 0;
       if (n > 0) statusToast('').done(n === 1 ? 'Removed 1 unused group' : `Removed ${n} unused groups`);
       else statusToast('').done('No unused groups');
@@ -584,6 +594,7 @@ export class ModelPanel extends SidePanel {
     prune.title = 'Remove the groups no face is in any more';
     prune.dataset.role = 'groups-remove-unused';
     clearRow.append(clear, prune);
+    this.groupMakeButtons.push(prune);
     sec.appendChild(clearRow);
     // Groups: the list, and Show all for what it hides.
     sec.appendChild(subheading('Groups'));
@@ -727,7 +738,7 @@ export class ModelPanel extends SidePanel {
   /** Make one group (Visible), saying which, or `none` when it made nothing. */
   private groupOne(run: (mesh: SculptMesh) => number, none: string): void {
     const mesh = this.session.getMesh();
-    if (!mesh) return;
+    if (!mesh || this.locked(mesh)) return;
     try {
       const g = run(mesh);
       if (g < 0) statusToast('').fail(none);
@@ -740,7 +751,8 @@ export class ModelPanel extends SidePanel {
 
   /** Run a regrouping, saying so when it makes too many groups. */
   private groupBy(run: () => number): void {
-    if (!this.session.getMesh()) return;
+    const mesh = this.session.getMesh();
+    if (!mesh || this.locked(mesh)) return;
     try {
       const n = run();
       if (n > 0) statusToast('').done(`${n} poly group${n === 1 ? '' : 's'}`);
@@ -748,6 +760,16 @@ export class ModelPanel extends SidePanel {
       if (!(err instanceof TooManyGroups)) throw err;
       statusToast('').fail(err.message);
     }
+  }
+
+  /**
+   * Whether the object's groups are locked (dynamic topology on). Says so
+   * when they are, so the press is not silent; the action itself does nothing.
+   */
+  private locked(mesh: SculptMesh | null): boolean {
+    if (!mesh || this.session.groups.editable(mesh)) return false;
+    statusToast('').fail(GROUPS_LOCKED_NOTICE);
+    return true;
   }
 
   /** At most this many rows; a split into more lists the first and says how many more. */
@@ -759,8 +781,11 @@ export class ModelPanel extends SidePanel {
     if (!list) return;
     if (this.groupsColors) this.groupsColors.checked = this.session.groups.isShowing();
     const mesh = this.session.getMesh();
-    if (this.uvButton) this.uvButton.disabled = !mesh || !this.session.hasUVIslands(mesh);
-    if (this.clearGroupsButton) this.clearGroupsButton.disabled = !mesh || !this.session.groups.hasGroups(mesh);
+    const locked = !!mesh && !this.session.groups.editable(mesh);
+    if (this.groupsNote) this.groupsNote.hidden = !locked;
+    for (const b of this.groupMakeButtons) b.disabled = locked;
+    if (this.uvButton) this.uvButton.disabled = locked || !mesh || !this.session.hasUVIslands(mesh);
+    if (this.clearGroupsButton) this.clearGroupsButton.disabled = locked || !mesh || !this.session.groups.hasGroups(mesh);
     if (this.renamingGroup >= 0 && list.contains(document.activeElement)) return;
     // A picker that is up keeps its row; its close refreshes the list.
     if (this.groupPickers.some((p) => p.isOpen())) return;
@@ -786,10 +811,14 @@ export class ModelPanel extends SidePanel {
       name.className = 'groups-row__name';
       name.textContent = names[g];
       name.title = `${names[g]}: ${counts[g]} base face${counts[g] === 1 ? '' : 's'} (tap to rename)`;
-      onTap(name, () => this.renameGroup(mesh, g, name));
+      onTap(name, () => {
+        if (!this.locked(mesh)) this.renameGroup(mesh, g, name);
+      });
       const eye = this.groupIcon(hidden[g] ? 'fi-ss-eye-crossed' : 'fi-ss-eye', hidden[g] ? 'Show' : 'Hide', () => groups.setHidden(mesh, g, !hidden[g]));
       eye.dataset.role = 'group-eye';
-      const del = this.groupIcon('fi-ss-trash', 'Delete the group (its faces join the group they border most)', () => groups.remove(mesh, g));
+      const del = this.groupIcon('fi-ss-trash', 'Delete the group (its faces join the group they border most)', () => {
+        if (!this.locked(mesh)) groups.remove(mesh, g);
+      });
       del.dataset.role = 'group-delete';
       del.disabled = names.length <= 1;
       row.append(swatch, name, eye, del);
@@ -837,6 +866,10 @@ export class ModelPanel extends SidePanel {
     picker.root.classList.add('groups-row__pick');
     const btn = picker.root.querySelector<HTMLElement>('.cpick__swatch');
     if (btn) {
+      // Locked: the press says why, and the picker does not open.
+      btn.addEventListener('click', (e) => {
+        if (this.locked(mesh)) e.stopImmediatePropagation();
+      }, true);
       btn.classList.add('groups-row__swatch');
       btn.dataset.role = 'group-color';
       btn.title = `${name}: its colour (tap to choose, drag over the view to pick one)`;

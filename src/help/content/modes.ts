@@ -125,7 +125,7 @@ export const MODES: Topic[] = [
         ['Reset pose', 'Puts the pose back. Hotkey **Shift+R**.'],
         ['Copy L → R, Copy R → L', 'Copies the pose of one side onto the other.'],
       ),
-      p('Tap a part to pose its joint. Tap off the figure to let it go. The pelvis moves the whole figure. The gizmo keys are **W** (move), **E** (rotate), **T** (move and rotate together) and **R** (scale the selected part).'),
+      p('Tap a part to pose its joint. Tap off the figure to let it go. Tap the box round the hips to select the hips: the move arrows and the turn rings come up together at the middle of the box, so the hips can be moved and turned, and the feet that are pinned or planted hold their place. Drag the box and the whole figure moves across the screen, with the selection as it was. The gizmo keys are **W** (move), **E** (rotate), **T** (move and rotate together) and **R** (scale the selected part).'),
       h('Joint'),
       options(
         ['Bend, Twist, Side', 'Angles of the selected joint in degrees, within its limits. An axis that is locked has no slider.'],
@@ -140,7 +140,7 @@ export const MODES: Topic[] = [
       ),
       h('Reach'),
       options(
-        ['IK handles', 'Shows the handles, drawn as outlines: grey, white under the pointer, orange while selected or dragged. Drag a ring at a hand or foot and the limb reaches for it; a tap selects it, and W then gives it a move gizmo; a dot in the ring means it is pinned. Drag the box around the hips and the whole figure moves. Drag the arrowhead out from a knee or elbow, joined to it by a dashed line and pointing the way it aims, and the joint turns toward it. Drag the arrowhead in front of the face, pointing away from it, and the head looks that way: the head turns to face it, the neck about half as far and the upper back a little, up to about 80 degrees to a side and 60 up or down, and the hips never move. To lean or bend the body, turn the spine and chest, or drag the hips.'],
+        ['IK handles', 'Shows the handles, drawn as outlines: grey, white under the pointer, orange while selected or dragged. Drag a ring at a hand or foot and the limb reaches for it; a tap selects it, and W then gives it a move gizmo; a dot in the ring means it is pinned, and a double-click or double-tap on a ring, or holding it still for a moment, pins it or lets it go. The box around the hips is the same box that shows when the hips are selected. Drag the arrowhead out from a knee or elbow, joined to it by a dashed line and pointing the way it aims, and the joint turns toward it; it follows the pointer all the way round, even on a straight limb, and the knee or elbow keeps pointing where you left it. The arrowhead in front of the face is where the head looks: a point in the scene that you drag anywhere on the screen. The head keeps facing it, however the figure moves, the neck about half as far, and the upper back a little while you drag, up to about 80 degrees to a side and 60 up or down; past that the head holds at the limit, the point stays where you put it, and it is drawn dimmer. Turn the head or neck by hand and the point goes with it; turn the chest and the head keeps facing the point. Reset pose puts it back in front of the face.'],
         ['Plant feet', 'Stands a foot that is on the floor flat on it, marked by a ring on the floor. Off, the foot tilts with its shin.'],
         ['Pin left hand, Pin right hand, Pin left foot, Pin right foot', 'A pinned ring stays put while the pelvis moves. Pins, not planting, keep a foot in its place.'],
       ),

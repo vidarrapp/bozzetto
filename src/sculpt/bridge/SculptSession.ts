@@ -1483,10 +1483,11 @@ export class SculptSession {
    * Group by UV islands: the file's faces joined where they share a
    * texture edge (objSource.ts uvIslands), each level-0 face in its file
    * face's island and every face above in its ancestor's. One undo step.
-   * Returns the number of groups, 0 when the object has no UVs to read.
+   * Returns the number of groups, 0 when the object has no UVs to read or
+   * its groups are locked (dynamic topology on).
    */
   groupByUVIslands(mesh: SculptMesh | null = this.mesh): number {
-    if (!mesh || !this.hasUVIslands(mesh)) return 0;
+    if (!mesh || !this.groups.editable(mesh) || !this.hasUVIslands(mesh)) return 0;
     const src = this.sources.get(mesh)!.source;
     const islands = uvIslands(src);
     if (!islands) return 0;
