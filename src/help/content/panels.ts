@@ -74,7 +74,7 @@ export const PANELS: Topic[] = [
       ),
       p('To paint the mask, hold **Ctrl** and drag. See the Mask (Ctrl) topic.'),
       h('Poly groups'),
-      p('Every face is in a poly group. Groups are shown in colour, can be hidden, and give you a quick way to mask or split an object. Every change here is one undo step.'),
+      p('Every face is in a poly group. Groups are shown in colour, can be hidden, and give you a quick way to mask or split an object. Every change here is one undo step. With dynamic topology on, the groups are kept but cannot be made or edited until it is off again.'),
       options(
         ['Show group colours (Shift+F)', 'Colours each group.'],
         ['From mask', 'Puts the masked faces into a new group and clears the mask. Default hotkey **Ctrl+G**.'],
