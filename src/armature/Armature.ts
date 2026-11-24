@@ -1201,11 +1201,13 @@ export class Armature {
         const headD = this.turnOf(look.head, _lq);
         const need = _lR.copy(chest0).multiply(turn).multiply(headD.invert());
         if (need.w < 0) need.set(-need.x, -need.y, -need.z, -need.w);
-        for (const l of this.lookChain) {
-          if (l.name === look.head || l.name === look.neck) continue;
-          this.turnOf(l.name, _ld);
-          this.setTurn(l.name, _lw.copy(_ls.identity().slerp(need, l.share)).multiply(_ld));
-        }
+        // Every bone's turn as the drag began, before any of them is moved: a bone's share
+        // is laid on its own turn then, not on what the bones under it have just made of it.
+        this.lookChain.forEach((l, i) => this.turnOf(l.name, (_ldAll[i] ??= new Quaternion())));
+        this.lookChain.forEach((l, i) => {
+          if (l.name === look.head || l.name === look.neck) return;
+          this.setTurn(l.name, _lw.copy(_ls.identity().slerp(need, l.share)).multiply(_ldAll[i]));
+        });
       }
     }
     const chest = this.chestTurn(_lC);
@@ -2123,7 +2125,7 @@ const _bm = new Matrix4();
 const LOOK_SETTLED = Math.cos((0.02 * Math.PI) / 180);
 /** A target the head is within a degree of facing is in range; one further off is past what the head can turn to. */
 const LOOK_IN_RANGE = Math.cos((1 * Math.PI) / 180);
-const _ld = new Quaternion();
+const _ldAll: Quaternion[] = [];
 
 function poseTurn(e: [number, number, number], out: Quaternion): Quaternion {
   return out.setFromEuler(_te.set(e[0], e[1], e[2], 'XYZ'));

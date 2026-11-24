@@ -2429,7 +2429,8 @@ export const suites = {
     const dragAt = async ([x, y], [dx, dy], mid) => {
       await page.mouse.move(x, y);
       await page.mouse.down();
-      await page.mouse.move(x + dx / 2, y + dy / 2, { steps: 6 });
+      // The first move is past the tap distance at once: held still for 600 ms a ring is pinned, and software frames are slow.
+      await page.mouse.move(x + dx / 2, y + dy / 2, { steps: 1 });
       const during = mid ? await mid() : null;
       await page.mouse.move(x + dx, y + dy, { steps: 6 });
       await page.mouse.up();

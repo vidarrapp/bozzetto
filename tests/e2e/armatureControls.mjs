@@ -113,7 +113,8 @@ async function armatureControls(page, base, t) {
   const drag = await page.evaluate(() => ({ at: window.__armature.ballOnScreen('ik:hand.R'), hand: window.__armature.handlePosition('hand.R') }));
   await page.mouse.move(drag.at[0], drag.at[1]);
   await page.mouse.down();
-  await page.mouse.move(drag.at[0] + 20, drag.at[1] - 15, { steps: 5 });
+  // Past the tap distance at once: held still for 600 ms a ring is pinned, and software frames are slow.
+  await page.mouse.move(drag.at[0] + 20, drag.at[1] - 15, { steps: 1 });
   const during = await look('ik:hand.R');
   await page.mouse.move(drag.at[0] + 40, drag.at[1] - 30, { steps: 5 });
   await page.mouse.up();
@@ -320,7 +321,8 @@ async function armatureControls(page, base, t) {
     await page.mouse.down();
     await page.mouse.up();
     const p = await page.evaluate(() => window.__armature.picked());
-    t.eq(p, 'root', `a press ${label} of the box takes the root`);
+    const why = p === 'root' ? '' : JSON.stringify(await page.evaluate(([x, y]) => ({ at: [x, y], sel: window.__armature.selected(), gizmo: window.__armature.gizmo(), hit: window.__armature.gizmoHit(x, y), corners: window.__armature.rootBox().corners.map((c) => window.__armature.onScreen(...c)) }), at));
+    t.eq(p, 'root', `a press ${label} of the box takes the root ${why}`);
     // A tap selects the hips, whose gizmo would take the next press: let them go.
     await page.evaluate(() => window.__armature.select(null));
   }
@@ -435,7 +437,7 @@ async function armatureLook(page, base, t) {
     const f = arm.lookForward(new V());
     return (Math.atan2(f.x, f.z) * 180) / Math.PI;
   });
-  t.ok(behind.turns.head > 75 && behind.turns.head < 98 && Math.abs(faced) > 75 && Math.abs(faced) <= 97, `the head holds at the limit: turned ${behind.turns.head.toFixed(1)} degrees, facing ${faced.toFixed(1)} from the front`);
+  t.ok(behind.turns.head > 75 && behind.turns.head < 92 && Math.abs(faced) > 75 && Math.abs(faced) <= 91, `the head holds at the limit: turned ${behind.turns.head.toFixed(1)} degrees, facing ${faced.toFixed(1)} from the front`);
   const limits = await page.evaluate(() => {
     const arm = window.__armature.armature;
     return ['spine', 'chest', 'neck', 'head'].every((n) => {
@@ -447,7 +449,7 @@ async function armatureLook(page, base, t) {
   t.ok(limits && behind.hips < 1e-6, 'every joint stays inside its own limits and the hips stay put');
   await page.evaluate(() => window.__armature.undo());
   const tilted = await experiment(page, [0, 40, 5]);
-  t.ok(tilted.tilt > 60 && tilted.turns.head < 70, `a target nearly overhead holds at the tilt limit (${tilted.tilt.toFixed(0)} wanted, the head turned ${tilted.turns.head.toFixed(1)})`);
+  t.ok(tilted.tilt > 60 && tilted.turns.head < 63, `a target nearly overhead holds at the tilt limit (${tilted.tilt.toFixed(0)} wanted, the head turned ${tilted.turns.head.toFixed(1)})`);
   await page.evaluate(() => window.__armature.undo());
 
   // No snapping: sweeping the target from 70 degrees one way to 70 the other moves the neck smoothly.
