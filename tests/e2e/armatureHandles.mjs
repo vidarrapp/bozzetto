@@ -762,7 +762,7 @@ async function armatureHandlesPin(page, base, t) {
     const ptr = await pointer(p, 'touch');
     const r = await ringAt(p, 'hand.R');
     await ptr.down(r[0], r[1]);
-    await wait(p, 200);
+    await wait(p, 30);
     await ptr.second();
     await wait(p, 700);
     t.ok(!(await pinned(p, 'hand.R')).pinned, 'a second finger down cancels a pending long press');

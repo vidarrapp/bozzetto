@@ -995,6 +995,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
   let heldPress: { chain: string; was: boolean; downAt: number; x: number; y: number } | null = null;
   let lastRingTap: { chain: string; at: number; x: number; y: number } | null = null;
   const DOUBLE_TAP_MS = 350;
+  /** How far a press may wander and still be held still for the long press, in CSS pixels: a drag that starts is a drag at once, however slowly the page takes its first moves. */
+  const LONG_PRESS_SLOP = 4;
   /** How far apart a double-click's two presses may be, in CSS pixels: tight for a mouse, wider for a finger or the Pencil. */
   const doubleTapDistance = (e: PointerEvent): number => (e.pointerType === 'mouse' ? 6 : 24);
   const cancelPinPress = (): void => {
@@ -1314,7 +1316,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<ArmatureMount> 
     // A drag's work for the coming frame, for the frame meter.
     const noteWork = (): void => viewer.noteInput(performance.now() - t0, e.timeStamp);
     if (tap && e.pointerId === tap.id && travelled(e)) tap = null;
-    if (pinPress && e.pointerId === pinPress.id && Math.hypot(e.clientX - pinPress.x, e.clientY - pinPress.y) > TAP_SLOP) cancelPinPress();
+    if (pinPress && e.pointerId === pinPress.id && Math.hypot(e.clientX - pinPress.x, e.clientY - pinPress.y) > LONG_PRESS_SLOP) cancelPinPress();
     const dx = e.clientX - lastPointer.x;
     const dy = e.clientY - lastPointer.y;
     lastPointer.x = e.clientX;
