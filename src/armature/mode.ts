@@ -693,7 +693,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     placeControls();
   };
   /** The mesh of a selectable handle: a reach ring by its chain, or the look-at by LOOK_ID. */
-  const handleMesh = (id: string): Mesh | undefined => (id === LOOK_ID ? views.get(LOOK_NAME)?.mesh : handles.get(id));
+  const handleMesh = (id: string): Mesh | undefined => (id === LOOK_ID ? views.get(LOOK_NAME)?.mesh : id.startsWith('aim:') ? aims.get(id.slice(4)) : handles.get(id));
   /**
    * The selected handle moved by its gizmo: the limb reaches for it, as a
    * drag of the ring reaches; the head turns to face it, as a drag of the
@@ -705,8 +705,15 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     if (id === LOOK_ID) {
       armature.lookAt(ball.getWorldPosition(dragPoint));
       armature.applyPins();
+    } else if (id.startsWith('aim:')) {
+      armature.placePole(id.slice(4), ball.getWorldPosition(dragPoint));
+      armature.applyPins();
     } else {
-      armature.reach(id, ball.getWorldPosition(dragPoint));
+      // The ring sits on the middle of the part, off the effector point the reach is aimed at: by that much.
+      const c = armature.chain(id);
+      ball.getWorldPosition(dragPoint);
+      if (c) dragPoint.sub(armature.ringWorld(id, grabAt)).add(armature.effectorWorld(c.effector, joint));
+      armature.reach(id, dragPoint);
       armature.repin(id);
       armature.applyPins(id);
     }
@@ -845,9 +852,11 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     }
     for (const id of aims.keys()) {
       const name = `aim:${id}`;
-      const state = stateOf(name, id === aiming);
-      kit.paint(views.get(name)!, state);
-      kit.paint(views.get(`dash:${id}`)!, state);
+      const state = stateOf(name, id === aiming || selectedHandle === name);
+      // Dimmer while the joint cannot bend toward its target: out of range, not a fault.
+      const dim = !armature.poleInRange(id);
+      kit.paint(views.get(name)!, state, false, dim);
+      kit.paint(views.get(`dash:${id}`)!, state, false, dim);
     }
     const lookArrow = views.get(LOOK_NAME);
     if (lookArrow) {
@@ -872,12 +881,13 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     for (const [id, m] of handles) {
       const c = armature.chain(id);
       if (!c) continue;
-      armature.effectorWorld(c.effector, at);
+      // The ring is drawn on the middle of the hand's or foot's own geometry; the reach aims at its effector point.
+      armature.ringWorld(id, at);
       m.position.copy(at);
     }
     for (const [id, m] of aims) {
       const where = armature.hingeWorld(id, joint);
-      const target = where ? armature.poleTarget(id, at, id === aiming) : null;
+      const target = where ? armature.poleTarget(id, at) : null;
       const arrow = views.get(`aim:${id}`)!;
       const dash = views.get(`dash:${id}`)!;
       m.visible = dash.mesh.visible = !!target;
@@ -961,6 +971,10 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
   const lookPoint = new Vector3();
   /** Where a press landed on the look-at target, from its middle in the world, so the drag does not jump by it. */
   const lookGrab = new Vector3();
+  /** Where a press landed on a pole target, from its middle; and on a ring, from the effector point its reach is aimed at. */
+  const poleGrab = new Vector3();
+  const ringGrab = new Vector3();
+  const grabAt = new Vector3();
   /** What the last press took: 'ik:<chain>', 'aim:<chain>', 'look:head', 'root', a part's bone, or nothing. */
   let picked: string | null = null;
   /**
@@ -1244,6 +1258,13 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
       picked = ballName(ball);
       if (ball.kind === 'aim') {
         aiming = ball.id;
+        // A point placed in the plane through where it is, facing the camera: the press's offset from its middle is kept.
+        dragPlane.setFromNormalAndCoplanarPoint(viewer.camera.getWorldDirection(dragNormal), ball.ball.position);
+        if (raycaster.ray.intersectPlane(dragPlane, poleGrab)) poleGrab.sub(ball.ball.position);
+        else poleGrab.set(0, 0, 0);
+        if (down.size === 1) {
+          tap = { id: e.pointerId, x: e.clientX, y: e.clientY, target: null, ball: `aim:${ball.id}`, before: null };
+        }
       } else if (ball.kind === 'look') {
         // The target is a point in the world, moved in the plane that faces
         // the camera through where it is. Where on the handle the press
@@ -1282,6 +1303,10 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
             togglePin(ball.id);
           } else {
             reaching = ball.id;
+            // The press's offset from the effector point the reach is aimed at (the ring is on the middle of the part): kept, so the hand goes by the pointer's travel and nothing jumps.
+            const rc = armature.chain(ball.id);
+            if (rc && raycaster.ray.intersectPlane(dragPlane, ringGrab)) ringGrab.sub(armature.effectorWorld(rc.effector, grabAt));
+            else ringGrab.set(0, 0, 0);
             if (down.size === 1) {
               tap = { id: e.pointerId, x: e.clientX, y: e.clientY, target: null, ball: ball.id, before: null, at: eventTime(e) };
               // Held still, it pins when the time runs out, with the press still down.
@@ -1347,18 +1372,17 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
       }
     }
     if (aiming) {
-      // Where the pointer sits around the limb IS the aim: the plane it
-      // reads on faces the camera through the pole target, so the target
-      // follows the pointer round the limb, the angle is the one the solver
-      // wants and the hand or foot never moves.
+      // The target is a point placed in the plane that faces the camera through
+      // where it is, under the pointer with the press's offset kept. The knee or
+      // elbow turns toward it and the hand or foot never moves. On the limb's own
+      // line it has no direction, and the target stays where it was.
       aim(e);
       const target = aims.get(aiming)?.position;
       if (!target) return;
       dragPlane.setFromNormalAndCoplanarPoint(viewer.camera.getWorldDirection(dragNormal), target);
       if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
-      const angle = armature.aimFromPoint(aiming, dragPoint);
-      if (angle !== null) {
-        armature.aimChain(aiming, angle);
+      if (tap?.ball && tap.before === null) tap.before = JSON.stringify(armature.serialize());
+      if (armature.placePole(aiming, dragPoint.sub(poleGrab))) {
         armature.applyPins();
         syncHandles();
         placeControls();
@@ -1411,7 +1435,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
     // Still maybe a tap: what the pose was, should it be one.
     if (tap?.ball && tap.before === null) tap.before = JSON.stringify(armature.serialize());
-    armature.reach(reaching, dragPoint);
+    armature.reach(reaching, dragPoint.sub(ringGrab));
     armature.repin(reaching);
     armature.applyPins(reaching);
     syncHandles();
@@ -2665,9 +2689,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     },
     /** Turn a knee or elbow toward a world point, as a drag of its pole target does (tests and the console). */
     pole: (id: string, x: number, y: number, z: number) => {
-      const angle = armature.aimFromPoint(id, new Vector3(x, y, z));
-      if (angle === null) return;
-      armature.aimChain(id, angle);
+      if (!armature.placePole(id, new Vector3(x, y, z))) return;
       armature.applyPins();
       syncHandles();
       commit();

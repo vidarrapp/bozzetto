@@ -818,4 +818,264 @@ async function armatureHandlesPin(page, base, t) {
   }
 }
 
-export const suites = { armatureHandlesLook, armatureHandlesPole, armatureHandlesHips, armatureHandlesPin };
+/** The projected middle of a part's box, and the rectangle it covers, on the page. */
+const partBoxOnPage = (page, bone) =>
+  page.evaluate((name) => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const V = arm.root.position.constructor;
+    const part = arm.partBones.get(name);
+    const g = arm.partGeometry.get(name);
+    g.boundingBox ?? g.computeBoundingBox();
+    const b = g.boundingBox;
+    part.updateWorldMatrix(true, false);
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      const w = new V(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(part.matrixWorld);
+      const s = a.onScreen(w.x, w.y, w.z);
+      x0 = Math.min(x0, s[0]);
+      y0 = Math.min(y0, s[1]);
+      x1 = Math.max(x1, s[0]);
+      y1 = Math.max(y1, s[1]);
+    }
+    return { centre: [(x0 + x1) / 2, (y0 + y1) / 2], size: Math.max(x1 - x0, y1 - y0) };
+  }, bone);
+
+const RING_PARTS = ['hand.L', 'hand.R', 'foot.L', 'foot.R'];
+
+async function armatureHandlesRings(page, base, t) {
+  await boot(page, base);
+  for (const figure of ['mannequin-male-realistic', 'mannequin-female-stylized']) {
+    await page.evaluate((id) => window.__armature.figure(id), figure);
+    await wait(page, 1500);
+    const poses = {
+      'at rest': () => {},
+      'in a leap (arms out, a leg back, the figure raised)': () => {
+        const a = window.__armature;
+        a.turn('upperarm.L', 0, 0, 80);
+        a.turn('upperarm.R', 0, 0, -60);
+        a.turn('thigh.R', 60, 0, 0);
+        a.moveRoot(0, 20, 0, 2);
+      },
+    };
+    for (const [label, pose] of Object.entries(poses)) {
+      await page.evaluate(pose);
+      await wait(page, 400);
+      for (const chain of RING_PARTS) {
+        const ring = await page.evaluate((c) => window.__armature.ballOnScreen(`ik:${c}`), chain);
+        const box = await partBoxOnPage(page, chain);
+        const gap = Math.hypot(ring[0] - box.centre[0], ring[1] - box.centre[1]);
+        t.ok(gap < 4, `${figure} ${label}: the ${chain} ring is on the middle of its part (${gap.toFixed(1)} px off, the part ${box.size.toFixed(0)} px across)`);
+      }
+      await page.evaluate(() => window.__armature.armature.resetPose());
+    }
+  }
+
+  // A drag of a ring moves the hand by the pointer's travel, with no jump at the press.
+  await boot(page, base);
+  const r = await page.evaluate(() => window.__armature.ballOnScreen('ik:hand.R'));
+  await page.mouse.move(r[0], r[1]);
+  await page.mouse.down();
+  await page.mouse.move(r[0] + 14, r[1] - 3, { steps: 1 });
+  const first = await page.evaluate(() => window.__armature.ballOnScreen('ik:hand.R'));
+  await page.mouse.move(r[0] + 60, r[1] - 40, { steps: 3 });
+  const end = await page.evaluate(() => window.__armature.ballOnScreen('ik:hand.R'));
+  await page.mouse.up();
+  const j1 = Math.hypot(first[0] - (r[0] + 14), first[1] - (r[1] - 3));
+  const j2 = Math.hypot(end[0] - (r[0] + 60), end[1] - (r[1] - 40));
+  t.ok(j1 < 8, `no jump at the press: the first 14 px of the pointer put the ring ${j1.toFixed(1)} px from it`);
+  t.ok(j2 < 12, `and it stays with the pointer after (${j2.toFixed(1)} px off)`);
+
+  // A pin from an existing record holds the same world place.
+  await boot(page, base);
+  const pin = await page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const V = arm.root.position.constructor;
+    arm.setPinned('hand.L', true);
+    const s = a.state();
+    const at = s.pins['hand.L'];
+    arm.restore(s);
+    a.moveRoot(6, -4, 3, 2);
+    const now = arm.effectorWorld(arm.chain('hand.L').effector, new V()).toArray();
+    return { at, now, pinAfter: a.state().pins['hand.L'] };
+  });
+  t.ok(dist(pin.at, pin.pinAfter) < 1e-6 && dist(pin.at, pin.now) < 1, `a pin from a record holds the same world place of the hand through a move of the hips (${dist(pin.at, pin.now).toFixed(2)} cm)`);
+}
+
+/** The target's place in the pelvis's frame. */
+const inPelvis = (page, chain) =>
+  page.evaluate((c) => {
+    const arm = window.__armature.armature;
+    const V = arm.root.position.constructor;
+    return arm.root.worldToLocal(arm.poleTarget(c, new V())).toArray();
+  }, chain);
+const targetAt = (page, chain) =>
+  page.evaluate((c) => {
+    const arm = window.__armature.armature;
+    return arm.poleTarget(c, new arm.root.position.constructor()).toArray();
+  }, chain);
+
+async function armatureHandlesPoint(page, base, t) {
+  await boot(page, base);
+  // A record without targets: they go where today's handle is drawn, out from the joint.
+  const old = await page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const V = arm.root.position.constructor;
+    const before = ['foot.L', 'foot.R', 'hand.L', 'hand.R'].map((c) => arm.poleTarget(c, new V()).toArray());
+    const s = a.state();
+    delete s.poles;
+    arm.restore(s);
+    const after = ['foot.L', 'foot.R', 'hand.L', 'hand.R'].map((c) => arm.poleTarget(c, new V()).toArray());
+    const knee = arm.hingeWorld('foot.L', new V());
+    const top = arm.jointWorld('thigh.L');
+    return { gap: Math.max(...before.map((p, i) => Math.hypot(...p.map((v, k) => v - after[i][k])))), out: new V(...before[0]).distanceTo(knee), seg: knee.distanceTo(top) };
+  });
+  t.ok(old.gap < 0.05, `an old record gets the targets where they are drawn today (${old.gap.toFixed(3)} cm off)`);
+  t.ok(Math.abs(old.out - 0.5 * old.seg) < 0.25 * old.seg, `out from the joint, about half the upper segment (${old.out.toFixed(1)} of ${old.seg.toFixed(1)} cm)`);
+
+  // Dragged anywhere on the screen, under the pointer the whole way, never on the joint, the knee turning to it.
+  await eachKind(page, base, t, async (p, kind, ptr) => {
+    const tag = `by ${kind}`;
+    const start = await p.evaluate(() => window.__armature.ballOnScreen('aim:foot.L'));
+    const hinge = await p.evaluate(() => window.__armature.onScreen(...window.__armature.hingePosition('foot.L')));
+    const path = [1, 2, 3, 4, 5].map((k) => [start[0] - k * 28, start[1] - k * 12]);
+    await ptr.down(start[0], start[1]);
+    let worst = 0;
+    let nearest = Infinity;
+    for (const [x, y] of path) {
+      await ptr.move(x, y);
+      const row = await p.evaluate(() => {
+        const a = window.__armature;
+        const arm = a.armature;
+        const V = arm.root.position.constructor;
+        const t0 = arm.poleTarget('foot.L', new V());
+        const from = arm.jointWorld('thigh.L');
+        const axis = arm.jointWorld('foot.L').sub(from).normalize();
+        const off = t0.clone().sub(from);
+        off.addScaledVector(axis, -off.dot(axis));
+        return { at: a.ballOnScreen('aim:foot.L'), off: off.length() };
+      });
+      worst = Math.max(worst, Math.hypot(row.at[0] - x, row.at[1] - y));
+      nearest = Math.min(nearest, row.off);
+    }
+    // Over the knee itself: the target does not jump onto the joint.
+    await ptr.move(hinge[0], hinge[1]);
+    const over = await p.evaluate(() => {
+      const arm = window.__armature.armature;
+      const V = arm.root.position.constructor;
+      return arm.poleTarget('foot.L', new V()).distanceTo(arm.hingeWorld('foot.L', new V()));
+    });
+    await ptr.up();
+    await wait(p, 200);
+    const end = await p.evaluate(() => {
+      const arm = window.__armature.armature;
+      const V = arm.root.position.constructor;
+      const knee = arm.aimFromPoint('foot.L', arm.hingeWorld('foot.L', new V()));
+      const want = arm.aimFromPoint('foot.L', arm.poleTarget('foot.L', new V()));
+      return { diff: Math.abs(((knee - want + 540) % 360) - 180), range: arm.poleInRange('foot.L') };
+    });
+    t.ok(worst < 8, `${tag}: the target is under the pointer all the way (${worst.toFixed(1)} px off at worst, 5 samples of a ${Math.hypot(path[4][0] - start[0], path[4][1] - start[1]).toFixed(0)} px drag)`);
+    t.ok(nearest > 1, `${tag}: and never sits on the limb's line (${nearest.toFixed(1)} cm off it at the least)`);
+    t.ok(over > 1, `${tag}: a pointer over the knee leaves the target where it was, not on the joint (${over.toFixed(1)} cm from it)`);
+    t.ok(!end.range || end.diff < 8, `${tag}: the knee points toward it (${end.diff.toFixed(1)} degrees off${end.range ? '' : ', out of range'})`);
+    await p.evaluate(() => window.__armature.undo());
+    await wait(p, 300);
+  });
+
+  // It travels with the body, and stays on it while a foot moves.
+  await boot(page, base);
+  const rel0 = await inPelvis(page, 'foot.L');
+  const world0 = await targetAt(page, 'foot.L');
+  await page.evaluate(() => window.__armature.moveRoot(10, 6, -8, 3));
+  const moved = await inPelvis(page, 'foot.L');
+  await page.evaluate(() => {
+    const arm = window.__armature.armature;
+    arm.root.quaternion.premultiply(new arm.root.quaternion.constructor().setFromAxisAngle({ x: 0, y: 1, z: 0 }, 0.7));
+    window.__armature.moveRoot(0, 0, 0);
+  });
+  const turned = await inPelvis(page, 'foot.L');
+  const worldNow = await targetAt(page, 'foot.L');
+  t.ok(dist(rel0, moved) < 0.01 && dist(rel0, turned) < 0.01, `the target keeps its place on the pelvis when the hips are moved (${dist(rel0, moved).toExponential(1)}) and turned (${dist(rel0, turned).toExponential(1)})`);
+  t.ok(dist(world0, worldNow) > 5, `so in the world it went with them (${dist(world0, worldNow).toFixed(1)} cm)`);
+  await page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const V = arm.root.position.constructor;
+    const f = arm.effectorWorld('foot.L', new V());
+    a.reach('foot.L', f.x + 6, f.y + 14, f.z + 10);
+  });
+  const reached = await inPelvis(page, 'foot.L');
+  t.ok(dist(rel0, reached) < 0.01, `and while the foot is moved the limb folds under it (${dist(rel0, reached).toExponential(1)} cm)`);
+
+  // Turned by hand, it goes with the joint, at its distance.
+  await boot(page, base);
+  const carry = await page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const V = arm.root.position.constructor;
+    const before = arm.poleTarget('foot.L', new V());
+    a.turn('thigh.L', -60, 0, 20);
+    const knee = arm.hingeWorld('foot.L', new V());
+    const now = arm.poleTarget('foot.L', new V());
+    const k = arm.aimFromPoint('foot.L', knee);
+    const w = arm.aimFromPoint('foot.L', now);
+    return { moved: before.distanceTo(now), diff: Math.abs(((k - w + 540) % 360) - 180) };
+  });
+  t.ok(carry.moved > 1 && carry.diff < 3, `turning the thigh by hand carries the target to the way the knee points (${carry.moved.toFixed(1)} cm, ${carry.diff.toFixed(1)} degrees off)`);
+
+  // Undo, redo, reload, Mirror pose, Reset pose.
+  await boot(page, base);
+  const hist = await page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const V = arm.root.position.constructor;
+    const p0 = arm.poleTarget('foot.L', new V());
+    a.pole('foot.L', p0.x - 20, p0.y + 5, p0.z + 15);
+    const p1 = arm.poleTarget('foot.L', new V()).toArray();
+    a.undo();
+    const u = arm.poleTarget('foot.L', new V()).toArray();
+    a.redo();
+    const r = arm.poleTarget('foot.L', new V()).toArray();
+    return { p0: p0.toArray(), p1, u, r, state: a.state().poles?.['foot.L'] };
+  });
+  t.ok(dist(hist.p0, hist.p1) > 5 && dist(hist.u, hist.p0) < 0.01 && dist(hist.r, hist.p1) < 0.01 && !!hist.state, 'the target is in the record, and undo and redo take it back and forth');
+  await page.evaluate(() => window.__armature.save());
+  const saved = await targetAt(page, 'foot.L');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
+  await wait(page, 600);
+  t.ok(dist(saved, await targetAt(page, 'foot.L')) < 0.01, 'reloaded, it is where it was left');
+  const mirrored = await page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const V = arm.root.position.constructor;
+    const left = arm.poleTarget('foot.L', new V()).toArray();
+    arm.mirrorPose('L');
+    arm.applyPins();
+    a.commit();
+    const right = arm.poleTarget('foot.R', new V()).toArray();
+    const mid = arm.root.getWorldPosition(new V()).x;
+    return { left, right, mid };
+  });
+  t.ok(Math.abs(mirrored.right[0] - (2 * mirrored.mid - mirrored.left[0])) < 0.05 && Math.abs(mirrored.right[1] - mirrored.left[1]) < 0.05 && Math.abs(mirrored.right[2] - mirrored.left[2]) < 0.05, "Mirror pose puts the other leg's target at the reflection");
+  const fresh = await page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const V = arm.root.position.constructor;
+    arm.resetPose();
+    a.commit();
+    const reset = arm.poleTarget('foot.L', new V()).toArray();
+    const s = a.state();
+    delete s.poles;
+    arm.restore(s);
+    return { reset, def: arm.poleTarget('foot.L', new V()).toArray() };
+  });
+  t.ok(dist(fresh.reset, fresh.def) < 0.05, 'Reset pose puts the target back out from the joint');
+}
+
+export const suites = { armatureHandlesLook, armatureHandlesPole, armatureHandlesHips, armatureHandlesPin, armatureHandlesRings, armatureHandlesPoint };
