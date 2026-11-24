@@ -90,6 +90,8 @@ const GROUND_BAND = 0.015;
  * scale where they are used (Armature.len).
  */
 const REACHED = 0.0002;
+/** How far inside its limits, in degrees, the aim leaves the limb's base joint. */
+const AIM_MARGIN = 12;
 /** A distance too small to steer by: a fiftieth of a millimetre. */
 const TINY = 2e-5;
 /** What a pass must gain to count as getting closer, and the solver's other hair's breadths. */
@@ -1710,16 +1712,19 @@ export class Armature {
     let least = off();
     let improved = false;
     let stall = 0;
+    let solved = false;
     for (let i = 0; i < iterations; i++) {
       if (twoBone) this.bendHinge(c, hingeIndex, target, mirror, at);
-      // The aim gets the first passes; the rest belong to position. An aim
-      // the joint cannot twist to would otherwise push every pass while
-      // the descent pulls back, and the two would never settle - so the
-      // hand's place wins and the aim is honoured as far as it reaches.
-      if (twoBone && i < 2) this.aimHinge(c, hingeIndex, target, mirror);
+      // Position first. The aim is laid on after, below: a knee asked to point
+      // where its joints cannot take it (the target is held on the body, so the
+      // ask changes as the body moves) would otherwise push every pass while the
+      // descent pulls back, and the hand's place would be lost to it.
       this.turnLinks(c, target, at, mirror, hinge, null, 1);
       const d = off();
-      if (d < this.len(REACHED)) return;
+      if (d < this.len(REACHED)) {
+        solved = true;
+        break;
+      }
       // The pass that left the point nearest is the one kept. A pass can
       // leave it further off on the way there - the triangle and the aim
       // both move it, and the swings make up for that over the next pass
@@ -1729,10 +1734,23 @@ export class Armature {
         improved = true;
         this.keepPoses(held, best);
         stall = 0;
-      } else if ((!twoBone || i >= 2) && ++stall >= 2) break;
+      } else if (i >= 2 && ++stall >= 2) break; // (the first passes are the solver's warm-up: they do not count as stalling)
     }
-    this.restorePoses(held, best);
-    if (least >= this.len(REACHED)) this.settle(c, target, at, mirror, hinge, held, start, improved ? best : null, off);
+    if (!solved) {
+      this.restorePoses(held, best);
+      if (least >= this.len(REACHED)) this.settle(c, target, at, mirror, hinge, held, start, improved ? best : null, off);
+    }
+    // The aim, as far as it is free: the knee or elbow turns about the line to the
+    // target toward where it is asked to point, and is put back if that cost the
+    // hand or foot its place.
+    if (twoBone && off() < this.len(REACHED) * 2) {
+      const placed = this.keepPoses(held);
+      const was = off();
+      if (this.aimHinge(c, hingeIndex, target, mirror)) {
+        this.turnLinks(c, target, at, mirror, hinge, null, 2);
+        if (off() > was + this.len(REACHED)) this.restorePoses(held, placed);
+      }
+    }
   }
 
   /**
@@ -1922,17 +1940,17 @@ export class Armature {
    * allow, and no further: the whole turn clamped axis by axis is some
    * other turn, one that carries the hand or foot off its mark.
    */
-  private aimHinge(c: IKChainDef, hingeIndex: number, target: Vector3, mirror: boolean): void {
+  private aimHinge(c: IKChainDef, hingeIndex: number, target: Vector3, mirror: boolean): boolean {
     const baseName = c.links[hingeIndex + 1];
     const base = this.bones.get(baseName);
     const hinge = this.bones.get(c.links[hingeIndex]);
     const end = this.bones.get(c.effector);
     const rest = this.rest.get(baseName);
-    if (!c.poleRef || !base || !hinge || !end || !rest) return;
+    if (!c.poleRef || !base || !hinge || !end || !rest) return false;
     this.root.updateMatrixWorld(true);
     const basePos = new Vector3().setFromMatrixPosition(base.matrixWorld);
     const axis = new Vector3().subVectors(target, basePos);
-    if (axis.lengthSq() < this.len(TINY / 10) ** 2) return;
+    if (axis.lengthSq() < this.len(TINY / 10) ** 2) return false;
     axis.normalize();
     const now = this.aroundLimb(
       c,
@@ -1940,9 +1958,9 @@ export class Armature {
       new Vector3().setFromMatrixPosition(end.matrixWorld),
       new Vector3().setFromMatrixPosition(hinge.matrixWorld),
     );
-    if (now === null) return; // a straight limb has no bend plane
+    if (now === null) return false; // a straight limb has no bend plane
     const delta = wrap180(this.getAim(c.id) - now);
-    if (Math.abs(delta) < 0.05) return;
+    if (Math.abs(delta) < 0.05) return false;
     const baseQ = base.getWorldQuaternion(new Quaternion());
     // pose = restLocal^-1 * parentWorld^-1 * turnedWorld
     const toPose = new Quaternion();
@@ -1956,7 +1974,13 @@ export class Armature {
       turned.copy(baseQ).premultiply(swing).premultiply(toPose);
       return _e.setFromQuaternion(turned, 'XYZ');
     };
-    const fits = (e: Euler): boolean => within(e.x / RAD, l.x) && within(e.y / RAD, l.y) && within(e.z / RAD, l.z);
+    // The aim does not take the base joint to the very end of its limits: a hip flung to a corner of its box
+    // has nowhere to go when the foot is pulled the next way, and the foot is lost. It stops short of them.
+    const room = (r: [number, number]): [number, number] => (r[1] - r[0] > 2 * AIM_MARGIN ? [r[0] + AIM_MARGIN, r[1] - AIM_MARGIN] : r);
+    const lx = room(l.x);
+    const ly = room(l.y);
+    const lz = room(l.z);
+    const fits = (e: Euler): boolean => within(e.x / RAD, lx) && within(e.y / RAD, ly) && within(e.z / RAD, lz);
     let part = 1;
     if (!fits(poseFor(delta))) {
       let lo = 0;
@@ -1968,9 +1992,10 @@ export class Armature {
       }
       part = lo;
     }
-    if (Math.abs(delta * part) < 0.05) return;
+    if (Math.abs(delta * part) < 0.05) return false;
     const e = poseFor(delta * part);
     this.setPoseEuler(baseName, e.x / RAD, e.y / RAD, e.z / RAD, mirror);
+    return true;
   }
 
   /**

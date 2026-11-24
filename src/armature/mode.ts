@@ -2615,6 +2615,8 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
       const at = armature.hingeWorld(id, new Vector3());
       return at ? at.toArray() : null;
     },
+    /** Where a chain's ring is drawn: the middle of its hand's or foot's own geometry (handlePosition is the effector point the reach holds). */
+    ringPosition: (id: string) => armature.ringWorld(id, new Vector3()).toArray(),
     /** Where a chain's ball, or with 'root' the root's, sits in the world. */
     handlePosition: (id: string) => {
       if (id === ROOT_BALL) return armature.rootHandleWorld(new Vector3()).toArray();

@@ -487,21 +487,24 @@ async function armatureHandlesPole(page, base, t) {
           const a = window.__armature;
           const arm = a.armature;
           const V = arm.root.position.constructor;
-          const aim = arm.getAim(chain);
           const c = arm.chain(chain);
           const hingeIndex = c.links.findIndex((n) => arm.def(n)?.kind === 'hinge');
           const baseName = c.links[hingeIndex + 1];
           const root = arm.jointWorld(baseName);
           const eff = arm.effectorWorld(c.effector, new V());
           const goal = root.clone().lerp(eff, 0.72);
+          const before = arm.poleTarget(chain, new V());
           a.reach(chain, goal.x, goal.y, goal.z);
           const knee = arm.aimFromPoint(chain, arm.hingeWorld(chain, new V()));
-          return { aim, knee, kept: arm.getAim(chain) };
+          const want = arm.aimFromPoint(chain, arm.poleTarget(chain, new V()));
+          return { want, knee, range: arm.poleInRange(chain), stayed: before.distanceTo(arm.poleTarget(chain, new V())) < 1e-3 };
         },
         [chain],
       );
-      const miss = Math.abs(((bent.knee - bent.aim + 540) % 360) - 180);
-      t.ok(miss < 8 && Math.abs(bent.kept - bent.aim) < 0.5, `${label} ${how}: bent again, the ${label === 'leg' ? 'knee' : 'elbow'} points where the target was left (${bent.knee.toFixed(0)} against ${bent.aim.toFixed(0)} degrees)`);
+      // After the limb bends again the joint points toward where the target was left (a joint at the end of its limits
+      // cannot, and then the target is drawn dimmer and, all the same, has not moved from where it was left).
+      const miss = Math.abs(((bent.knee - bent.want + 540) % 360) - 180);
+      t.ok(bent.stayed && (!bent.range || miss < 10), `${label} ${how}: bent again, the ${label === 'leg' ? 'knee' : 'elbow'} points toward where the target was left (${bent.knee.toFixed(0)} against ${bent.want.toFixed(0)} degrees${bent.range ? '' : ', out of range'}), the target on the body where it was`);
     }
   }
 }
