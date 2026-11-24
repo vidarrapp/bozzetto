@@ -480,7 +480,12 @@ export const suites = {
     t.ok((await page.evaluate(() => window.__sculpt.armature.mannequin() === null)), 'the mannequin no longer catches a press');
     await pickTool(page, 'bz.clay');
     await page.keyboard.press('f'); // frame the figure (the selected object)
-    await page.waitForTimeout(800);
+    for (let i = 0, same = 0, last = ''; i < 40 && same < 3; i++) {
+      await page.waitForTimeout(400);
+      const now = await cam(page);
+      same = now === last ? same + 1 : 0;
+      last = now;
+    }
     const chest = await page.evaluate(() => {
       const b = window.__sculpt.worldBox(window.__sculpt.session.getMesh());
       return window.__armature.onScreen((b.min[0] + b.max[0]) / 2, b.min[1] + (b.max[1] - b.min[1]) * 0.7, (b.min[2] + b.max[2]) / 2 + (b.max[2] - b.min[2]) * 0.2);
@@ -490,7 +495,8 @@ export const suites = {
     await stroke(page, chest);
     const sumAfter = await meshSum(page);
     const stepsAfter = await page.evaluate(() => window.__sculpt.session.getStateManager()._curUndoIndex);
-    t.ok(sumAfter !== sumFigure && stepsAfter === stepsBefore + 1 && !(await asking(page)), `a real Clay stroke over the figure changes its vertices, in one undo step, and nothing is asked (${sumFigure} to ${sumAfter}, steps ${stepsBefore} to ${stepsAfter})`);
+    const diag = await page.evaluate(() => ({ mesh: window.__sculpt.session.getMeshName(window.__sculpt.session.getMesh()), tool: window.__sculpt.input.currentToolIndex(), held: window.__sculpt.input.held, body: document.body.className }));
+    t.ok(sumAfter !== sumFigure && stepsAfter === stepsBefore + 1 && !(await asking(page)), `a real Clay stroke over the figure changes its vertices, in one undo step, and nothing is asked (${sumFigure} to ${sumAfter}, steps ${stepsBefore} to ${stepsAfter}, at ${chest}, ${show(diag)})`);
     await page.evaluate(() => window.__sculpt.session.undo());
     await page.waitForTimeout(300);
     t.eq(await meshSum(page), sumFigure, 'and one undo takes the stroke back');
