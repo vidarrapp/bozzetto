@@ -172,7 +172,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
-### Unreleased
+### v0.7.12
 
 - **Poly groups and dynamic topology.** While an object has dynamic topology on, its poly groups are kept but cannot be made or edited. A notice says so.
 
