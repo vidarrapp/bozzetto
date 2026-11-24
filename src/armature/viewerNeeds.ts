@@ -1,4 +1,3 @@
-import type { Box3 } from 'three';
 import type { GroundMode, Viewer } from '../viewer/Viewer';
 
 /**
@@ -17,8 +16,6 @@ import type { GroundMode, Viewer } from '../viewer/Viewer';
  *   ground             the floor shown. Sculpt starts with no stage under the
  *                      work; the mannequin stands on one. What a person
  *                      sets with G in Armature is kept for the next visit.
- *   subjectFit         the stage (and how near and far the camera may go) fitted to the
- *                      mannequin's box, Sculpt's fit to its objects given back.
  *   interactionProbe   a pose drag (a handle, a gizmo) is a move for the
  *                      frame meter and the fast frames, as a stroke is in
  *                      Sculpt.
@@ -70,14 +67,6 @@ export function viewerNeeds(viewer: Viewer, hooks: ViewerNeedsHooks): ViewerNeed
     { id: 'lockFloor', read: () => viewer.lockedFloor(), write: (v) => viewer.lockFloor(v as number | null), start: () => 0 },
     // The floor shown: Sculpt works with no stage under the model, the mannequin stands on one.
     { id: 'ground', read: () => viewer.getGround(), write: (v) => viewer.setGround(v as GroundMode), start: () => 'floor' },
-    // The stage and the camera's travel fitted to the figure's box while Armature is in front (the mode
-    // frames the camera itself, frame()); Sculpt's own fit, to its objects, is back on leaving.
-    {
-      id: 'subjectFit',
-      read: () => viewer.subjectBounds(),
-      // Without the camera: the view is the person's, and stays where it is.
-      write: (v) => viewer.fitSubject(v as Box3, false),
-    },
     // The frame meter and the fast frames: a pose drag is a move, as a stroke is in Sculpt.
     {
       id: 'interactionProbe',

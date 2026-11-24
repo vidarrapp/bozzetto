@@ -17,7 +17,7 @@
 // - ?armature=1 with template= and project= opens that armature on the page, and a picture on
 //   the old Armature board arrives on the page's board once.
 import { mkdirSync } from 'node:fs';
-import { openArmature, openSculpt } from './lib.mjs';
+import { openArmature, openSculpt, pickTool } from './lib.mjs';
 
 const SHOTS = '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9835c4/scratchpad/app/armature-in-page';
 
@@ -45,6 +45,23 @@ async function goPath(page, name) {
   await page.waitForTimeout(120);
 }
 
+/** The camera: position, target and lens, as the viewer holds them. */
+const cam = (page) =>
+  page.evaluate(() => {
+    const c = window.__bozzetto.getCameraState();
+    return JSON.stringify([c.position, c.target, c.focalLength].flat().map((n) => Math.round(n * 1e4) / 1e4));
+  });
+/** Whether the whole mannequin is on the screen. */
+const wholeInView = (page) =>
+  page.evaluate(() => {
+    const b = window.__armature.armature.bounds();
+    const r = window.__bozzetto.captureCanvas.getBoundingClientRect();
+    for (let i = 0; i < 8; i++) {
+      const p = window.__armature.onScreen(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z);
+      if (!p || p[0] < r.left || p[0] > r.right || p[1] < r.top || p[1] > r.bottom) return false;
+    }
+    return true;
+  });
 const asking = (page) => page.evaluate(() => !!document.querySelector('.bz-ask'));
 const counters = (page) => page.evaluate(() => window.__bozzetto.renderCounters());
 const grew = (a, b) => Object.fromEntries(Object.keys(a).filter((k) => b[k] !== a[k]).map((k) => [k, b[k] - a[k]]));
@@ -148,6 +165,14 @@ export const suites = {
     await waitHere(page, 'Armature');
     t.ok(!(await asking(page)), 'Shift+1 asks nothing');
     await armatureUp(page);
+    await page.waitForTimeout(600);
+    t.ok(await wholeInView(page), 'the first entry leaves the whole mannequin in view (framed once if it was not)');
+    const camFirst = await cam(page);
+    await goKey(page, 'Sculpt');
+    await page.screenshot({ path: `${SHOTS}/sculpt-straight-after-leaving-armature.png` });
+    t.eq(await cam(page), camFirst, 'leaving Armature for the first time moves the camera not at all');
+    await goKey(page, 'Armature');
+    await armatureUp(page);
     await page.waitForTimeout(400);
     const afterEntry = { scripts: scripts(), glbs: glbs() };
     t.ok(afterEntry.scripts > atStart.scripts && afterEntry.glbs >= 1, `the first entry loads Armature's code and a mannequin (${afterEntry.scripts - atStart.scripts} more scripts, ${afterEntry.glbs} mannequin files)`);
@@ -169,17 +194,29 @@ export const suites = {
     // The scene's objects stand around it and take no press.
     const around = await page.evaluate(() => ({ objects: window.__sculpt.session.getMeshes().length, shown: window.__sculpt.viewer.isSculptVisible() }));
     t.ok(around.objects >= 1 && around.shown, 'the scene\'s own objects are still drawn around it');
+    // The untouched sphere stands at the mannequin's feet there; it takes no press and cannot be moved.
+    const sphereBefore = await page.evaluate(() => { const m = window.__sculpt.session.getMesh(); return JSON.stringify([...m.getMatrix()]) + meshSumOf(m); function meshSumOf(m) { const v = m.getVertices(); let q = 0; for (let i = 0; i < m.getNbVertices() * 3; i++) q += v[i] * (1 + (i % 7)); return q; } });
+    const spot = await page.evaluate(() => window.__armature.onScreen(8, 10, 8));
+    await stroke(page, spot);
+    await page.keyboard.press('w');
+    await stroke(page, spot);
+    await page.keyboard.press('Escape');
+    const sphereAfter = await page.evaluate(() => { const m = window.__sculpt.session.getMesh(); return JSON.stringify([...m.getMatrix()]) + meshSumOf(m); function meshSumOf(m) { const v = m.getVertices(); let q = 0; for (let i = 0; i < m.getNbVertices() * 3; i++) q += v[i] * (1 + (i % 7)); return q; } });
+    t.ok(sphereAfter === sphereBefore && !(await asking(page)), 'in Armature the default sphere cannot be sculpted, picked or moved');
 
     // --- every pair, by key and by the path -------------------------------------------------------
     let pair = 0;
     const bodyOf = (page) => page.evaluate(() => ({ arm: document.body.classList.contains('armature-ws'), paint: document.body.classList.contains('paint-ws'), present: document.body.classList.contains('presenting') }));
     const bad = [];
+    const badCam = [];
     for (const from of NAMES) {
       for (const to of NAMES) {
         if (from === to) continue;
         await (pair % 2 ? goPath : goKey)(page, from);
+        const cam1 = await cam(page);
         await (pair % 2 ? goKey : goPath)(page, to);
         pair++;
+        if ((await cam(page)) !== cam1) badCam.push(`${from}>${to}`);
         const b = await bodyOf(page);
         const asked = await asking(page);
         const marker = await page.evaluate(() => window.__marker);
@@ -188,6 +225,32 @@ export const suites = {
       }
     }
     t.ok(bad.length === 0 && pair === 12, `all twelve pairs of the four workspaces, by key and by the path, ask nothing and load no page (${bad.join('; ') || 'ok'})`);
+
+    t.ok(badCam.length === 0, `no switch between the four workspaces moves the camera: position, target and lens are identical before and after (${badCam.join(', ') || 'all twelve'})`);
+    // Armature entered a second time from a moved Sculpt view keeps that view.
+    await goKey(page, 'Sculpt');
+    await page.evaluate(() => window.__bozzetto.orbitAzimuth(50));
+    await page.waitForTimeout(400);
+    const moved = await cam(page);
+    t.ok(moved !== camFirst, 'the view was moved in Sculpt');
+    await goKey(page, 'Armature');
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${SHOTS}/armature-second-entry-from-moved-view.png` });
+    t.eq(await cam(page), moved, 'Armature entered again keeps the camera as Sculpt left it');
+    await goKey(page, 'Sculpt');
+    t.eq(await cam(page), moved, 'and back in Sculpt it is still where it was');
+    // F in Sculpt frames what is selected, as before.
+    await page.keyboard.press('f');
+    await page.waitForTimeout(800);
+    const framed = await page.evaluate(() => {
+      const { session, worldBox } = window.__sculpt;
+      const b = worldBox(session.getMesh());
+      const c = window.__bozzetto.getCameraState().target;
+      return { dx: c[0] - (b.min[0] + b.max[0]) / 2, dy: c[1] - (b.min[1] + b.max[1]) / 2, dz: c[2] - (b.min[2] + b.max[2]) / 2 };
+    });
+    t.ok(Math.hypot(framed.dx, framed.dy, framed.dz) < 3 && (await cam(page)) !== moved, `F in Sculpt frames the selected object (the camera's target is at its centre: ${show(framed)})`);
+    await goKey(page, 'Armature');
+    await goKey(page, 'Sculpt');
 
     // --- pose, selection and panels through a round trip ----------------------------------------
     await goKey(page, 'Armature');
@@ -408,9 +471,23 @@ export const suites = {
       const b = window.__sculpt.worldBox(f);
       return window.__armature.onScreen((b.min[0] + b.max[0]) / 2, b.min[1] + (b.max[1] - b.min[1]) * 0.7, (b.min[2] + b.max[2]) / 2);
     });
-    await stroke(page, box);
-    t.ok((await page.evaluate(() => window.__sculpt.armature.mannequin() === null)) && !(await asking(page)), 'the mannequin no longer catches a stroke, and nothing is asked: the next stroke is the figure\'s'
-    );
+    t.ok((await page.evaluate(() => window.__sculpt.armature.mannequin() === null)), 'the mannequin no longer catches a press');
+    await pickTool(page, 'bz.clay');
+    await page.keyboard.press('f'); // frame the figure (the selected object)
+    await page.waitForTimeout(800);
+    const chest = await page.evaluate(() => {
+      const b = window.__sculpt.worldBox(window.__sculpt.session.getMesh());
+      return window.__armature.onScreen((b.min[0] + b.max[0]) / 2, b.min[1] + (b.max[1] - b.min[1]) * 0.7, (b.min[2] + b.max[2]) / 2 + (b.max[2] - b.min[2]) * 0.2);
+    });
+    const sumFigure = await meshSum(page);
+    const stepsBefore = await page.evaluate(() => window.__sculpt.session.getStateManager()._curUndoIndex);
+    await stroke(page, chest);
+    const sumAfter = await meshSum(page);
+    const stepsAfter = await page.evaluate(() => window.__sculpt.session.getStateManager()._curUndoIndex);
+    t.ok(sumAfter !== sumFigure && stepsAfter === stepsBefore + 1 && !(await asking(page)), `a real Clay stroke over the figure changes its vertices, in one undo step, and nothing is asked (${sumFigure} to ${sumAfter}, steps ${stepsBefore} to ${stepsAfter})`);
+    await page.evaluate(() => window.__sculpt.session.undo());
+    await page.waitForTimeout(300);
+    t.eq(await meshSum(page), sumFigure, 'and one undo takes the stroke back');
 
     // --- the address ---------------------------------------------------------------------------------
     t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);

@@ -1143,6 +1143,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
 
   // F and A, and View > Frame selected and Frame all.
+  /** Framing fits the stage to what is framed; the posed mannequin, while it is drawn, is part of what the stage is fitted to (the camera does not move). */
+  const stageTakesMannequin = (): void => {
+    const b = new Box3();
+    if (armatureSlot?.shadowBox(b)) viewer.fitSubject(b.union(viewer.subjectBounds()), false);
+  };
   const frameModel = (): void => {
     const active = session.getMesh();
     if (!active) return;
@@ -1151,6 +1156,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // Only what shows: hidden poly groups are left out of the framing.
     const box = visibleWorldBox(active, session.groups.hiddenFaces(active));
     viewer.frameBounds(box);
+    stageTakesMannequin();
     // Framing re-centres deliberately, so it also resets what you orbit
     // around; otherwise the next drag would swing away from the framing.
     box.getCenter(pivot);
@@ -1163,6 +1169,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     endPivotOrbit();
     editEpoch = -1;
     viewer.frameBounds(box);
+    stageTakesMannequin();
     box.getCenter(pivot);
   };
   const input = new InputShell(session, container, cursor, {

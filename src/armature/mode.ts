@@ -376,15 +376,34 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
   const frame = (): void => {
     const box = armature.bounds();
     if (box.isEmpty()) return;
-    // The camera comes to the figure, the view's angle kept (and the stage is fitted to it: viewerNeeds' subjectFit).
+    // The camera comes to the figure, the view's angle kept.
     viewer.frameBounds(box);
   };
-  // The first entry frames the figure from the default three-quarter view, as the armature always opened;
-  // framing afterwards (F, A) keeps the angle.
-  {
+  // The stage (the ground's size, how near and far the camera may go) takes the mannequin in: it is
+  // fitted to what the scene and the mannequin make together, never smaller than it was, and the camera
+  // does not move (the four workspaces share one camera).
+  const fitStage = (): void => {
     const box = armature.bounds();
-    if (!box.isEmpty()) viewer.fitSubject(box);
-  }
+    if (box.isEmpty()) return;
+    viewer.fitSubject(viewer.subjectBounds().union(box), false);
+  };
+  /** Whether the whole figure is in the view now. */
+  const figureInView = (): boolean => {
+    const box = armature.bounds();
+    if (box.isEmpty()) return true;
+    viewer.camera.updateMatrixWorld();
+    const corner = new Vector3();
+    for (let i = 0; i < 8; i++) {
+      corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(viewer.camera);
+      if (Math.abs(corner.x) > 1 || Math.abs(corner.y) > 1 || corner.z > 1) return false;
+    }
+    return true;
+  };
+  // The first entry in a visit: a figure not wholly in view is framed once, the view's angle kept. After that
+  // Armature keeps whatever the camera is.
+  fitStage();
+  if (!figureInView()) frame();
+  fitStage();
 
   // --- selection + gizmos ---------------------------------------------------
   const canvas = viewer.renderer.domElement;
@@ -2256,6 +2275,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     // The canvas may have a different size than it had; the shaders measure their pixels against it.
     placeViewport();
     syncPlantMarks();
+    fitStage();
     if (!quiet) announce('armature');
     viewer.invalidate();
   };
