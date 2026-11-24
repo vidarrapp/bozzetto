@@ -249,7 +249,8 @@ const clavicleMirror = (page) =>
 // each time to a point on the arc its own leg sweeps about the hip: the
 // ball keeps its distance from the hip and its height follows, since a leg
 // cannot carry its foot sideways along the ground while the pelvis stays
-// put. Either way asks the hip for 30 to 35 degrees. The foot's pin is let
+// put. Either way asks the hip for 30 to 35 degrees, which it has; then
+// four fifths of the leg's length across, past what the hip allows. The foot's pin is let
 // go meanwhile and put back after, and symmetry is off, so the other leg
 // stays where it stands. The shoulder is turned by its Side slider as far
 // as it goes each way, and how far the clavicle then points up or down is
@@ -281,7 +282,10 @@ const hipsAndShoulders = (page) =>
       };
     };
     const out = swing(0.44 * arm.scale);
-    const across = swing(-0.44 * arm.scale);
+    // 44 cm across asks the hip for 30 to 35 degrees, which the dancer's ranges of 0.7.10 allow; four fifths of
+    // the leg's length across asks for over 50, past the hip's 40, so there it stops short at its limit.
+    const reach = swing(-0.44 * arm.scale);
+    const across = swing(-0.8 * r);
     const pitch = () => {
       const head = arm.jointWorld('clavicle.L');
       return (Math.asin(arm.jointWorld('upperarm.L').sub(head).normalize().y) * 180) / Math.PI;
@@ -297,7 +301,7 @@ const hipsAndShoulders = (page) =>
     arm.setPinned('foot.L', pinned);
     arm.symmetry = symmetry;
     a.commit();
-    return { out, across, lift: Math.max(...shoulder), drop: -Math.min(...shoulder) };
+    return { out, reach, across, lift: Math.max(...shoulder), drop: -Math.min(...shoulder) };
   });
 
 // Pinned feet under a moving pelvis (owner report: they snapped round).
@@ -2845,7 +2849,7 @@ export const suites = {
       // armature starts on and on a stylized one; the shoulders lift
       // further than they drop.
       if (id === ids[0] || id === ids[3]) {
-        const { out, across, lift, drop } = await hipsAndShoulders(page);
+        const { out, reach, across, lift, drop } = await hipsAndShoulders(page);
         const deg = (v) => `${Math.abs(v).toFixed(0)}°`;
         const wide = out.limits[out.side < 0 ? 0 : 1];
         const narrow = across.limits.reduce((p, q) => (Math.abs(p) < Math.abs(q) ? p : q));
@@ -2854,8 +2858,12 @@ export const suites = {
           `${id}: swung 44 cm out to the side the left foot gets there (${out.miss.toFixed(2)} cm off), the hip open ${deg(out.side)} of its ${deg(wide)}, the right foot where it stood`,
         );
         t.ok(
+          reach.miss <= 3 && reach.other < 2e-3,
+          `${id}: swung 44 cm across the left foot gets there too (${reach.miss.toFixed(2)} cm off), the hip crossed ${deg(reach.side)}, the right foot where it stood`,
+        );
+        t.ok(
           across.miss >= 6 && Math.abs(across.side - narrow) < 0.5 && across.other < 2e-3,
-          `${id}: swung 44 cm across it stops ${across.miss.toFixed(1)} cm short, the hip at the end of its ${deg(narrow)} across (${deg(across.side)}), the right foot where it stood`,
+          `${id}: swung four fifths of the leg across it stops ${across.miss.toFixed(1)} cm short, the hip at the end of its ${deg(narrow)} across (${deg(across.side)}), the right foot where it stood`,
         );
         t.ok(lift > drop + 5, `${id}: the left shoulder lifts ${lift.toFixed(0)}° and drops ${drop.toFixed(0)}°`);
 
