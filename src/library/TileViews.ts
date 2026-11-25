@@ -20,7 +20,18 @@ interface TileItem {
   /** A second, smaller line (a base mesh's style). */
   note?: string;
   thumb?: string;
+  /** A plain colour swatch in place of a picture (a scene's material). */
+  swatch?: string;
   title?: string;
+}
+
+/** The scene's materials, as the Scene panel's select lists them (the library's own list, read where the panel reads it). */
+export interface SceneMaterialsHost {
+  list(): { id: string; name: string; albedo: string }[];
+  /** The id the active object uses, or null with no object active. */
+  active(): string | null;
+  /** Assigns a material to the active object, as choosing it in the Scene panel does. */
+  assign(id: string): void;
 }
 
 interface TileGroup {
@@ -149,7 +160,12 @@ abstract class TileView implements LibraryView {
     el.className = 'lib-tile lib-tile--pic';
     el.dataset.asset = item.id;
     if (item.title) el.title = item.title;
-    if (item.thumb) {
+    if (item.swatch) {
+      const sw = document.createElement('span');
+      sw.className = 'lib-tile__swatch';
+      sw.style.background = item.swatch;
+      el.appendChild(sw);
+    } else if (item.thumb) {
       const img = document.createElement('img');
       img.src = item.thumb;
       img.alt = '';
@@ -334,13 +350,42 @@ const refreshControls = (): void => void window.dispatchEvent(new Event(CONTROLS
 /** The Materials tab: the matcaps. */
 export class MaterialsView extends TileView {
   protected readonly tab = 'materials';
+  /** The scene's materials, while a sculpt is open (set by the sculpt mode, cleared when it closes). */
+  private scene: SceneMaterialsHost | null = null;
+  private sceneSig = '';
 
   constructor(private readonly host: LookHost) {
     super();
   }
 
+  setScene(scene: SceneMaterialsHost | null): void {
+    this.scene = scene;
+    this.refresh();
+  }
+
   protected groups(): TileGroup[] {
     return [{ id: 'matcaps', title: 'Matcaps', items: MATCAP_ASSETS.map((m) => ({ id: m.id, label: m.label, thumb: m.thumb })) }];
+  }
+
+  protected override mine(): TileItem[] {
+    return (this.scene?.list() ?? []).map((m) => ({ id: m.id, label: m.name, swatch: m.albedo, title: m.name }));
+  }
+
+  protected override mineEmpty(): string {
+    return 'Materials in the scene show here.';
+  }
+
+  /** The scene's list is read again when it changes (a material made, renamed or a sculpt opened). */
+  protected override paint(): void {
+    if (this.scene) {
+      const sig = JSON.stringify(this.scene.list());
+      if (sig !== this.sceneSig) {
+        this.sceneSig = sig;
+        this.refresh();
+        return;
+      }
+    }
+    super.paint();
   }
 
   protected override tail(): string {
@@ -348,11 +393,24 @@ export class MaterialsView extends TileView {
   }
 
   protected inUse(): string | null {
+    // Scene: the material the active object uses. Library: the matcap in use.
+    if (this.ctx.where() === 'mine') return this.scene?.active() ?? null;
     const v = this.host.viewer;
     return v.getMaterial() === 'matcap' ? (MATCAP_ASSETS[v.materials.getMaterialState().matcapIndex]?.id ?? null) : null;
   }
 
   protected use(item: TileItem): void {
+    if (this.ctx.where() === 'mine') {
+      if (!this.scene) return;
+      if (this.scene.active() === null) {
+        this.ctx.say('Select an object first.');
+        return;
+      }
+      this.scene.assign(item.id);
+      refreshControls();
+      this.repaint();
+      return;
+    }
     const index = MATCAP_ASSETS.findIndex((m) => m.id === item.id);
     if (index < 0) return;
     const v = this.host.viewer;

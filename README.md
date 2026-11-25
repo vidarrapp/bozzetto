@@ -176,6 +176,12 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **The Scene panel's Material row shows a matcap in use.** In Matcap it reads "Matcap: VR04" and stays until you pick a material, which also returns the view to Lit.
+- **Bozzetto is now Library in the asset library.** Its first button covers your own saved presets and the tools you subscribe to.
+- **Scene in the Materials tab.** Where Mine was, it lists the scene's materials as swatches; a tap assigns one to the selected object.
+
 ### v0.7.23
 
 - **A layer's Weight slider shows its effect as you drag it.** The surface follows the slider while you hold it, for a layer and for a group. When a lower subdivision level is showing, it follows when you pause for a moment and again when you let go; on a very dense object it waits for the release after the first pause.

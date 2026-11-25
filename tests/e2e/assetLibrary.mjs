@@ -297,8 +297,8 @@ export const suites = {
     await openLib(page);
     t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-tab')].map((b) => b.textContent).join()), 'Tools,Models,Materials,Lighting,HDRIs', 'five tabs, always there');
     t.eq(await page.evaluate(() => document.querySelector('.lib-tab.is-on').textContent), 'Tools', 'the window opens on Tools');
-    t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-where')].map((b) => b.textContent).join()), 'Bozzetto,Mine', 'Bozzetto and Mine under the tabs (the Community comes later, and is not shown)');
-    t.eq(await page.evaluate(() => document.querySelector('.lib-where.is-on').textContent), 'Bozzetto', 'Bozzetto is the one showing');
+    t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-where')].map((b) => b.textContent).join()), 'Library,Mine', 'Library and Mine under the tabs on the other tabs (the Community comes later, and is not shown)');
+    t.eq(await page.evaluate(() => document.querySelector('.lib-where.is-on').textContent), 'Library', 'Library is the one showing');
     for (const tab of ['Models', 'Materials', 'Lighting', 'HDRIs']) {
       await page.click(`.lib-tab:text-is("${tab}")`);
       const n = await page.evaluate(() => document.querySelectorAll('.lib-body:not([hidden]) .lib-tile').length);
@@ -309,7 +309,7 @@ export const suites = {
     await page.click('.lib-where:text-is("Mine")');
     t.eq(await page.evaluate(() => document.querySelector('.lib-body:not([hidden]) .lib-empty:not([hidden])')?.textContent ?? ''), 'Copies you make of a tool show here.', 'Mine says what shows there');
     t.eq(await page.evaluate(() => document.querySelectorAll('.lib-body:not([hidden]) .lib-tile:not([hidden])').length), 0, 'and has no tiles yet');
-    await page.click('.lib-where:text-is("Bozzetto")');
+    await page.click('.lib-where:text-is("Library")');
     await page.fill('.lib-search', 'cla');
     t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-body[data-tab="tools"] .lib-tile:not([hidden])')].map((b) => b.dataset.tool).join()), 'bz.clay', 'Search filters the tiles by name as you type');
     await page.fill('.lib-search', 'AK');
@@ -1123,7 +1123,7 @@ export const suites = {
     await page.fill('.lib-search', '');
     await page.click('.lib-where:text-is("Mine")');
     t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="models"] .lib-empty:not([hidden])')?.textContent ?? ''), 'Nothing of yours here yet.', 'Mine on Models says its plain line');
-    await page.click('.lib-where:text-is("Bozzetto")');
+    await page.click('.lib-where:text-is("Library")');
 
     // --- Materials: the matcaps, in step with the Material panel ---
     await showTab(page, 'Materials');
@@ -1167,9 +1167,21 @@ export const suites = {
     await page.evaluate(() => window.__sculpt.viewer.setMaterial('lit'));
     await page.waitForFunction(() => !document.querySelector('.lib-body[data-tab="materials"] .lib-tile[data-state="use"]'), null, { timeout: 5000 });
     t.ok(true, 'Lit takes the mark away');
-    await page.click('.lib-where:text-is("Mine")');
-    t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="materials"] .lib-empty:not([hidden])')?.textContent ?? ''), 'Nothing of yours here yet.', 'Mine on Materials says its plain line');
-    await page.click('.lib-where:text-is("Bozzetto")');
+    // --- Materials: Scene lists the scene's materials; a tap assigns them to the active object ---
+    await page.click('.lib-where:text-is("Scene")');
+    const sceneList = await page.evaluate(() => [...document.querySelector('.outliner__material select').options].filter((o) => o.value !== '__new__' && o.value !== '__matcap__').map((o) => ({ id: o.value, name: o.textContent })));
+    const shownList = await page.evaluate(() => [...document.querySelectorAll('.lib-body[data-tab="materials"] .lib-tile:not([hidden])')].map((b) => `${b.dataset.asset}:${b.querySelector('.lib-tile__name').textContent}`));
+    t.eq(shownList.join(), sceneList.map((m) => `${m.id}:${m.name}`).join(), 'Scene lists the scene materials in the Scene panel select order');
+    const target = sceneList[sceneList.length - 1].id;
+    await page.evaluate(() => window.__sculpt.viewer.setMaterial('matcap'));
+    await wait(page, 300);
+    await tapAsset(page, 'materials', target);
+    await wait(page, 300);
+    const after = await page.evaluate(() => ({ mode: window.__sculpt.viewer.getMaterial(), sel: document.querySelector('.outliner__material select').value}));
+    t.eq(after.sel, target, 'a tap assigns that material to the active object (the Scene panel select shows it)');
+    t.eq(after.mode, 'lit', 'and puts the view back in Lit');
+    t.eq(await page.evaluate((id) => document.querySelector(`.lib-body[data-tab="materials"] .lib-tile[data-asset="${id}"]`).dataset.state, target), 'use', 'the tile the object uses is marked');
+    await page.click('.lib-where:text-is("Library")');
     await page.fill('.lib-search', 'vr0');
     t.eq((await tabTiles(page, 'materials')).length, 9, 'the search filters the matcaps (VR01 to VR09)');
     await page.fill('.lib-search', '');
@@ -1221,7 +1233,7 @@ export const suites = {
     // --- Mine: a saved rig ---
     await page.click('.lib-where:text-is("Mine")');
     t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="lighting"] .lib-empty:not([hidden])')?.textContent ?? ''), 'Rigs you save in the Lighting tab show here.', 'Mine says where its rigs come from');
-    await page.click('.lib-where:text-is("Bozzetto")');
+    await page.click('.lib-where:text-is("Library")');
     await page.selectOption('.panel--lighting select', 'built:rembrandt');
     await page.evaluate(() => window.__bozzetto.lighting.setAngles('key', 77, 33));
     page.once('dialog', (d) => d.accept('Mine one'));
@@ -1242,7 +1254,7 @@ export const suites = {
     await page.fill('.lib-search', 'zzz');
     t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="lighting"] .lib-empty:not([hidden])')?.textContent ?? ''), 'Nothing called that.', 'the search filters Mine too');
     await page.fill('.lib-search', '');
-    await page.click('.lib-where:text-is("Bozzetto")');
+    await page.click('.lib-where:text-is("Library")');
     await page.fill('.lib-search', 'raking');
     t.eq((await tabTiles(page, 'lighting')).map((c) => c.id).join(), 'raking_key', 'the search filters the rigs by name');
     await page.fill('.lib-search', '');
@@ -1303,7 +1315,7 @@ export const suites = {
     t.eq(await page.evaluate(() => window.__bozzetto.environment.getState().id), null, 'None takes the environment off');
     await page.click('.lib-where:text-is("Mine")');
     t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="hdris"] .lib-empty:not([hidden])')?.textContent ?? ''), 'Nothing of yours here yet.', 'Mine on HDRIs says its plain line');
-    await page.click('.lib-where:text-is("Bozzetto")');
+    await page.click('.lib-where:text-is("Library")');
 
     // --- Where it shows ---
     await page.evaluate(() => window.__sculpt.present.leave());

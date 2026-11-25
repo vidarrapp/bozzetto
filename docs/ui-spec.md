@@ -730,7 +730,8 @@ Tool, with Material before it.
   always all five. A tab's body is a view registered for it (`AssetLibrary.register`:
   `mount`, `refresh`, `dispose`); a tab with none says one quiet line, for
   example "Materials come to the library in a later version." Under the
-  tabs, two buttons, **Bozzetto** and **Mine** (the Community comes with a
+  tabs, two buttons, **Library** and **Mine** (on the Materials tab the second is
+  **Scene**, the scene's own materials; the Community comes with a
   later step and is not shown; room is left), and a **Search** field that
   filters the tiles showing by name as you type ("Nothing called that." when
   none match). Mine says "Copies you make of a tool show here." until there

@@ -404,6 +404,15 @@ body.chrome-hidden .lib-window {
   -webkit-user-drag: none;
 }
 
+/* A scene's material: a plain swatch, the albedo, in the picture's place. */
+.lib-tile__swatch {
+  display: block;
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--bz-line);
+  pointer-events: none;
+}
+
 /* A tile with no picture (a primitive, None) is its name, centred. */
 .lib-tile--pic:not(:has(img)) {
   justify-content: center;
