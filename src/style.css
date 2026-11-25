@@ -8066,3 +8066,35 @@ html.is-page :is(#app, #admin).page-scroll.page-scroll--bare {
   color: var(--bz-on-accent);
   filter: brightness(1.08);
 }
+
+/* A new scene is empty: the Scene panel shows the Create choices itself, the menu's own, in place of
+   the list and its Create button, and scrolls them within the panel. Every choice is a finger's size. */
+.outliner__empty {
+  display: none;
+}
+
+.panel--scene-empty .outliner__header,
+.panel--scene-empty .outliner,
+.panel--scene-empty .outliner__material,
+.panel--scene-empty .outliner__measure {
+  display: none;
+}
+
+.panel--scene-empty .outliner__empty {
+  display: block;
+}
+
+.outliner__empty-line {
+  padding: 10px 12px 2px;
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+}
+
+.outliner__menu-grid--words .outliner__menu-item,
+.outliner__tile {
+  min-height: 44px;
+}
+
+.outliner__tile--armature {
+  justify-content: flex-start;
+}

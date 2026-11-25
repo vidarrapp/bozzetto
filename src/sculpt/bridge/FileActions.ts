@@ -231,9 +231,9 @@ export class FileActions {
     this.hooks.onSceneClean();
   }
 
-  /** Start over from a clean sphere. */
-  async newScene(): Promise<void> {
-    this.session.newScene();
+  /** Start over from an empty scene (`sphere`: from the default sphere, for the tests). */
+  async newScene(opts: { sphere?: boolean } = {}): Promise<void> {
+    this.session.newScene(opts);
     this.generation++;
     // A new scene is nobody's project: saving it must not overwrite one.
     // Nor is the old one's unsent copy its own; that stays on the shelf.

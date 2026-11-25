@@ -2560,10 +2560,13 @@ export class SculptSession {
   }
 
   /**
-   * Start over: drop every object for a fresh sphere. The new scene is the
-   * history floor, so undo cannot resurrect what was just discarded.
+   * Start over: drop every object. A new scene is empty (the Scene panel's
+   * Create choices are where it starts); `sphere` begins it with the default
+   * sphere instead, which is what the tests and `?start=sphere` ask for.
+   * The new scene is the history floor, so undo cannot resurrect what was
+   * just discarded.
    */
-  newScene(): Multimesh {
+  newScene(opts: { sphere?: boolean } = {}): Multimesh | null {
     this.setSolo(false); // a new scene is not the one that was soloed
     this.measure.reset();
     this.meshes.length = 0;
@@ -2574,7 +2577,9 @@ export class SculptSession {
     this.units = UNITS;
     this.openedFrom = UNITS;
     this.scaleDismissed = false;
-    const mesh = this.addSphere();
+    const mesh = opts.sphere ? this.addSphere() : null;
+    // An empty scene has nothing to announce the change: say so here.
+    if (!mesh) this.activeChanged();
     this.clearHistory();
     if (was !== this.units) this.onUnitsChange?.();
     return mesh;

@@ -354,6 +354,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       bootFailure ??= LOST;
     }
   }
+  // A new scene is empty (the Scene panel's Create choices are where it starts). The display
+  // binds to an object while it is built, so one stands until the mount is up (dropBootSphere);
+  // `?start=sphere` keeps it, as the tests ask for.
+  const bootEmpty = !session.getMesh() && query.get('start') !== 'sphere';
   if (!session.getMesh()) session.addSphere();
   const multimesh = session.getMesh()!;
   // The boot scene is the floor of history: its add-states must not be
@@ -1638,7 +1642,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     cleanPoint: () => session.getStateManager().getCurrentState(),
     onSceneClean: markSceneClean,
     // The old scene's view would leave the new sphere off screen or tiny.
-    onNewScene: () => frameAll(),
+    onNewScene: () => {
+      frameAll();
+      // The empty scene is not written (ScenePersist), so the old record must go or a reload would bring it back.
+      if (session.getMeshes().length === 0) void clearSavedScene();
+    },
     // The library card wants the same picture the gallery's in-progress
     // card gets, taken at the moment you press Save rather than on the way out.
     captureThumb: () => viewer.captureThumbnail(),
@@ -2494,6 +2502,30 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   });
   /** The mannequin stands in the scene: Armature is loaded and no figure has been made from it. */
   const mannequinStands = (): boolean => !!armatureSlot?.present() && !figureMade();
+  // The Create choices' armature tiles: that mannequin becomes the scene's armature, in its rest
+  // pose, and the page goes to Armature (loading it first if need be). One armature a scene for
+  // now, so a posed one is replaced only once the person has said so.
+  scenePanel!.onArmature = (id) => {
+    void (async () => {
+      const slot = armatureSlot;
+      if (!slot) return;
+      if (slot.mount()?.altered() && mannequinStands()) {
+        const yes = await askWindow({
+          title: 'Replace the armature?',
+          text: 'Its pose and proportions will be lost.',
+          yes: 'Replace',
+          danger: true,
+        });
+        if (!yes) return;
+      }
+      studio.go('armature');
+      await slot.ready();
+      await slot.mount()?.choose(id);
+      scenePanel?.refresh();
+    })();
+  };
+  // The first object of an empty scene is brought into view.
+  scenePanel!.onCreatedFirst = () => frameModel();
   scenePanel!.armatureRow = () =>
     mannequinStands() && armatureSlot
       ? { name: armatureSlot.label(), shown: inArmatureWorkspace || armatureSlot.shown(), selected: armatureSelected }
@@ -2612,6 +2644,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   refreshReadout = () => studio.repaint();
   present!.onChange = paintPath;
   studio.start('sculpt');
+  // The empty scene: the sphere that stood for the display is gone, and the Scene panel is open on Create.
+  if (bootEmpty) {
+    session.newScene();
+    scenePanel?.setCollapsed(false);
+  }
   // /?sculpt=1&paint=1 reopens in Paint, as the address Paint keeps while it is up.
   if (new URLSearchParams(window.location.search).get('paint') === '1') studio.go('paint');
   // The hotkey guide (H) swaps to the sculpt table while the mode is active.
