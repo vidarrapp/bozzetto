@@ -4070,7 +4070,8 @@ export const suites = {
 
     // In view: a short window, so the panel's body scrolls; scrolled to its
     // foot, the rows are out of sight, and a step brings the active one in.
-    await page.setViewportSize({ width: 1280, height: 360 });
+    // 480 tall: shorter, and the panel's body (what the edge column leaves it) is less than one row high.
+    await page.setViewportSize({ width: 1280, height: 480 });
     const where = () =>
       page.evaluate(() => {
         const body = document.querySelector('.panel--scene .panel__body');
