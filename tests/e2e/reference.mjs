@@ -1620,7 +1620,13 @@ export const suites = {
         x.fillRect(200, 0, 200, 300);
         return c.toDataURL('image/png').split(',')[1];
       }, [a, b]).then((s) => Buffer.from(s, 'base64'));
-    await addFiles(page, [{ name: 'tone.png', mimeType: 'image/png', buffer: await two('#d25a28', '#2878c8') }]);
+    // A still view: straight multisampling and no ambient occlusion, so a read of the model does not drift between frames.
+    await page.evaluate(() => {
+      window.__sculpt.viewer.setAntialias('always');
+      window.__sculpt.viewer.setAO({ enabled: false });
+    });
+    await page.waitForTimeout(500);
+    await addFiles(page, [{ name: 'tone.png', mimeType: 'image/png', buffer: await two('#d03828', '#2848d0') }]);
     await openPanel(page, false);
     const id0 = await page.evaluate(() => {
       const { board, view } = window.__sculpt.reference;
@@ -1673,7 +1679,15 @@ export const suites = {
     await page.evaluate(() => window.__sculpt.reference.view.setShown(false));
     await page.waitForTimeout(300);
     t.eq(await page.evaluate(() => window.__sculpt.viewer.overlayCount()), 0, 'with References off the view blends no picture');
-    const cbs = await readAll();
+    // The view settles for a while after it opens (lighting, shadows): read it until two reads in a row agree.
+    let cbs = await readAll();
+    for (let i = 0; i < 12; i++) {
+      await page.waitForTimeout(1000);
+      const again = await readAll();
+      const same = again.every((c, k) => near(c, cbs[k], 0));
+      cbs = again;
+      if (same) break;
+    }
     await page.evaluate(() => window.__sculpt.reference.view.setShown(true));
     await page.waitForTimeout(400);
     await look({ blend: 'normal', opacity: 1 });
@@ -1694,7 +1708,8 @@ export const suites = {
       await look({ blend: mode });
       const got = await readAll();
       for (let i = 0; i < pts.length; i++) {
-        const want = await cssBlend(mode, cbs[i], cs[i], 1);
+        // Linear Dodge is a sum clamped at white; the browser's plus-lighter is the same sum, but a page element cannot be set up to show it against an opaque backdrop here.
+        const want = mode === 'linear-dodge' ? cbs[i].map((v, k) => Math.min(255, v + cs[i][k])) : await cssBlend(mode, cbs[i], cs[i], 1);
         if (!near(got[i], want, 6)) misses.push(`${mode}@${i}: got ${got[i]} want ${want} (backdrop ${cbs[i]}, picture ${cs[i]})`);
       }
       if (mode === 'multiply') await shot(page, 'multiply');
@@ -1786,11 +1801,11 @@ export const suites = {
     await openPanel(page, false);
     const ids = await page.evaluate(() => {
       const { board } = window.__sculpt.reference;
-      const byName = (n) => board.list().find((i) => i.name === n).id;
+      const byName = (n) => board.list().find((i) => i.name === n || i.name === n.replace('.png', '')).id;
       const a = byName('a.png');
       const b = byName('b.png');
-      board.putInView(a, { x: -0.55, y: -0.3, w: 0.4 });
-      board.putInView(b, { x: -0.4, y: -0.3, w: 0.4 });
+      board.putInView(a, { x: -0.35, y: -0.3, w: 0.4 });
+      board.putInView(b, { x: -0.2, y: -0.3, w: 0.4 });
       board.setArranging(false);
       return { a, b };
     });
@@ -1818,7 +1833,7 @@ export const suites = {
     await openPanel(page, false);
     await page.evaluate(() => {
       const { board } = window.__sculpt.reference;
-      for (let i = 0; i < 5; i++) board.putInView(board.list().find((x) => x.name === `f${i}.png`).id, { x: -0.4 + i * 0.2, y: -0.33, w: 0.17 });
+      for (let i = 0; i < 5; i++) board.putInView(board.list().find((x) => x.name === `f${i}.png` || x.name === `f${i}`).id, { x: -0.4 + i * 0.2, y: -0.33, w: 0.17 });
       board.setArranging(false);
     });
     await page.waitForTimeout(700);

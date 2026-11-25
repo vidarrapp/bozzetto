@@ -60,7 +60,7 @@ const sat = (c: N): N => max(max(c.r, c.g), c.b).sub(min(min(c.r, c.g), c.b));
 const setSat = (c: N, s: N): N => {
   const lo = min(min(c.r, c.g), c.b);
   const range = max(sat(c), float(1e-6));
-  return select(sat(c).greaterThan(0), c.sub(lo).mul(s).div(range), vec3(0));
+  return select(sat(c).greaterThan(0.001), c.sub(lo).mul(s).div(range), vec3(0));
 };
 
 /** B(Cb, Cs) for the mode index, backdrop and source (display space). */
@@ -193,8 +193,10 @@ export class RefOverlay {
         const inside = min(min(u, float(1).sub(u)), min(down, float(1).sub(down))).greaterThanEqual(0);
         // screenUV runs from the top of the view down on both backends; a texture's v runs up.
         s.tex.uvNode = vec2(u, float(1).sub(down)).clamp(0, 1);
-        const px = s.tex as N;
-        const cs = px.rgb;
+        // The sample is taken once, here, into a variable: used lazily inside the mode's branches it would be
+        // declared in the first branch that reads it and be out of scope in the others.
+        const px: N = vec4(s.tex as N).toVar();
+        const cs: N = px.rgb.toVar();
         const alpha = px.a.mul(s.opacity);
         const blended = blendFn(col, cs, s.mode);
         col.assign(col.add(blended.sub(col).mul(select(inside, alpha, float(0)))));
