@@ -81,6 +81,8 @@ export interface LayerControlsOptions {
   before?: HTMLSelectElement;
   /** The slider moved: `live` along a drag or a typed value, `commit` when it ends. */
   change(value: number, phase: 'live' | 'commit'): void;
+  /** Also send `live` along a drag, at most once per drawn frame (the last move always lands before the release). */
+  liveDrag?: boolean;
 }
 
 export class LayerControls {
@@ -121,6 +123,21 @@ export class LayerControls {
       },
       1,
     );
+    if (opts.liveDrag) {
+      let frame = 0;
+      input.addEventListener('input', () => {
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          opts.change(sliderValue(input), 'live');
+        });
+      });
+      // The release: the last value goes with it, so no frame is left pending.
+      input.addEventListener('change', () => {
+        if (frame) cancelAnimationFrame(frame);
+        frame = 0;
+      }, true);
+    }
     input.addEventListener('change', () => opts.change(sliderValue(input), 'commit'));
     this.el.append(this.row);
     this.set(null, null);

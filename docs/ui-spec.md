@@ -951,7 +951,10 @@ reuse it with one more control a row (a blend mode select).
 - A layer's data lives on the object's highest level. Any level may be on
   screen while sculpting with a layer active; only a hidden layer or one at
   0% refuses a stroke ("Show the layer to sculpt on it."). Weight changes
-  apply live while the highest level is on screen and on release otherwise.
+  apply on every drawn frame of a drag (the Weight slider's `input`, coalesced
+  by `LayerControls`) while the highest level is on screen; from a lower level
+  (about a second at a million triangles) after the slider has been still for
+  120 ms, and always on release.
 - Changing the active layer, a weight or visibility, Add, Duplicate,
   Flatten, Delete are undo steps. Remesh, merge, split and dynamic topology
   ask to flatten the layers first ("Flatten the layers of "Sphere"?", button

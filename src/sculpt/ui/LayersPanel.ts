@@ -50,6 +50,7 @@ export class LayersPanel extends SidePanel {
       caption: 'Weight',
       limit: WEIGHT_LIMIT,
       floor: -WEIGHT_LIMIT,
+      liveDrag: true,
       change: (w, phase) => {
         const mesh = this.session.getMesh();
         const layer = this.session.layers.active(mesh);

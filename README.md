@@ -176,6 +176,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### v0.7.23
+
+- **A layer's Weight slider shows its effect as you drag it.** The surface follows the slider while you hold it, for a layer and for a group. When a lower subdivision level is showing, it follows when you pause for a moment and again when you let go; on a very dense object it waits for the release after the first pause.
+
 ### v0.7.22
 
 - **Create choices are plainer.** The primitives show their picture and name only, with no size under them, and the armatures are named Male, realistic, Female, blocks and so on. Base meshes come as one object until you choose parts, and the choice is remembered from now on.
