@@ -410,7 +410,7 @@ body.chrome-hidden .lib-window {
   min-height: 64px;
 }
 
-/* A longer name (Male mannequin, realistic) gets a third line before it is cut. */
+/* A longer name (a base mesh with a style note) gets a third line before it is cut. */
 .lib-tile--pic .lib-tile__name {
   -webkit-line-clamp: 3;
 }

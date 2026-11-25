@@ -176,6 +176,11 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### v0.7.22
+
+- **Create choices are plainer.** The primitives show their picture and name only, with no size under them, and the armatures are named Male, realistic, Female, blocks and so on. Base meshes come as one object until you choose parts, and the choice is remembered from now on.
+- **A new Mask icon.** The Mask button on the left edge has a new icon, a roll of tape.
+
 ### v0.7.21
 
 - The primitives in the Create choices and the Asset library's Models tab now have pictures, like the armatures and base meshes.

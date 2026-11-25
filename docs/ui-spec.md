@@ -1175,7 +1175,7 @@ kept or opened scene).
   choices scroll inside the panel. Choosing one adds it, selects it and frames it, and the panel returns to its list.
   Deleting the last object, or undoing the first add, brings the empty state back. A panel the person closed does not
   reopen by itself during a visit.
-- **Create choices, in order:** Primitives (seven picture tiles, picture above the name, with the real size as a second line in a scene on real units), Base meshes (Figures, Heads, Parts, with the "Blockouts as" switch), then
+- **Create choices, in order:** Primitives (seven picture tiles, picture above the name, as tall as the armature tiles), Base meshes (Figures, Heads, Parts, with the "Blockouts as" switch), then
   **Armatures**: one tile for each mannequin and block figure the Armature tab's Preset select offers, picture and label.
   Pictures are `public/assets/armature/thumbs/<id>.png`, 96 x 96, made by `tools/render-armature-thumbs.mjs`.
 - **An armature tile** makes that mannequin the scene's armature in its rest pose and goes to the Armature workspace,

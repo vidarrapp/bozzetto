@@ -30,10 +30,10 @@ export const FIGURES: FigureInfo[] = [
   // inside the chest, so a head turn swung from too low (owner report).
   // The other three turn 0.7 to 1.4 cm above that line; raised 1.5 cm,
   // this one turns 1 cm above it, as they do on average.
-  { id: 'mannequin-male-realistic', label: 'Male mannequin, realistic', sex: 'male', style: 'realistic', neckRaise: 0.015 },
-  { id: 'mannequin-female-realistic', label: 'Female mannequin, realistic', sex: 'female', style: 'realistic' },
-  { id: 'mannequin-male-stylized', label: 'Male mannequin, stylized', sex: 'male', style: 'stylized' },
-  { id: 'mannequin-female-stylized', label: 'Female mannequin, stylized', sex: 'female', style: 'stylized' },
+  { id: 'mannequin-male-realistic', label: 'Male, realistic', sex: 'male', style: 'realistic', neckRaise: 0.015 },
+  { id: 'mannequin-female-realistic', label: 'Female, realistic', sex: 'female', style: 'realistic' },
+  { id: 'mannequin-male-stylized', label: 'Male, stylized', sex: 'male', style: 'stylized' },
+  { id: 'mannequin-female-stylized', label: 'Female, stylized', sex: 'female', style: 'stylized' },
 ];
 
 export function figureById(id: string): FigureInfo | undefined {

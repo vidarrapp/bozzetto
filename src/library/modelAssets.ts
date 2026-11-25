@@ -66,7 +66,6 @@ export function modelGroups(): ModelGroup[] {
     {
       id: 'armatures',
       title: 'Armatures',
-      aside: 'Posable mannequins',
       items: armatureChoices().map((a) => ({ id: a.id, label: a.label, kind: 'armature' as const, thumb: armatureThumbUrl(a.id) })),
     },
   ];

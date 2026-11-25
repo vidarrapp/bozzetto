@@ -92,6 +92,28 @@ export const suites = {
       [...document.querySelectorAll('.panel--scene .outliner__empty .outliner__tile')].filter((b) => b.getBoundingClientRect().height < 43.5).length,
     );
     t.eq(small, 0, 'every choice is at least 44 px tall');
+    // The Create choices: a primitive is its picture and its name, as tall as an armature tile; the
+    // headings stand alone; the armatures carry the short names; with nothing stored, Blockouts are one object.
+    const choiceShape = await page.evaluate(() => {
+      const empty = document.querySelector('.panel--scene .outliner__empty');
+      const prim = empty.querySelector('[data-kind="sphere"]');
+      const arm = empty.querySelector('[data-armature]');
+      const heads = [...empty.querySelectorAll('.outliner__menu-head')].map((h) => h.textContent.trim());
+      return {
+        primH: prim.getBoundingClientRect().height,
+        armH: arm.getBoundingClientRect().height,
+        sizes: [...empty.querySelectorAll('[data-kind]')].map((b) => `${b.querySelector('.outliner__tile-note') ? 'note' : 'none'}:${b.title}`).join(' | '),
+        heads,
+        armNames: [...empty.querySelectorAll('[data-armature] .outliner__tile-name')].map((n) => n.textContent),
+        parts: [...empty.querySelectorAll('[data-parts]')].map((p) => `${p.textContent}:${p.getAttribute('aria-pressed')}`).join(' '),
+      };
+    });
+    t.ok(Math.abs(choiceShape.primH - choiceShape.armH) <= 1, `a primitive tile is as tall as an armature tile (${choiceShape.primH} and ${choiceShape.armH} px)`);
+    t.ok(choiceShape.sizes.split(' | ').every((x) => x.startsWith('none:') && !/\d+ cm/.test(x)), `a primitive tile shows no size, on the tile or in its tooltip (${choiceShape.sizes})`);
+    t.ok(choiceShape.heads.includes('Primitives') && choiceShape.heads.includes('Armatures'), `the Primitives and Armatures headings are there (${choiceShape.heads.join(', ')})`);
+    t.ok(!choiceShape.heads.some((h) => /real size|Posable/.test(h)), 'the Armatures heading has no aside, and the Primitives heading none either');
+    t.eq(choiceShape.armNames.join(', '), 'Male, blocks, Female, blocks, Male, realistic, Female, realistic, Male, stylized, Female, stylized', 'the armature tiles are named Male, blocks and so on');
+    t.eq(choiceShape.parts, 'one object:true parts:false', 'with nothing stored, Blockouts as is on one object');
     const scrolls = await page.evaluate(() => {
       const b = document.querySelector('.panel--scene .panel__body');
       return b.scrollHeight > b.clientHeight && getComputedStyle(b).overflowY !== 'visible';

@@ -30,7 +30,6 @@ i[class^=fi-ss-]:before,i[class*=" fi-ss-"]:before,span[class^=fi-ss-]:before,sp
 .fi-ss-hand-back-fist:before{content:"\f74f"}
 .fi-ss-layers:before{content:"\f876"}
 .fi-ss-lock:before{content:"\f8ce"}
-.fi-ss-mask-carnival:before{content:"\f8fe"}
 .fi-ss-paint:before{content:"\f9e1"}
 .fi-ss-pause:before{content:"\fa03"}
 .fi-ss-play:before{content:"\fa94"}
@@ -43,6 +42,7 @@ i[class^=fi-ss-]:before,i[class*=" fi-ss-"]:before,span[class^=fi-ss-]:before,sp
 .fi-ss-screwdriver:before{content:"\fb9a"}
 .fi-ss-shredder:before{content:"\fbf2"}
 .fi-ss-star:before{content:"\fcd7"}
+.fi-ss-tape:before{content:"\fd4b"}
 .fi-ss-transformation-block:before{content:"\fdd5"}
 .fi-ss-trash:before{content:"\fdf4"}
 .fi-ss-undo:before{content:"\fe58"}

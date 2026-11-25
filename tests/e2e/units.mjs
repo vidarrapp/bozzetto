@@ -157,13 +157,14 @@ export const suites = {
     // box shows the transform.
     const sizeLine = await page.evaluate(() => !!document.querySelector('.panel--scene .outliner__size'));
     t.ok(!sizeLine, 'the Scene panel has no size line');
+    // The Create choices give no size either: a primitive tile is its picture and its name.
     const labels = await page.evaluate(() =>
-      [...document.querySelectorAll('.outliner__menu--create .outliner__tile--primitive')].map((b) => `${b.dataset.kind}:${b.querySelector('.outliner__tile-note')?.textContent ?? ''}`),
+      [...document.querySelectorAll('.outliner__menu--create .outliner__tile--primitive')].map((b) => `${b.dataset.kind}:${b.querySelector('.outliner__tile-note')?.textContent ?? ''}:${b.title}`),
     );
     t.eq(
       labels.join(' '),
-      'sphere:25 cm cube:25 cm cylinder:25 cm torus:25 cm cone:25 cm capsule:25 cm plane:50 cm',
-      'the Create menu says each primitive\'s size',
+      'sphere::Sphere cube::Cube cylinder::Cylinder torus::Torus cone::Cone capsule::Capsule plane::Plane',
+      'the Create menu gives no size for a primitive, on the tile or in its tooltip',
     );
 
     // --- the floor: fixed at 0, whatever the scene does -------------------------

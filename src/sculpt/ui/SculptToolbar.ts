@@ -171,7 +171,7 @@ export class SculptToolbar {
       ),
     );
     this.smoothBtn = this.keyButton('smooth', 'fi-ss-water');
-    this.maskBtn = this.keyButton('mask', 'fi-ss-mask-carnival');
+    this.maskBtn = this.keyButton('mask', 'fi-ss-tape');
 
     const center = document.createElement('div');
     center.className = 'sculpt-toolbar__group sculpt-toolbar__brushes';
