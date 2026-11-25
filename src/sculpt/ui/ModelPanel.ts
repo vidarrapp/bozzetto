@@ -170,6 +170,8 @@ export class ModelPanel extends SidePanel {
       if (on) {
         // Held at off while the window is up; the answer sets it.
         this.dyntopoCheckbox.checked = false;
+        // An empty scene has no surface to rebuild: nothing to ask, and it stays off.
+        if (!this.session.getMesh()) return;
         void (async () => {
           // One question: the switch, and the layers it flattens when the object has any.
           const mesh = this.session.getMesh();

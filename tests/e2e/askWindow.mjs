@@ -161,6 +161,11 @@ export const suites = {
     // --- the Model panel's Dynamic topology (a loss of subdivision levels) ---------------------------------
     await page.evaluate(() => window.__sculpt.modelPanel.setCollapsed(false));
     const box = page.locator('label:has-text("Dynamic topology") input[type="checkbox"]').first();
+    // The new scene is empty: with no object the switch asks nothing and stays off.
+    await box.click();
+    await page.waitForTimeout(300);
+    t.ok(!(await page.evaluate(() => !!document.querySelector('.bz-ask'))) && !(await box.isChecked()), 'in an empty scene Dynamic topology asks nothing and stays off');
+    await page.evaluate(() => window.__sculpt.session.addPrimitive('sphere'));
     await box.click();
     t.ok(await shown(page), 'Dynamic topology asks before flattening the levels');
     w = await look(page);
