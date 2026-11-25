@@ -1909,9 +1909,9 @@ export const suites = {
       const disabled = b.disabled;
       session.setMesh(cube);
       await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
-      return { disabled, back: !b.disabled };
+      return { disabled, back: !b.disabled, had: !!cube, has: !!session.getMesh() };
     });
-    t.ok(greyed.disabled && greyed.back, 'with nothing active the button is disabled, and enabled again after');
+    t.ok(greyed.disabled && greyed.back, `with nothing active the button is disabled, and enabled again after (${JSON.stringify(greyed)})`);
     // Hidden in Present mode, as the rail is.
     const presentHidden = await page.evaluate(async () => {
       const { present } = window.__sculpt;
