@@ -1152,7 +1152,6 @@ export const suites = {
     t.eq(st.mode2, 'matcap', 'and its Mode');
     t.eq((await tabTiles(page, 'materials')).filter((c) => c.state === 'use').map((c) => c.id).join(), 'vr04', 'the tile in use is marked');
     // The Material panel's picker closed and the window moved aside, so both marks show.
-    await page.keyboard.press('Escape');
     await page.evaluate(() => { const g = document.querySelector('.mcpick__pop'); if (g) g.hidden = true; });
     await page.mouse.move(700, 87);
     await page.mouse.down();
@@ -1284,12 +1283,14 @@ export const suites = {
     // A failed fetch leaves the environment as it was and says so.
     await page.evaluate(() => {
       const real = window.fetch.bind(window);
+      window.__realFetch = window.fetch;
       window.fetch = (input, init) => (/garage\.hdr/.test(String(input?.url ?? input)) ? Promise.reject(new TypeError('offline')) : real(input, init));
     });
     await tapAsset(page, 'hdris', 'garage');
     await page.waitForFunction(() => /could not be loaded/.test(document.querySelector('.lib-foot')?.textContent ?? ''), null, { timeout: 15000 });
     t.eq(await foot(page), 'Garage could not be loaded. The environment is as it was.', 'a failed fetch says so in the foot');
     t.eq(await page.evaluate(() => window.__bozzetto.environment.getState().id), 'overcast', 'and leaves the environment as it was');
+    await page.evaluate(() => (window.fetch = window.__realFetch));
     t.eq((await tabTiles(page, 'hdris')).filter((c) => c.state === 'use').map((c) => c.id).join(), 'overcast', 'with the mark where it was');
     await tapAsset(page, 'hdris', '');
     await wait(page, 500);
