@@ -246,6 +246,12 @@ export class ScenePanel extends SidePanel {
       words.appendChild(item);
     }
     into.appendChild(words);
+    // Second, before the long list of base meshes, so they are in reach without a scroll (they sat last).
+    // One armature a scene for now: a tile makes that mannequin the scene's armature.
+    head('Armatures', 'Posable mannequins');
+    const arms = div('outliner__menu-grid');
+    for (const choice of armatureChoices()) arms.appendChild(this.armatureTile(choice));
+    into.appendChild(arms);
     head('Base meshes', 'Blender Studio · CC0');
     // The blockouts' one choice (owner request): the remeshed shell, or
     // every lump as its own object, the way the Armature keeps them.
@@ -280,11 +286,6 @@ export class ScenePanel extends SidePanel {
       for (const info of BASE_MESHES) if (info.group === group) grid.appendChild(this.baseMeshTile(info));
       into.appendChild(grid);
     }
-    // One armature a scene for now: a tile makes that mannequin the scene's armature.
-    head('Armatures', 'Posable mannequins');
-    const arms = div('outliner__menu-grid');
-    for (const choice of armatureChoices()) arms.appendChild(this.armatureTile(choice));
-    into.appendChild(arms);
   }
 
   private armatureTile(choice: ArmatureChoice): HTMLButtonElement {
