@@ -2,6 +2,7 @@
 
 ## Open questions for Vidar
 
+- [x] 2026-11-25: The Weight slider with a lower subdivision level showing. Decided 2026-11-25: it follows the drag there too, by scaling a stored approximation of the layer at that level; the exact result is worked out on release (it can only be seen in full at the top level anyway).
 - [x] 2026-11-25: The matcaps the Material panel offers. Decided 2026-11-25: the Display section's picker shows only the matcaps the scene has taken from the library (with a Browse option to the library); importing your own matcap is wanted, later.
 - [ ] 2026-11-25: Clear coat and subsurface on a material (Vidar: worth adding, with three.js). A trial is being built first, with pictures and timings: clear coat from three's physical material, subsurface tried two ways, three's fast translucency term (light from behind showing through) and a skin-shading approximation (the light wraps past the terminator with a warm tint). Vidar, 2026-11-25: accurate scattering does not matter; a good approximation of skin shading, and possibly wax, does. After the pictures: which subsurface, clear coat or not, or neither? (blocks: adding the values to the scene's material and to the presets)
 - [x] 2026-11-25: The Scene panel's Material select. Decided 2026-11-25: it lists only the materials in the scene, with New and a Browse option that opens the Asset library on the Materials tab; the preset materials are picked in the library.
