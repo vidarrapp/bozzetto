@@ -183,7 +183,8 @@ export function isShowKey(e: KeyboardEvent): boolean {
  * others to Sculpt or Armature - and none can see the others' instances.
  */
 function closeOpenPanels(): boolean {
-  const open = document.querySelectorAll('.panel:not(.panel--collapsed)');
+  // A silenced panel (another workspace's, out of sight) does not answer, so it must not count as open.
+  const open = document.querySelectorAll('.panel:not(.panel--collapsed):not(.panel--suspended)');
   if (open.length === 0) return false;
   window.dispatchEvent(new CustomEvent(PANEL_CLOSE_ALL_EVENT));
   return true;

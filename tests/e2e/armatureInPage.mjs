@@ -537,7 +537,7 @@ export const suites = {
         sceneNames: window.__sculpt ? window.__sculpt.session.getMeshes().length : 0,
       }));
       t.ok(got.figure === 'placeholder-female' && got.arm === '[-40,0,10]' && got.path === 'Armature', `?armature=1&${param} opens that armature, on the page, in Armature (${show(got)})`);
-      t.ok(!/project=|template=/.test(got.url) && got.scene && got.sceneNames >= 1, 'the address is cleaned, and the scene is the page\'s own (not opened from it)');
+      t.ok(!/project=|template=/.test(got.url) && got.scene && got.sceneNames === 0, 'the address is cleaned, and the scene is the page\'s own, new and empty (not opened from it)');
     }
     // ?sculpt=1 opens on Sculpt, ?armature=1 on Armature, and the address follows the workspace.
     await page.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });

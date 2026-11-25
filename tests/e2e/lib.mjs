@@ -220,8 +220,8 @@ export async function pickTool(page, id) {
 }
 
 /** Boot armature mode on a fresh page and wait for its console handle. */
-export async function openArmature(page, base) {
-  await page.goto(`${base}/?armature=1`, { waitUntil: 'domcontentloaded' });
+export async function openArmature(page, base, query = '') {
+  await page.goto(`${base}/?armature=1${query}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
   await page.waitForTimeout(250);
 }

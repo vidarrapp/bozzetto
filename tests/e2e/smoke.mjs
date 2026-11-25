@@ -5391,7 +5391,7 @@ export const suites = {
       });
       await owner.waitForFunction(() => !window.__beforeSignIn && !!window.__sculpt, null, { timeout: 90_000 });
       await owner.waitForFunction(asOwner, null, { timeout: 30_000 }).catch(() => {});
-      t.eq(logins.join(', '), `/admin/login?next=${encodeURIComponent('/?sculpt=1&q=low')}`, 'Sign in again goes to /admin/login, told to come back here');
+      t.eq(logins.join(', '), `/admin/login?next=${encodeURIComponent('/?sculpt=1&q=low&start=sphere')}`, 'Sign in again goes to /admin/login, told to come back here');
       s = await scene();
       t.ok(s.objects === 4 && s.link === id && s.unsent === copies.find((c) => c.unsent)?.key, `after the round trip the scene is back, the cube made just before included, with its link and its copy (${JSON.stringify(s)})`);
       t.eq(dialogs.join(' | '), '', 'and nothing was asked on the way: the autosave held everything');

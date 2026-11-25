@@ -127,6 +127,7 @@ export class SidePanel {
   setSuspended(on: boolean): void {
     if (on === this.suspended) return;
     this.suspended = on;
+    this.root.classList.toggle('panel--suspended', on);
     const call = on ? window.removeEventListener.bind(window) : window.addEventListener.bind(window);
     call('bozzetto:panel-open', this.onOtherPanelOpen);
     call('bozzetto:panel-set', this.onPanelSet);

@@ -176,7 +176,7 @@ async function armatureSuspend(page, base, t) {
   await page.setViewportSize({ width: 1180, height: 820 });
   const requests = [];
   page.on('request', (r) => requests.push(r.url()));
-  await openArmature(page, base);
+  await openArmature(page, base, '&start=sphere');
   await page.waitForTimeout(600);
   await installLedgers(page);
 
