@@ -176,7 +176,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
-### Unreleased
+### v0.7.15
 
 - **Reference blend modes work on the iPad.** A reference set to Multiply, Screen, Overlay or any other mode now blends with the model in the view. Up to four pictures blend at once, the topmost ones.
 ### v0.7.14
