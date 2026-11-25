@@ -1027,7 +1027,7 @@ export const suites = {
     });
     await page.evaluate(() => window.__sculpt.persist.markDirty());
     await page.evaluate(() => window.__sculpt.persist.flush());
-    await page.goto(`${base}/?sculpt=1&q=low`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${base}/?sculpt=1&q=low&start=sphere`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__sculpt && !document.getElementById('overlay'), null, { timeout: 90_000 });
     await page.evaluate(() => {
       const { session } = window.__sculpt;
@@ -1578,7 +1578,7 @@ export const suites = {
     t.ok(Object.values(filed.refused).every((why) => /poly groups/.test(why)), `malformed colours are refused (${Object.entries(filed.refused).map(([k, v]) => `${k}: ${v.replace(/.*poly groups[: (]*/, '')}`).join('; ')})`);
     await page.evaluate(() => window.__sculpt.persist.markDirty());
     await page.evaluate(() => window.__sculpt.persist.flush());
-    await page.goto(`${base}/?sculpt=1&q=low`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${base}/?sculpt=1&q=low&start=sphere`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__sculpt && !document.getElementById('overlay'), null, { timeout: 90_000 });
     const reloaded = await tinted();
     t.ok(reloaded.colors.join() === filed.colors.join(), `the autosave keeps them through a reload (${reloaded.colors.map((c) => c.toString(16)).join(' ')})`);

@@ -352,7 +352,7 @@ export const suites = {
     await page.evaluate(() => window.__sculpt.viewer.materials.setPlainColor(false));
 
     // The address reopens it.
-    await page.goto(`${base}/?sculpt=1&q=low&paint=1`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${base}/?sculpt=1&q=low&paint=1&start=sphere`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.getElementById('overlay') && !!window.__sculpt, null, { timeout: 60_000 });
     await page.waitForTimeout(400);
     const reopened = await shell(page);

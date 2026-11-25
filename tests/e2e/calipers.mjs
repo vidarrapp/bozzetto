@@ -311,7 +311,7 @@ export const suites = {
     });
     await page.evaluate(() => window.__sculpt.persist.markDirty());
     await page.evaluate(() => window.__sculpt.persist.flush());
-    await page.goto(`${base}/?sculpt=1&q=low`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${base}/?sculpt=1&q=low&start=sphere`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__sculpt && !document.getElementById('overlay'), null, { timeout: 90_000 });
     list = await pinned(page);
     t.ok(list.length === 2 && list[0].name === 'Left forearm', `the autosave keeps them through a reload (${list.map((m) => m.name).join(', ')})`);
