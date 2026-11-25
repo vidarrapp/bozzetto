@@ -1904,11 +1904,16 @@ export const suites = {
       const { session } = window.__sculpt;
       const cube = session.getMesh();
       session.setMesh(null);
-      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
       const b = document.querySelector('.sculpt-sliders .sculpt-solobtn');
+      // The rail reads the state on a drawn frame, and a loaded machine draws few: wait for it, up to 3 s.
+      const until = async (want) => {
+        const end = performance.now() + 3000;
+        while (b.disabled !== want && performance.now() < end) await new Promise((ok) => requestAnimationFrame(ok));
+      };
+      await until(true);
       const disabled = b.disabled;
       session.setMesh(cube);
-      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      await until(false);
       return { disabled, back: !b.disabled, had: !!cube, has: !!session.getMesh() };
     });
     t.ok(greyed.disabled && greyed.back, `with nothing active the button is disabled, and enabled again after (${JSON.stringify(greyed)})`);
