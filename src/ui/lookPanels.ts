@@ -22,6 +22,7 @@ import {
   range,
   section,
 } from './Panel';
+import { rigAssets } from '../library/assets';
 import { askText, askWindow, tellWindow } from './askWindow';
 import { downloadBlob } from './download';
 import {
@@ -194,6 +195,8 @@ const CUSTOM = 'custom';
 
 class LightingPanel extends LookPanel {
   private rigSelect?: HTMLSelectElement;
+  private envSelect?: HTMLSelectElement;
+  private envRows?: HTMLDivElement;
   private shadowsCheckbox?: HTMLInputElement;
   private lightControls?: HTMLDivElement;
   private manageList?: HTMLDivElement;
@@ -221,6 +224,11 @@ class LightingPanel extends LookPanel {
 
   protected sync(): void {
     if (this.shadowsCheckbox) this.shadowsCheckbox.checked = this.viewer.lighting.getShadowsMaster();
+    // The Asset library's HDRIs tab sets the environment under the select.
+    if (this.envSelect && this.envSelect.value !== (this.viewer.environment.getState().id ?? '')) {
+      this.envSelect.value = this.viewer.environment.getState().id ?? '';
+      if (this.envRows) this.envRows.hidden = !this.envSelect.value;
+    }
     // The light rows read their values when built, and the hold-L drag moves the key under them.
     if (this.lightControls?.isConnected) this.rebuildLightControls();
   }
@@ -233,7 +241,7 @@ class LightingPanel extends LookPanel {
     select.setAttribute('aria-label', 'Rig');
     const built = document.createElement('optgroup');
     built.label = 'Built in';
-    for (const p of PRESETS) built.appendChild(new Option(p.label, BUILT + p.id));
+    for (const p of rigAssets()) built.appendChild(new Option(p.label, BUILT + p.id));
     select.appendChild(built);
     const mine = myRigs();
     if (mine.length) {
@@ -549,6 +557,7 @@ class LightingPanel extends LookPanel {
     for (const e of env.list()) select.appendChild(new Option(e.label, e.id));
     select.value = state.id ?? '';
     select.addEventListener('change', () => void env.setEnvironment(select.value || null));
+    this.envSelect = select;
     sec.appendChild(labelRow('HDRI', select));
 
     // Intensity and rotation have nothing to act on under "None".
@@ -559,6 +568,7 @@ class LightingPanel extends LookPanel {
     const sync = (): void => {
       rows.hidden = !select.value;
     };
+    this.envRows = rows;
     select.addEventListener('change', sync);
     sync();
   }

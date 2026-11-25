@@ -5,7 +5,8 @@ import { FLOOR_OFFSET_LIMIT, formatLength } from '../../viewer/units';
 import { chordLabel, keymap } from '../../ui/keymap';
 import { SidePanel } from './SidePanel';
 import { PRIMITIVE_SIZES, type PrimitiveKind, type SculptSession } from '../bridge/SculptSession';
-import { BASE_MESHES, BASE_MESH_GROUPS, baseMeshThumbUrl, type BaseMeshInfo } from '../bridge/basemeshes';
+import { baseMeshThumbUrl, type BaseMeshInfo } from '../bridge/basemeshes';
+import { PRIMITIVES, armatureThumbUrl, modelGroups, type ArmatureChoice } from '../../library/modelAssets';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { MaterialLibrary } from '../bridge/materials';
 import { RemeshTooLarge } from '../bridge/remeshBudget';
@@ -13,24 +14,6 @@ import { statusToast } from './statusToast';
 import { withLayersFlattened } from './layerGate';
 import { deviceStore } from '../../ui/deviceStorage';
 import { askText, askWindow } from '../../ui/askWindow';
-import { FIGURES } from '../../armature/figures';
-import { RIG_PRESETS } from '../../armature/presets';
-
-/** Where an armature tile's picture is (tools/render-armature-thumbs.mjs makes them). */
-export function armatureThumbUrl(id: string): string {
-  return `/assets/armature/thumbs/${id}.png`;
-}
-
-/** One armature the Create choices offer: each mannequin and placeholder rig the Armature tab's Preset select lists. */
-export interface ArmatureChoice {
-  id: string;
-  label: string;
-}
-
-/** The armatures on offer, in the Preset select's order. */
-export function armatureChoices(): ArmatureChoice[] {
-  return [...RIG_PRESETS, ...FIGURES].map((p) => ({ id: p.id, label: p.label }));
-}
 
 /**
  * Scene outliner: the upper-left docked panel, and only the objects. Each
@@ -216,16 +199,7 @@ export class ScenePanel extends SidePanel {
     // in one from before, they come at its old sizes and say none.
     head('Primitives', this.session.getUnits() ? 'real size' : undefined);
     const words = div('outliner__menu-grid outliner__menu-grid--words');
-    const primitives: [PrimitiveKind, string][] = [
-      ['sphere', 'Sphere'],
-      ['cube', 'Cube'],
-      ['cylinder', 'Cylinder'],
-      ['torus', 'Torus'],
-      ['cone', 'Cone'],
-      ['capsule', 'Capsule'],
-      ['plane', 'Plane'],
-    ];
-    for (const [kind, label] of primitives) {
+    for (const { id: kind, label } of PRIMITIVES) {
       const item = document.createElement('button');
       item.type = 'button';
       item.className = 'outliner__menu-item';
@@ -237,12 +211,7 @@ export class ScenePanel extends SidePanel {
         size.textContent = formatLength(PRIMITIVE_SIZES[kind].size);
         item.appendChild(size);
       }
-      item.addEventListener('click', () => {
-        this.closeMenus();
-        const first = this.isSceneEmpty();
-        this.session.addPrimitive(kind);
-        if (first) this.onCreatedFirst?.();
-      });
+      item.addEventListener('click', () => this.createPrimitive(kind));
       words.appendChild(item);
     }
     into.appendChild(words);
@@ -250,7 +219,7 @@ export class ScenePanel extends SidePanel {
     // One armature a scene for now: a tile makes that mannequin the scene's armature.
     head('Armatures', 'Posable mannequins');
     const arms = div('outliner__menu-grid');
-    for (const choice of armatureChoices()) arms.appendChild(this.armatureTile(choice));
+    for (const choice of modelGroups().find((g) => g.id === 'armatures')?.items ?? []) arms.appendChild(this.armatureTile(choice));
     into.appendChild(arms);
     head('Base meshes', 'Blender Studio · CC0');
     // The blockouts' one choice (owner request): the remeshed shell, or
@@ -278,12 +247,13 @@ export class ScenePanel extends SidePanel {
       row.appendChild(pill);
     }
     into.appendChild(row);
-    for (const { group, title } of BASE_MESH_GROUPS) {
+    for (const group of modelGroups()) {
+      if (!group.sub) continue;
       const sub = div('outliner__menu-sub');
-      sub.textContent = title;
+      sub.textContent = group.title;
       into.appendChild(sub);
       const grid = div('outliner__menu-grid');
-      for (const info of BASE_MESHES) if (info.group === group) grid.appendChild(this.baseMeshTile(info));
+      for (const item of group.items) if (item.info) grid.appendChild(this.baseMeshTile(item.info));
       into.appendChild(grid);
     }
   }
@@ -308,6 +278,14 @@ export class ScenePanel extends SidePanel {
       this.onArmature?.(choice.id);
     });
     return tile;
+  }
+
+  /** A primitive added, as the Create choice and the Asset library's Models tab do it. */
+  createPrimitive(kind: PrimitiveKind): void {
+    this.closeMenus();
+    const first = this.isSceneEmpty();
+    this.session.addPrimitive(kind);
+    if (first) this.onCreatedFirst?.();
   }
 
   /** The scene has nothing in it: no object and no armature. */
@@ -345,8 +323,8 @@ export class ScenePanel extends SidePanel {
    * (offline and never fetched, most likely). The menu closes on success,
    * the way a primitive's does; a failure leaves it open to try another.
    */
-  async addBaseMesh(id: string, tile?: HTMLButtonElement): Promise<void> {
-    if (tile?.disabled) return;
+  async addBaseMesh(id: string, tile?: HTMLButtonElement): Promise<boolean> {
+    if (tile?.disabled) return false;
     const note = tile?.querySelector<HTMLElement>('.outliner__tile-note');
     const was = note?.textContent ?? '';
     if (tile) {
@@ -373,6 +351,7 @@ export class ScenePanel extends SidePanel {
         if (failed) setTimeout(() => (note.textContent = was), 2500);
       }
     }
+    return !failed;
   }
 
   private openMenu(menu: HTMLDivElement, anchor: HTMLElement): void {

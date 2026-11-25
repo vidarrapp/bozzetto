@@ -46,6 +46,7 @@ import { isProjectId } from '../net/ids';
 import { takeOpen } from '../ui/openToken';
 import { SculptToolbar } from './ui/SculptToolbar';
 import { ToolsView } from '../library/ToolsView';
+import { ModelsView } from '../library/TileViews';
 import { MeasureOverlay } from './ui/MeasureOverlay';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
@@ -1918,6 +1919,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       lift: (e, id, tile, menu) => toolbar.liftFromLibrary(e, id, tile, menu),
       swallowing: () => toolbar.swallowing,
       onState: (fn) => toolbar.onState(fn),
+    }),
+  );
+  // The Models tab adds what the Create choices add.
+  studio.library.register(
+    'models',
+    new ModelsView({
+      addPrimitive: (kind) => scenePanel?.createPrimitive(kind),
+      addBaseMesh: async (id) => (await scenePanel?.addBaseMesh(id)) ?? false,
+      setArmature: (id) => scenePanel?.onArmature?.(id),
     }),
   );
   sculptPanel.setLibraryButton(() => studio.library.open('tools'));

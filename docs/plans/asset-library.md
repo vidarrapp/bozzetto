@@ -196,6 +196,8 @@ four tabs from the start (the other three say "Coming" until their step).
 Bozzetto and Mine. Drag to the bar, drag off, Duplicate, Name and icon,
 `.bztool` export and import, the one device store.
 
+**Built so far (Unreleased).** The window has Models, Materials, Lighting and HDRIs tabs (Models is new, second in the row). Models holds the Create choices, Materials the ten matcaps, Lighting the ten built-in rigs and the saved rigs under Mine, HDRIs None and the six environments, fetched on the tap. They and the panels' pickers are built from one list each (`src/library/assets.ts`, `modelAssets.ts`), so the two cannot differ. Still waiting: your own copies (a rig's save, rename and delete are still the Lighting tab's), your own `.hdr` files and matcap pictures, sharing, the Community, and more and larger HDRIs from the server (an entry already carries a list of files).
+
 **Step 4. Lighting and HDRIs.** The rig library moves into the window and the
 store. HDRI tiles for the six, and your own `.hdr` files, with the scene
 remembering an HDRI of yours and carrying it in its file.
