@@ -2,6 +2,7 @@
 
 ## Open questions for Vidar
 
+- [x] 2026-11-25: The matcaps the Material panel offers. Decided 2026-11-25: the Display section's picker shows only the matcaps the scene has taken from the library (with a Browse option to the library); importing your own matcap is wanted, later.
 - [ ] 2026-11-25: Clear coat and subsurface on a material (Vidar: worth adding, with three.js). A trial is being built first, with pictures and timings: clear coat from three's physical material, subsurface from its fast translucency term (light from behind showing through; not a true scattering under the skin). After the pictures: both, clear coat only, or neither? (blocks: adding the values to the scene's material and to the presets)
 - [x] 2026-11-25: The Scene panel's Material select. Decided 2026-11-25: it lists only the materials in the scene, with New and a Browse option that opens the Asset library on the Materials tab; the preset materials are picked in the library.
 - [x] 2026-11-25: Preset materials. Decided 2026-11-25: the material library has a set of ready-made physically based materials (wax clay, wet clay, plasteline, plaster, plastic, metals such as steel, bronze and copper, and so on), picked from the Asset library's Materials tab and from the Scene panel's Material select; picking one puts it in the scene's materials.
