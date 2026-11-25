@@ -48,6 +48,14 @@ export interface ArmatureSlot {
   mount(): ArmatureMount | null;
   /** The armature's name, for the Scene tab. */
   name(): string;
+  /** What the mannequin is called (the label of the Armature tab's Preset select), for the Scene row. */
+  label(): string;
+  /** The Scene row's eye: whether the mannequin is shown outside Armature. */
+  shown(): boolean;
+  setShown(shown: boolean): void;
+  /** The mannequin's own material (the Material tab's Surface section); null before the load. */
+  surface(): { albedo: string; roughness: number; metalness: number } | null;
+  setSurface(patch: Partial<{ albedo: string; roughness: number; metalness: number }>): void;
   /** The mannequin's mesh while it is drawn outside Armature (no figure yet), for a press that may land on it; null otherwise. */
   mannequin(): Mesh | null;
   /** The posed mannequin's world box added into `out`, while it is drawn; false when it is not. */
@@ -132,6 +140,14 @@ export function armatureWorkspace(page: ArmaturePage): ArmatureSlot {
     ready: () => loading ?? Promise.resolve(),
     mount: () => mount,
     name: () => mount?.armatureName() ?? 'Armature',
+    label: () => mount?.label() ?? 'Armature',
+    shown: () => mount?.shown() ?? true,
+    setShown: (shown) => {
+      mount?.setShown(shown);
+      page.changed();
+    },
+    surface: () => mount?.surface() ?? null,
+    setSurface: (patch) => mount?.setSurface(patch),
     mannequin: () => mount?.outside() ?? null,
     shadowBox: (out) => mount?.shadowBox(out) ?? false,
     figureChanged: () => {

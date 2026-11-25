@@ -405,6 +405,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // the scene has no armature and none of it is drawn; once it has, the posed mannequin is one
   // more thing the shadows fit.
   let armatureSlot: ArmatureSlot | null = null;
+  /** The Armature workspace is in front. */
+  let inArmatureWorkspace = false;
+  /** The armature's row was the last thing tapped in the Scene panel: the Material tab's Surface section is the mannequin's. */
+  let armatureSelected = false;
   /** Whether a figure stood in the scene when the mannequin was last shown or hidden for it. */
   let figureWas = false;
   /** The mannequin goes or comes back when a figure stands in the scene or does not (a remesh, its undo, its redo). */
@@ -726,6 +730,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     for (const [mesh, e] of extras) viewer.highlightSculpt(e.handle, show && selected.has(mesh));
   };
   session.onSelectionChange = () => {
+    armatureSelected = false;
     scenePanel?.refresh();
     materialPanel?.refreshSurface();
     syncHighlights();
@@ -2385,6 +2390,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       return false;
     }
     figureMesh = added as unknown as SculptMesh;
+    // The figure has the mannequin's material: one the scene already has by those values, or a new one.
+    const own = armatureSlot?.surface();
+    if (own) {
+      const same = library.list().find((m) => m.albedo.toLowerCase() === own.albedo.toLowerCase() && Math.abs(m.roughness - own.roughness) < 1e-6 && Math.abs(m.metalness - own.metalness) < 1e-6);
+      const mat = same ?? library.create('Mannequin');
+      if (!same) library.update(mat.id, own);
+      library.assign(figureMesh, mat.id);
+      session.render();
+    }
     figureStep = session.getStateManager().getCurrentState();
     persist.markDirty();
     figureWas = true;
@@ -2406,7 +2420,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
     applyLook: (look) => applyLookSafely(look),
     remesh: remeshFigure,
-    mannequinAlbedo: () => library.list()[0].albedo,
+    mannequinSurface: () => {
+      const { albedo, roughness, metalness } = library.list()[0];
+      return { albedo, roughness, metalness };
+    },
+    changed: () => {
+      scenePanel?.refresh();
+      studio.material.refreshSurface();
+    },
     figureMade,
     figure: figureSettings,
     leaveForGallery: () => leaveForGallery(),
@@ -2442,14 +2463,20 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       input.held = true;
       cursor.hide();
       document.body.classList.add('armature-ws');
-      // The mannequin has no object's material: the Material tab shows its Display section alone.
+      // The Colour choice is an object's; the Surface section is the mannequin's own.
+      inArmatureWorkspace = true;
       studio.material.setSurfaceShown(false);
+      studio.material.refreshSurface();
+      scenePanel?.refresh();
       syncHighlights();
       setWorkspaceAddress(true);
     } else {
       input.held = false;
       document.body.classList.remove('armature-ws');
+      inArmatureWorkspace = false;
       studio.material.setSurfaceShown(true);
+      studio.material.refreshSurface();
+      scenePanel?.refresh();
       input.refreshBrushCursor();
       setWorkspaceAddress(false);
     }
@@ -2462,9 +2489,39 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     changed: () => {
       scenePanel?.refresh();
       modelPanel?.refreshFigure();
+      studio.material.refreshSurface();
     },
   });
-  scenePanel!.armatureRow = () => (armatureSlot?.present() && !figureMade() ? { name: armatureSlot.name() } : null);
+  /** The mannequin stands in the scene: Armature is loaded and no figure has been made from it. */
+  const mannequinStands = (): boolean => !!armatureSlot?.present() && !figureMade();
+  scenePanel!.armatureRow = () =>
+    mannequinStands() && armatureSlot
+      ? { name: armatureSlot.label(), shown: inArmatureWorkspace || armatureSlot.shown(), selected: armatureSelected }
+      : null;
+  scenePanel!.armatureActions = {
+    toggle: () => armatureSlot?.setShown(!armatureSlot.shown()),
+    select: () => {
+      armatureSelected = true;
+      scenePanel?.refresh();
+      studio.material.refreshSurface();
+    },
+    deselect: () => {
+      if (!armatureSelected) return;
+      armatureSelected = false;
+      scenePanel?.refresh();
+      studio.material.refreshSurface();
+    },
+  };
+  // The Material tab's Surface section is the mannequin's in Armature, with no object selected, and after a tap on its row.
+  studio.material.setSubject(() => {
+    const slot = armatureSlot;
+    if (!slot || !mannequinStands() || !(inArmatureWorkspace || !session.getMesh() || armatureSelected)) return null;
+    return {
+      name: 'Armature',
+      values: () => slot.surface() ?? { albedo: '#ffffff', roughness: 0.5, metalness: 0 },
+      set: (patch) => slot.setSurface(patch),
+    };
+  });
   modelPanel!.figure = { settings: figureSettings, shown: () => !!armatureSlot?.present(), remesh: (res) => void remeshFigure(res) };
   // A press that lands on the posed mannequin is not a stroke: it asks, once a visit, whether to
   // remesh it into a figure, and the press goes to the view as it does off the model.
