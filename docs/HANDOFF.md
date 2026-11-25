@@ -146,6 +146,7 @@
 
 ## Later
 
+- GitHub Actions minutes are used up for November (Vidar, 2026-11-25); CI runs again from 1 December. Until then each release is checked locally with the same steps CI runs (typecheck, function checks, both builds, the CI's e2e suites) plus the suites the change touches, before `main` moves.
 - Saved light rigs are kept on the device, not in the scene (2026-11-25): the Asset library shows them under Scene, but a rig saved in one scene shows in every scene on that device and does not travel with a saved file. Keeping them in the scene's record belongs with the scene format on the Rust core.
 - Entering Armature sometimes makes one new bind group, even after the switches are warm (about one run in three of `armatureInPage`, seen from 0.7.14 on). It is not a shader or pipeline build and nothing is noticed on screen, but a switch should build nothing; the test lets exactly that one through until the cause is found.
 - Armature reach at a joint limit: a foot or hand pinned past what the limits allow ends 2 to 4 cm further from its pin than the best pose a coarse search finds (measured 2026-11-24 on two mannequins, pelvis dragged 24 to 60 cm across). It settles and does not flicker, but the solver gives a little away at a limit; worth a look when the reach solver is next worked on.
