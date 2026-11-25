@@ -1890,10 +1890,19 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
     container,
   );
-  scenePanel = new ScenePanel(session, library, {
-    get: () => viewer.getFloorOffset(),
-    set: (cm) => viewer.setFloorOffset(cm),
-  });
+  scenePanel = new ScenePanel(
+    session,
+    library,
+    {
+      get: () => viewer.getFloorOffset(),
+      set: (cm) => viewer.setFloorOffset(cm),
+    },
+    {
+      mode: () => viewer.getMaterial(),
+      matcapName: () => viewer.materials.matcaps()[viewer.materials.getMaterialState().matcapIndex]?.label ?? '',
+      useLit: () => viewer.setMaterial('lit'),
+    },
+  );
   // Rename, eye and padlock bypass the undo stack: sync the display side
   // (visibility, the stats corner name) and let the autosave know directly.
   scenePanel.onSceneEdit = () => {

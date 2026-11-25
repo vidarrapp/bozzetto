@@ -1,5 +1,5 @@
 import { div, labelRow, selectEl } from '../../ui/dom';
-import { compactRange } from '../../ui/Panel';
+import { compactRange, CONTROLS_REFRESH_EVENT } from '../../ui/Panel';
 import { setSliderValue, sliderValue } from '../../ui/sliderEntry';
 import { FLOOR_OFFSET_LIMIT } from '../../viewer/units';
 import { chordLabel, keymap } from '../../ui/keymap';
@@ -42,6 +42,7 @@ export class ScenePanel extends SidePanel {
   /** Every "Blockouts as" pill, in the menu and in the empty state: they show one setting. */
   private readonly partPills: HTMLButtonElement[] = [];
   private matRow?: HTMLDivElement;
+  private readonly onViewChange = (): void => this.refreshMaterial();
   /** The Floor offset row. */
   private readonly floorRow: HTMLLabelElement;
   private readonly floorInput: HTMLInputElement;
@@ -92,6 +93,8 @@ export class ScenePanel extends SidePanel {
     private readonly library?: MaterialLibrary,
     /** The viewer's fixed floor, which the Floor offset raises or lowers (centimetres). */
     private readonly floor?: { get(): number; set(cm: number): void },
+    /** The viewer's view mode and matcap: the Material row shows a matcap in use. */
+    private readonly view?: { mode(): string; matcapName(): string; useLit(): void },
   ) {
     super({ id: 'scene', title: 'Scene', side: 'left', variant: 'panel--scene' });
 
@@ -167,6 +170,10 @@ export class ScenePanel extends SidePanel {
     // After the rest, so the header is still the body's first child.
     this.body.appendChild(this.emptyEl);
     this.floorTimer = window.setInterval(() => this.refreshFloor(), 500);
+    // The Material row follows the view's mode and matcap whichever panel,
+    // hotkey or library changed them (the same events the Material panel uses).
+    window.addEventListener(CONTROLS_REFRESH_EVENT, this.onViewChange);
+    window.addEventListener('bozzetto:look-restored', this.onViewChange);
 
     // A collapsing panel must not leave its popup menu armed.
     this.onCollapsedChange = (collapsed) => {
@@ -827,34 +834,46 @@ export class ScenePanel extends SidePanel {
     this.matRow.hidden = !active;
     if (!active) return;
     const current = this.library.materialFor(active);
+    // In Matcap the view shows a matcap, not the object's material: the first
+    // option says which matcap is in use, and the select shows it.
+    const inMatcap = this.view?.mode() === 'matcap';
+    const MATCAP_ID = '__matcap__';
     // The trailing "New*" entry IS the create button (owner call): picking
     // it prompts for a name, makes the material and assigns it here.
     const NEW_ID = '__new__';
-    const select = selectEl(
-      [
-        ...this.library.list().map((m) => [m.id, m.name] as [string, string]),
-        [NEW_ID, 'New*'] as [string, string],
-      ],
-      current.id,
-    );
+    const options: [string, string][] = [];
+    if (inMatcap) options.push([MATCAP_ID, `Matcap: ${this.view!.matcapName()}`]);
+    options.push(...this.library.list().map((m) => [m.id, m.name] as [string, string]), [NEW_ID, 'New*']);
+    const select = selectEl(options, inMatcap ? MATCAP_ID : current.id);
     // The padlock means "not edited": a locked object's material is read-only with it.
     select.disabled = this.session.isLocked(active);
+    // Picking a material while the view is a matcap shows it: the view goes back to Lit.
+    const showLit = (): void => {
+      if (this.view?.mode() === 'matcap') this.view.useLit();
+    };
     select.addEventListener('change', () => {
       void (async () => {
         const picked = select.value;
+        if (picked === MATCAP_ID) {
+          select.value = MATCAP_ID;
+          return;
+        }
         if (picked === NEW_ID) {
           const name = await askText({ title: 'New material', label: 'Material name', value: 'Clay', yes: 'Make material' });
           if (name === null) {
-            select.value = current.id;
+            select.value = inMatcap ? MATCAP_ID : current.id;
             return;
           }
           this.library!.assign(active, this.library!.create(name.trim() || 'Clay').id);
+          showLit();
           this.session.render();
           this.refreshMaterial(); // the new material takes the slot, "New*" stays last
           return;
         }
         this.library!.assign(active, picked);
+        showLit();
         this.session.render();
+        this.refreshMaterial();
       })();
     });
     this.matRow.replaceChildren(labelRow('Material', select));
@@ -862,6 +881,8 @@ export class ScenePanel extends SidePanel {
 
   override dispose(): void {
     clearInterval(this.floorTimer);
+    window.removeEventListener(CONTROLS_REFRESH_EVENT, this.onViewChange);
+    window.removeEventListener('bozzetto:look-restored', this.onViewChange);
     this.offKeymap();
     this.closeMenus();
     this.addMenu.remove();
