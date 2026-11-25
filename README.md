@@ -180,7 +180,6 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 - **The rings sit on the hands and feet.** Each ring is centred on its hand or foot, not off to one side.
 - **Knee and elbow targets are points you place.** Drag one anywhere on the screen and the knee or elbow turns toward it. It no longer jumps to the joint when you press it. It stays where you put it on the body, goes with the hips and the chest, and follows a joint you turn by hand.
-- **Scenes with sculpt layers save to the library.** The site's upload check still expected the first layers format and refused a scene with sculpt layers as damaged. It takes both formats now.
 - **Armature in the page.** Armature is a workspace of the Sculpt page: no page change between Armature, Sculpt, Paint and Present, and no question on a switch. It shows the same working view as Sculpt with the floor on, and shares Sculpt's Material and Reference panels and the one reference board. **Remesh to a figure** makes the figure from the posed mannequin without leaving the page; until you do, the mannequin shows in every workspace, listed in the Scene tab, and a stroke on it asks once whether to remesh it.
 
 ### v0.7.13
