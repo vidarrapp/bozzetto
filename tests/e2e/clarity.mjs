@@ -79,7 +79,7 @@ export const suites = {
     }, sel);
     const solo = '.bz-edge .sculpt-solobtn';
     const names = {};
-    for (const [k, sel] of [['Solo', solo], ['Undo', '.bz-edge [data-hist="undo"]'], ['Redo', '.bz-edge [data-hist="redo"]'], ['Negative', '.bz-edge .sculpt-toolbar__btn']]) {
+    for (const [k, sel] of [['Solo', solo], ['Undo', '.bz-edge [data-hist="undo"]'], ['Redo', '.bz-edge [data-hist="redo"]'], ['Negative', '.bz-edge .sculpt-toolbar__neg']]) {
       const tp = await tip(sel);
       names[k] = tp && tp.text.startsWith(k) && !tp.shown;
     }
@@ -88,14 +88,14 @@ export const suites = {
     t.ok((await tip(solo))?.shown, 'hovering Solo shows its name');
     await page.mouse.move(600, 300);
     t.ok(!(await tip(solo))?.shown, 'moving off hides it');
-    await page.evaluate((s) => document.querySelector(s).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 42, pointerType: 'touch', isPrimary: true })), '.bz-edge .sculpt-toolbar__btn');
+    await page.evaluate((s) => document.querySelector(s).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 42, pointerType: 'touch', isPrimary: true })), '.bz-edge .sculpt-toolbar__neg');
     await page.waitForTimeout(150);
-    t.ok(!(await tip('.bz-edge .sculpt-toolbar__btn'))?.shown, 'a short touch on Negative does not show its name');
+    t.ok(!(await tip('.bz-edge .sculpt-toolbar__neg'))?.shown, 'a short touch on Negative does not show its name');
     await page.waitForTimeout(500);
-    t.ok((await tip('.bz-edge .sculpt-toolbar__btn'))?.shown, 'a long press on Negative does');
+    t.ok((await tip('.bz-edge .sculpt-toolbar__neg'))?.shown, 'a long press on Negative does');
     await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 42, pointerType: 'touch' })));
     await page.waitForTimeout(1500);
-    t.ok(!(await tip('.bz-edge .sculpt-toolbar__btn'))?.shown, 'and it goes after the finger lifts');
+    t.ok(!(await tip('.bz-edge .sculpt-toolbar__neg'))?.shown, 'and it goes after the finger lifts');
   },
 
   async clarityGuide(page, base, t) {

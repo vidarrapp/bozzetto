@@ -30,6 +30,7 @@ i[class^=fi-ss-]:before,i[class*=" fi-ss-"]:before,span[class^=fi-ss-]:before,sp
 .fi-ss-hand-back-fist:before{content:"\f74f"}
 .fi-ss-layers:before{content:"\f876"}
 .fi-ss-lock:before{content:"\f8ce"}
+.fi-ss-mask-carnival:before{content:"\f8fe"}
 .fi-ss-paint:before{content:"\f9e1"}
 .fi-ss-pause:before{content:"\fa03"}
 .fi-ss-play:before{content:"\fa94"}
@@ -46,3 +47,4 @@ i[class^=fi-ss-]:before,i[class*=" fi-ss-"]:before,span[class^=fi-ss-]:before,sp
 .fi-ss-trash:before{content:"\fdf4"}
 .fi-ss-undo:before{content:"\fe58"}
 .fi-ss-unlock:before{content:"\fe5c"}
+.fi-ss-water:before{content:"\fed7"}

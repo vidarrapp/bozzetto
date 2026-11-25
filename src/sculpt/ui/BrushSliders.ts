@@ -168,8 +168,8 @@ export class BrushSliders {
     /** The shell's edge column, with the history buttons at its foot (Studio.edge): the rail stands in it. */
     edge: { el: HTMLElement; history: HistoryButtons },
     private readonly solo?: SoloHooks,
-    /** Negative, the bottom of the column (the tool bar owns its press logic). */
-    negative?: HTMLElement,
+    /** Mask, Smooth and Negative, the foot of the column (the tool bar owns their press logic). */
+    negatives: HTMLElement[] = [],
   ) {
     this.root = edge.el;
     this.root.classList.add('sculpt-sliders');
@@ -212,7 +212,7 @@ export class BrushSliders {
     // (the shell's) and Negative, which is the foot of the column.
     this.root.prepend(this.fields);
     this.mine.push(this.fields);
-    if (negative) {
+    for (const negative of negatives) {
       this.root.append(negative);
       this.mine.push(negative);
       nameOnLongPress(negative);

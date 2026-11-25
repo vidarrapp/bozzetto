@@ -77,6 +77,7 @@ import { suites as lookTabs } from './lookTabs.mjs';
 import { suites as tint } from './tint.mjs';
 import { suites as toolNames } from './toolNames.mjs';
 import { suites as dock } from './dock.mjs';
+import { suites as smoothMask } from './smoothMask.mjs';
 import { suites as assetLibrary } from './assetLibrary.mjs';
 import { suites as workspaceTabs } from './workspaceTabs.mjs';
 
@@ -143,6 +144,7 @@ const suites = {
   ...tint,
   ...toolNames,
   ...dock,
+  ...smoothMask,
   ...assetLibrary,
   ...workspaceTabs,
   ...detailsOverlay,

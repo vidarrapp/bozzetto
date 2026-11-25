@@ -2,7 +2,9 @@
 // Negative button (circle-half-stroke: one style for every icon, owner
 // call); toolIcon.ts draws them. Attribution lives in the README.
 import type { InputShell } from '../bridge/InputShell';
-import { eventTime, liftedOn, LONG_PRESS_MS, onTap, TAP_CLICK_MS } from '../../ui/dom';
+import { onTap } from '../../ui/dom';
+import { ArmButton } from './armButton';
+import { setTip } from './edgeTip';
 import { chordLabel, keymap } from '../../ui/keymap';
 import { slotAction, toolBars } from '../tools/bars';
 import { toolByEngine, toolById, type ToolDef, type Workspace } from '../tools/registry';
@@ -67,116 +69,61 @@ export class SculptToolbar {
   /** The buttons by tool id: Sculpt's brushes, the Paint workspace's tools once it has been entered, and the three modes. */
   private readonly btns = new Map<string, HTMLButtonElement>();
   private paintOn = false;
-  /** The Negative button, for the edge controls to stand. */
-  get negativeEl(): HTMLButtonElement {
-    return this.negativeBtn;
-  }
-  /**
-   * The press on Negative, from its pointerdown to its lift: its pointer,
-   * when it went down by the event's clock, and, once the timer has
-   * latched, what the button said before, for a lift that turns out to
-   * have come in time.
-   */
-  private negPress: {
-    pointerId: number;
-    downAt: number;
-    before: { latched: boolean; armed: boolean } | null;
-  } | null = null;
-  private negTimer = 0;
-  /** When the last press on Negative ended; a mouse's click right after it is that press's own. */
-  private negPressEndedAt = -Infinity;
-
-  /**
-   * The timer is ours, not the OS's: the press starts it, and running out
-   * with the press still down is the long press, which latches there and
-   * then, under the finger. A lift before LONG_PRESS_MS is a tap; the lift's
-   * own timestamp says which it was (see onNegativeUp). No
-   * setPointerCapture: capturing a touch pointer and then putting a second
-   * one down makes Safari cancel the captured one.
-   */
-  private readonly onNegativeDown = (e: PointerEvent): void => {
-    // The press onTap counts: the primary button only, and no focus left
-    // on the button for Tab or Space to land on.
-    if (e.button !== 0) return;
-    e.preventDefault();
-    clearTimeout(this.negTimer);
-    this.negPress = { pointerId: e.pointerId, downAt: eventTime(e), before: null };
-    this.negTimer = window.setTimeout(this.onNegativeHeld, LONG_PRESS_MS);
-  };
-
-  /** Still down when the timer ran out: the long press shows, and latches. */
-  private readonly onNegativeHeld = (): void => {
-    this.negTimer = 0;
-    const press = this.negPress;
-    if (!press) return;
-    press.before = { latched: this.input.getNegativeBase(), armed: this.input.getNegativeArmed() };
-    this.latchNegative();
-  };
-
-  /**
-   * The lift is watched on the WINDOW, because a mouse released off the
-   * button never tells the button, and the timer must stop all the same.
-   */
-  private readonly onNegativeUp = (e: PointerEvent): void => {
-    const press = this.negPress;
-    if (!press || e.pointerId !== press.pointerId) return;
-    this.endNegativePress();
-    // The events' own times decide; the timer only shows a long press while
-    // it is held. A main thread busy past LONG_PRESS_MS (a heavy frame, an
-    // autosave) gets to the lift after the timer has run, and a tap must
-    // not latch for that, nor a long press arm.
-    if (eventTime(e) - press.downAt >= LONG_PRESS_MS) {
-      if (!press.before) this.latchNegative();
-      return; // a long press: its lift changes nothing
-    }
-    if (press.before) {
-      // The timer ran first on a busy page; this was a tap all along.
-      this.input.setNegativeBase(press.before.latched);
-      this.input.setNegativeArmed(press.before.armed);
-    }
-    // A tap, unless the pointer slid off the button before lifting, which
-    // is a change of mind here as it is for onTap. A cancel counts as the
-    // tap (owner call): the press was made, and the OS ending it early
-    // does not make it a long one.
-    if (e.type === 'pointerup' && !liftedOn(this.negativeBtn, e)) {
-      this.refresh();
-      return;
-    }
-    this.tapNegative();
-  };
-
-  /** The window lost focus mid-press: neither a tap nor a long press. */
-  private readonly onNegativeBlur = (): void => {
-    if (this.negPress) this.endNegativePress();
-  };
-
-  private endNegativePress(): void {
-    clearTimeout(this.negTimer);
-    this.negTimer = 0;
-    this.negPress = null;
-    this.negPressEndedAt = performance.now();
+  private readonly smoothBtn: HTMLButtonElement;
+  private readonly maskBtn: HTMLButtonElement;
+  private readonly arms: ArmButton[] = [];
+  /** What the Smooth button is named now: Blur over the Paint tool. */
+  private smoothName = 'Smooth';
+  /** The Mask, Smooth and Negative buttons, top down, for the edge controls to stand. */
+  get edgeEls(): HTMLButtonElement[] {
+    return [this.maskBtn, this.smoothBtn, this.negativeBtn];
   }
 
-  /** A long press: carving latched on, for every stroke until a tap. */
-  private latchNegative(): void {
-    // The arm and the latch each turn a stroke over, so an arm left set
-    // would make the first latched stroke raise instead of carve.
-    this.input.setNegativeArmed(false);
-    this.input.setNegativeBase(true);
-    this.refresh();
+  /** The Smooth or Mask button: Carve's press (a tap for the next stroke, a long press until a tap), on the key it stands for. */
+  private keyButton(which: 'smooth' | 'mask', icon: string): HTMLButtonElement {
+    const word = which === 'smooth' ? 'Smooth (hold Shift)' : 'Mask (hold Ctrl)';
+    const btn = toolButton(
+      '',
+      `${word}: tap for the next stroke, long-press to keep it on until a tap`,
+      which,
+      icon,
+      word,
+    );
+    btn.classList.add('sculpt-toolbar__mode');
+    btn.dataset.arm = which;
+    const input = this.input;
+    this.arms.push(
+      new ArmButton(
+        btn,
+        {
+          latched: () => input.getStrokeKey(which, 'base'),
+          armed: () => input.getStrokeKey(which, 'armed'),
+          setLatched: (on) => input.setStrokeKey(which, 'base', on),
+          setArmed: (on) => input.setStrokeKey(which, 'armed', on),
+        },
+        () => this.refresh(),
+      ),
+    );
+    return btn;
   }
 
-  /** A tap lets go of the latch, or else arms the next stroke or disarms it. */
-  private tapNegative(): void {
-    if (this.input.getNegativeBase()) {
-      this.input.setNegativeBase(false);
-      this.input.setNegativeArmed(false);
-    } else {
-      this.input.setNegativeArmed(!this.input.getNegativeArmed());
+  /** Smooth and Mask as the state stands: the look of an arm or a latch, Blur's name and place in Paint. */
+  private refreshKeys(): void {
+    for (const [which, btn] of [['smooth', this.smoothBtn], ['mask', this.maskBtn]] as const) {
+      const latched = this.input.getStrokeKey(which, 'base');
+      btn.classList.toggle('sculpt-toolbar__btn--active', latched);
+      btn.classList.toggle('sculpt-toolbar__btn--armed', !latched && this.input.getStrokeKey(which, 'armed'));
     }
-    this.refresh();
+    // In Paint, Shift does something over the Paint tool alone, where it blurs.
+    const paintTool = toolById('bz.paint')?.engine;
+    this.smoothBtn.hidden = this.paintOn && this.input.currentToolIndex() !== paintTool;
+    const name = this.paintOn ? 'Blur (hold Shift)' : 'Smooth (hold Shift)';
+    if (name !== this.smoothName) {
+      this.smoothName = name;
+      this.smoothBtn.setAttribute('aria-label', `${name}: tap for the next stroke, long-press to keep it on until a tap`);
+      setTip(this.smoothBtn, name);
+    }
   }
-
   /** Lifting a tool off the bar and putting it elsewhere on it (dockDrag.ts). */
   private readonly dock = new Dock({
     bar: () => this.center,
@@ -211,27 +158,20 @@ export class SculptToolbar {
       'Negative',
     );
     this.negativeBtn.classList.add('sculpt-toolbar__neg');
-    this.negativeBtn.addEventListener('pointerdown', this.onNegativeDown);
-    // The keyboard's and assistive tech's press, as for onTap. A pointer's
-    // own click lands just after its press ended, which already acted as a
-    // tap or a long press (or, slid off, chose not to).
-    this.negativeBtn.addEventListener('click', (e) => {
-      if (e.detail > 0 && performance.now() - this.negPressEndedAt < TAP_CLICK_MS) return;
-      this.tapNegative();
-    });
-    this.negativeBtn.addEventListener('contextmenu', (e) => e.preventDefault());
-    // The belt to the CSS braces. On iOS a stationary press starts a
-    // callout/drag gesture at ~450ms and Safari cancels the touch, before
-    // the long press at LONG_PRESS_MS could ever run out: every press would end
-    // as a tap. Cancelling the default on touchstart is what actually stops
-    // that gesture from arming. It also stops the click a touch would
-    // synthesise, which this button does not need: its pointer events
-    // drive it, and the click is left to the keyboard.
-    this.negativeBtn.addEventListener(
-      'touchstart',
-      (e) => e.preventDefault(),
-      { passive: false },
+    this.arms.push(
+      new ArmButton(
+        this.negativeBtn,
+        {
+          latched: () => input.getNegativeBase(),
+          armed: () => input.getNegativeArmed(),
+          setLatched: (on) => input.setNegativeBase(on),
+          setArmed: (on) => input.setNegativeArmed(on),
+        },
+        () => this.refresh(),
+      ),
     );
+    this.smoothBtn = this.keyButton('smooth', 'fi-ss-water');
+    this.maskBtn = this.keyButton('mask', 'fi-ss-mask-carnival');
 
     const center = document.createElement('div');
     center.className = 'sculpt-toolbar__group sculpt-toolbar__brushes';
@@ -250,9 +190,6 @@ export class SculptToolbar {
     this.root.append(center);
     document.body.appendChild(this.root);
 
-    window.addEventListener('pointerup', this.onNegativeUp, true);
-    window.addEventListener('pointercancel', this.onNegativeUp, true);
-    window.addEventListener('blur', this.onNegativeBlur);
     this.input.onToolChange = () => this.refresh();
     // The arm clears when its stroke ends, which the shell sees first.
     this.input.onNegativeChange = () => this.refresh();
@@ -480,6 +417,7 @@ export class SculptToolbar {
     const latched = this.input.getNegativeBase();
     this.negativeBtn.classList.toggle('sculpt-toolbar__btn--active', latched);
     this.negativeBtn.classList.toggle('sculpt-toolbar__btn--armed', !latched && this.input.getNegativeArmed());
+    this.refreshKeys();
     this.keepInView();
     for (const fn of [...this.listeners]) fn();
   }
@@ -556,10 +494,7 @@ export class SculptToolbar {
   }
 
   dispose(): void {
-    clearTimeout(this.negTimer);
-    window.removeEventListener('pointerup', this.onNegativeUp, true);
-    window.removeEventListener('pointercancel', this.onNegativeUp, true);
-    window.removeEventListener('blur', this.onNegativeBlur);
+    for (const a of this.arms) a.dispose();
     this.input.onToolChange = null;
     this.input.onNegativeChange = null;
     this.offKeys?.();
