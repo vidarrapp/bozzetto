@@ -2,6 +2,7 @@
 
 ## Open questions for Vidar
 
+- [x] 2026-11-25: More light types. Decided 2026-11-25: add spot lights (placed in the scene, with cone and penumbra, drawn in the scene); area lights wait while Vidar looks into three's area lights, which cast no shadows; a ray traced render mode is only an idea for now.
 - [ ] 2026-11-25: The 2k HDRI originals are not in the repo or in this session (only the six 1k files are). Vidar to add them again, as `public/assets/env/<id>-2k.hdr`, or send them. (blocks: the 2k environment background)
 - [x] 2026-11-25: Environment pictures and the background blur. Decided 2026-11-25: 1k is used for lighting and a 2k picture is loaded only when the environment background is on; the background blur becomes a proper Gaussian or lens blur, with bokeh from the camera's depth of field settings.
 - [x] 2026-11-25: The proportion guide (a ruler in heads), planned 2026-11-14 and never built. Decided 2026-11-25: build it now, as docs/plans/reference-and-measure.md describes, and for the mannequin as well as for an object.
