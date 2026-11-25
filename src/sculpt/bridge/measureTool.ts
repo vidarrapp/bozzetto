@@ -1,10 +1,31 @@
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { SculptSession } from './SculptSession';
-import { toWorld, type Vec3 } from './measure';
+import type { BoneTie, Measure, Vec3 } from './measure';
 
 /** How near a press must land to an end of the measurement to take it, in CSS px. */
 const GRAB_PX = 22;
 const GRAB_TOUCH_PX = 34;
+
+/** A press on the mannequin: the point, the part under it, the point in that part's frame, and how far from the eye. */
+export interface MannequinHit {
+  world: Vec3;
+  tie: BoneTie;
+  local: Vec3;
+  distance: number;
+}
+
+/** A tap this near a pinned caliper's line picks it, in CSS px. */
+const PICK_PX = 10;
+const PICK_TOUCH_PX = 20;
+
+/** The distance of a point from a segment, in px. */
+function segmentDistance(p: [number, number], a: [number, number], b: [number, number]): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len2 = dx * dx + dy * dy;
+  const t = len2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
 
 /**
  * The Calipers tool's pointer logic (InputShell routes the presses here
@@ -16,6 +37,8 @@ const GRAB_TOUCH_PX = 34;
  */
 export class MeasureTool {
   private drag: 'a' | 'b' | null = null;
+  /** The mannequin standing in the scene and shown: what a press on it lands on (set by the page). */
+  mannequin: { hit(x: number, y: number): MannequinHit | null; eyeAt(): Vec3 } | null = null;
 
   constructor(private readonly session: SculptSession) {}
 
@@ -49,11 +72,10 @@ export class MeasureTool {
   endAt(x: number, y: number, touch: boolean): 'a' | 'b' | null {
     const w = this.session.measure.working;
     if (!w || !w.m.b) return null;
-    const m = w.mesh.getMatrix();
     let best: 'a' | 'b' | null = null;
     let bestD = touch ? GRAB_TOUCH_PX : GRAB_PX;
     for (const which of ['a', 'b'] as const) {
-      const s = this.screenOf(toWorld(m, w.m[which]!));
+      const s = this.screenOf(this.session.measure.pointWorld(w.mesh, w.m, which));
       if (!s) continue;
       const d = Math.hypot(s[0] - x, s[1] - y);
       if (d <= bestD) {
@@ -77,20 +99,56 @@ export class MeasureTool {
       this.drag = end;
       return 'drag';
     }
-    const [dx, dy] = this.device(x, y);
-    const hit = this.session.surfaceHitAt(dx, dy);
-    if (!hit) return 'miss';
     const w = store.working;
+    // A pinned caliper's line, with no point waiting for its partner: the tap picks it.
+    if (!(w && !w.m.b)) {
+      const picked = this.pinnedAt(x, y, touch);
+      if (picked) {
+        store.select(picked);
+        return 'drag';
+      }
+    }
+    const [dx, dy] = this.device(x, y);
+    const found = this.session.surfaceHitAt(dx, dy);
+    let hit: { mesh: SculptMesh | null; local: Vec3; tie?: BoneTie } | null = found;
+    // The mannequin counts as a surface: where it is nearer the eye than the object behind it.
+    const man = this.mannequin?.hit(x, y) ?? null;
+    if (man && !(found && this.fromEye(found.world) <= man.distance)) hit = { mesh: null, local: man.local, tie: man.tie };
+    if (!hit) return 'miss';
     if (w && !w.m.b && w.mesh === hit.mesh) {
       // The second point.
-      store.finish(hit.local);
+      store.finish(hit.local, hit.tie);
       this.drag = 'b';
     } else {
       // The first point, of a new measurement (a third press, or another object).
-      store.begin(hit.mesh as SculptMesh, hit.local);
+      store.begin(hit.mesh, hit.local, hit.tie);
       this.drag = 'a';
     }
     return 'drag';
+  }
+
+  private fromEye(p: Vec3): number {
+    const eye = this.mannequin?.eyeAt();
+    return eye ? Math.hypot(p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]) : 0;
+  }
+
+  /** The visible pinned caliper whose line a client point is on, or null. */
+  private pinnedAt(x: number, y: number, touch: boolean): Measure | null {
+    const store = this.session.measure;
+    let best: Measure | null = null;
+    let bestD = touch ? PICK_TOUCH_PX : PICK_PX;
+    for (const { mesh, measure } of store.all()) {
+      if (!measure.visible || (mesh && !mesh.isVisible()) || !measure.b) continue;
+      const a = this.screenOf(store.pointWorld(mesh, measure, 'a'));
+      const b = this.screenOf(store.pointWorld(mesh, measure, 'b'));
+      if (!a || !b) continue;
+      const d = segmentDistance([x, y], a, b);
+      if (d <= bestD) {
+        bestD = d;
+        best = measure;
+      }
+    }
+    return best;
   }
 
   /** The pointer moved with a point in hand: it follows the surface under it. */
@@ -98,6 +156,12 @@ export class MeasureTool {
     const which = this.drag;
     const w = this.session.measure.working;
     if (!which || !w) return;
+    if (!w.mesh) {
+      // On the mannequin: along its surface, the end tied to the part it is over now.
+      const man = this.mannequin?.hit(x, y);
+      if (man) this.session.measure.moveEnd(which, man.local, man.tie);
+      return;
+    }
     const [dx, dy] = this.device(x, y);
     const hit = this.session.surfaceHitAt(dx, dy);
     // Along the surface of its own object: off it, or over another, it stays where it was.

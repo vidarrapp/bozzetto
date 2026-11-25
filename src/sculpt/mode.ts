@@ -738,6 +738,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   session.onSelectionChange = () => {
     armatureSelected = false;
+    session.measure.select(null);
     scenePanel?.refresh();
     materialPanel?.refreshSurface();
     syncHighlights();
@@ -2549,6 +2550,24 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   });
   /** The mannequin stands in the scene: Armature is loaded and no figure has been made from it. */
   const mannequinStands = (): boolean => !!armatureSlot?.present() && !figureMade();
+  // The calipers on the mannequin: their ends are in its parts' frames, and a press of the tool can land on it.
+  session.measure.frames = () => (armatureSlot?.present() ? (figureMade() ? 'gone' : armatureSlot.frames()) : null);
+  {
+    const ray = new Raycaster();
+    const ndc = new Vector2();
+    input.measureTool.mannequin = {
+      hit: (x, y) => {
+        if (!mannequinStands() || !armatureSlot) return null;
+        const r = canvas.getBoundingClientRect();
+        ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+        viewer.camera.updateMatrixWorld();
+        ray.setFromCamera(ndc, viewer.camera);
+        const h = armatureSlot.partHit(ray);
+        return h ? { world: h.world, local: h.local, distance: h.distance, tie: { bone: h.bone, rig: h.rig } } : null;
+      },
+      eyeAt: () => [viewer.camera.position.x, viewer.camera.position.y, viewer.camera.position.z],
+    };
+  }
   // The Create choices' armature tiles: that mannequin becomes the scene's armature, in its rest
   // pose, and the page goes to Armature (loading it first if need be). One armature a scene for
   // now, so a posed one is replaced only once the person has said so.
@@ -2580,6 +2599,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   scenePanel!.armatureActions = {
     toggle: () => armatureSlot?.setShown(!armatureSlot.shown()),
     select: () => {
+      session.measure.select(null);
       armatureSelected = true;
       scenePanel?.refresh();
       studio.material.refreshSurface();

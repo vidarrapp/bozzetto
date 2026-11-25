@@ -100,7 +100,7 @@ export const PANELS: Topic[] = [
         'Groups also come from an imported OBJ\'s `g` and `o` lines, and both OBJ exports write them back.',
       ),
       h('Measure'),
-      p('The measurements you pinned with the Calipers tool on the selected object. Each row has its name, which you tap to rename, its length, a mirror button, the eye, and the trash. A measurement that has a mirror shows the other length and the difference under it. The eye hides one from the view. Deleting is not a sculpt undo step, so the section offers **Undo** for the last one you deleted. Pinned measurements are saved with the scene, in the library too, and they are drawn whenever their object is shown and the interface is.'),
+      p('The measurements you pinned with the Calipers tool on the selected object. Each row has its name, which you tap to rename, its length, a mirror button, the eye, and the trash. A measurement that has a mirror shows the other length and the difference under it. The eye hides one from the view. Pinned calipers also have rows in the Scene panel, where Delete removes the picked one, and Undo brings it back. Pinned measurements are saved with the scene, in the library too, and they are drawn whenever their object is shown and the interface is.'),
     ],
   },
   {

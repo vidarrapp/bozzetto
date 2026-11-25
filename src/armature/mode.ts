@@ -38,6 +38,7 @@ import { suspensionText } from '../net/account';
 import { signInAgain, signInButton } from '../ui/signIn';
 import { sceneStateWord } from '../ui/sceneState';
 import { defaultSceneName, newSceneName } from '../sculpt/bridge/SceneLibrary';
+import type { BoneFrames, Vec3 as Point } from '../sculpt/bridge/measure';
 import {
   ArmatureFileError,
   armatureText,
@@ -178,6 +179,10 @@ export type ArmatureMount = (() => void) & {
   /** The mannequin's own material, as the Material tab's Surface section shows it. */
   surface(): MannequinSurface;
   setSurface(patch: Partial<MannequinSurface>): void;
+  /** The posed mannequin's parts as the calipers read them (a point in a part's frame, in the world as it stands). */
+  frames(): BoneFrames;
+  /** The part of the mannequin a ray lands on, with the point in that part's frame; null on a miss. */
+  partHit(ray: Raycaster): { world: Point; bone: string; rig: string; local: Point; distance: number } | null;
   /** The camera onto the figure. */
   frame(): void;
   /** Whether the figure has been posed or its proportions changed (a new mannequin would lose them). */
@@ -2860,6 +2865,35 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     outside: () => (suspended && figureShown && !eyeOff ? armature.mesh : null),
     shadowBox,
     showOutside,
+    frames: (): BoneFrames => {
+      const arm = armature;
+      return {
+        token: arm,
+        rig: arm.rig.id,
+        hasBone: (name) => arm.partBones.has(name),
+        toWorld: (name, p) => {
+          const bone = arm.partBones.get(name)!;
+          bone.updateWorldMatrix(true, false);
+          const v = new Vector3(p[0], p[1], p[2]).applyMatrix4(bone.matrixWorld);
+          return [v.x, v.y, v.z];
+        },
+      };
+    },
+    partHit: (ray: Raycaster) => {
+      const hit = ray.intersectObject(armature.mesh, false)[0];
+      const name = hit ? armature.boneAt(hit) : null;
+      const bone = name ? armature.partBones.get(name) : null;
+      if (!hit || !name || !bone) return null;
+      bone.updateWorldMatrix(true, false);
+      const local = bone.worldToLocal(hit.point.clone());
+      return {
+        world: [hit.point.x, hit.point.y, hit.point.z] as Point,
+        bone: name,
+        rig: armature.rig.id,
+        local: [local.x, local.y, local.z] as Point,
+        distance: hit.distance,
+      };
+    },
     armatureName: () => link?.title ?? name,
     label: () => {
       // What the Preset select shows for this figure.

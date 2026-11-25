@@ -1,4 +1,5 @@
-import type { Box3, Mesh } from 'three';
+import type { Box3, Mesh, Raycaster } from 'three';
+import type { BoneFrames } from '../sculpt/bridge/measure';
 import type { Workspace, WorkspaceId } from '../studio/Studio';
 import type { SidePanel } from '../sculpt/ui/SidePanel';
 import { statusToast, type StatusToast } from '../sculpt/ui/statusToast';
@@ -58,6 +59,10 @@ export interface ArmatureSlot {
   setSurface(patch: Partial<{ albedo: string; roughness: number; metalness: number }>): void;
   /** The mannequin's mesh while it is drawn outside Armature (no figure yet), for a press that may land on it; null otherwise. */
   mannequin(): Mesh | null;
+  /** The posed mannequin's parts, for the calipers; null before the load. */
+  frames(): BoneFrames | null;
+  /** The part of the shown mannequin a ray lands on (calipers), or null. */
+  partHit(ray: Raycaster): ReturnType<ArmatureMount['partHit']> | null;
   /** The posed mannequin's world box added into `out`, while it is drawn; false when it is not. */
   shadowBox(out: Box3): boolean;
   /** A figure was made, or the step that made it undone: the mannequin goes or comes back, and the panels follow. */
@@ -150,6 +155,8 @@ export function armatureWorkspace(page: ArmaturePage): ArmatureSlot {
     setSurface: (patch) => mount?.setSurface(patch),
     mannequin: () => mount?.outside() ?? null,
     shadowBox: (out) => mount?.shadowBox(out) ?? false,
+    frames: () => mount?.frames() ?? null,
+    partHit: (ray) => (mount?.outside() ? mount.partHit(ray) : null),
     figureChanged: () => {
       if (!mount) return;
       mount.showOutside(!host.figureMade());

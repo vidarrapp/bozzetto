@@ -281,6 +281,8 @@ export interface SavedScene {
    * only), so it does not come back on the next open.
    */
   scaleDismissed?: boolean;
+  /** The pinned calipers placed on the armature's mannequin (measure.ts): each end tied to a part. */
+  armatureMeasures?: SavedMeasure[];
   /**
    * The server project this scene was opened from or last saved to, which
    * is where Save to library writes again. It rides the autosave record so

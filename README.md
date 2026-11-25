@@ -177,6 +177,11 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **Pinned calipers are rows in the Scene panel.** Each has a ruler mark, its name (double-tap to rename), its length, and an eye, under a Calipers heading below the objects. Tap a row, or the line in the view with the Calipers tool, to pick it: it is drawn in orange, and Delete or Backspace removes it. Pinning, deleting, renaming and hiding a caliper can be undone.
+- **Calipers work on the armature.** With the mannequin standing in the scene, the Calipers tool measures on it too. Each end stays on the part it was placed on and moves with it when you pose the figure, and the length follows. If the mannequin is replaced or a figure is made from it, the ends stay where they were.
+
 ### v0.7.24
 
 - **Hold L moves the light from where it is.** With a finger or the Pencil, the light now turns only by what you drag after you touch down, so it no longer jumps to where the last touch ended. The same in Armature and in the viewer.

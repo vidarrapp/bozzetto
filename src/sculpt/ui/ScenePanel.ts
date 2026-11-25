@@ -14,6 +14,7 @@ import { statusToast } from './statusToast';
 import { withLayersFlattened } from './layerGate';
 import { deviceStore } from '../../ui/deviceStorage';
 import { askText, askWindow } from '../../ui/askWindow';
+import { lengthText, type Measure } from '../bridge/measure';
 
 /**
  * Scene outliner: the upper-left docked panel, and only the objects. Each
@@ -49,6 +50,11 @@ export class ScenePanel extends SidePanel {
   private readonly floorTimer: number;
   /** The object whose name is being edited, so refresh keeps the input. */
   private renaming: SculptMesh | null = null;
+  /** The Calipers group, under the objects: one row for each pinned caliper. */
+  private readonly calEl: HTMLDivElement;
+  /** The caliper whose name is being edited. */
+  private renamingCaliper: Measure | null = null;
+  private readonly offMeasure: () => void;
 
   /**
    * Fired after any panel-driven scene edit that bypasses the undo stack
@@ -144,6 +150,10 @@ export class ScenePanel extends SidePanel {
 
     this.listEl = div('outliner');
     this.body.appendChild(this.listEl);
+    // The Calipers group sits at the end of the list, under the objects (refresh puts it back after the rows).
+    this.calEl = div('outliner__calipers');
+    this.calEl.dataset.role = 'calipers-group';
+    this.offMeasure = this.session.measure.subscribe(() => this.refreshCalipers());
     // The selection's material, directly under the list (owner call).
     this.matRow = div('outliner__material');
     this.body.appendChild(this.matRow);
@@ -621,6 +631,7 @@ export class ScenePanel extends SidePanel {
    */
   private pick(mesh: SculptMesh, shift: boolean, ctrl: boolean): void {
     this.armatureActions?.deselect();
+    this.session.measure.select(null);
     const list = this.session.getMeshes();
     if (shift) {
       const from = list.indexOf(this.session.getMesh() as SculptMesh);
@@ -810,9 +821,96 @@ export class ScenePanel extends SidePanel {
       row.addEventListener('click', () => this.armatureActions?.select());
       this.listEl.appendChild(row);
     }
+    this.listEl.appendChild(this.calEl);
+    this.refreshCalipers();
     this.refreshMaterial();
     if (this.floorRow) this.refreshFloor();
     this.onRefresh?.();
+  }
+
+  /**
+   * The Calipers group: each pinned caliper is a row with a ruler mark, its name (double-click
+   * renames, as an object's does), its length, an eye, and on the picked row a trash can. A tap
+   * on the row picks it: it is drawn picked in the view, and Delete takes it.
+   */
+  private refreshCalipers(): void {
+    // A name being typed keeps its field through the changes the typing itself makes.
+    if (this.renamingCaliper && this.calEl.contains(document.activeElement)) return;
+    this.renamingCaliper = null;
+    const store = this.session.measure;
+    const items = store.all();
+    this.calEl.hidden = items.length === 0;
+    const rows: HTMLElement[] = [];
+    if (items.length) {
+      const head = div('outliner__group');
+      head.textContent = 'Calipers';
+      rows.push(head);
+    }
+    for (const { mesh, measure } of items) {
+      const row = div('outliner__row outliner__row--caliper');
+      row.dataset.role = 'caliper-row';
+      row.dataset.measure = String(measure.id);
+      const picked = store.selected === measure;
+      if (picked) row.classList.add('outliner__row--picked');
+      if (!measure.visible) row.classList.add('outliner__row--hidden');
+      const eye = this.iconBtn(measure.visible ? 'fi-ss-eye' : 'fi-ss-eye-crossed', measure.visible ? 'Hide' : 'Show', () =>
+        store.setVisible(measure, !measure.visible),
+      );
+      eye.dataset.role = 'caliper-eye';
+      const mark = document.createElement('i');
+      mark.className = 'fi fi-ss-ruler-combined outliner__mark';
+      mark.setAttribute('aria-hidden', 'true');
+      const name = document.createElement('span');
+      name.className = 'outliner__name';
+      name.dataset.role = 'caliper-name';
+      name.textContent = measure.name;
+      name.addEventListener('dblclick', () => this.renameCaliper(measure, name));
+      const len = store.length(mesh, measure);
+      const sub = document.createElement('span');
+      sub.className = 'outliner__sub';
+      sub.dataset.role = 'caliper-length';
+      sub.textContent = len === null ? '' : lengthText(len);
+      row.append(eye, mark, name, sub);
+      if (picked) {
+        const del = this.iconBtn('fi-ss-trash', 'Delete caliper', () => store.remove(mesh, measure));
+        del.classList.add('outliner__icon--danger');
+        del.dataset.role = 'caliper-delete';
+        row.appendChild(del);
+      }
+      row.addEventListener('click', () => {
+        this.armatureActions?.deselect();
+        store.select(measure);
+      });
+      rows.push(row);
+    }
+    this.calEl.replaceChildren(...rows);
+  }
+
+  private renameCaliper(m: Measure, nameEl: HTMLElement): void {
+    this.renamingCaliper = m;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'outliner__rename';
+    input.dataset.role = 'caliper-rename';
+    input.value = m.name;
+    input.maxLength = 200;
+    let done = false;
+    const finish = (commit: boolean): void => {
+      if (done) return;
+      done = true;
+      this.renamingCaliper = null;
+      if (commit) this.session.measure.rename(m, input.value);
+      this.refreshCalipers();
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // typing must not trigger sculpt hotkeys
+      if (e.key === 'Enter') finish(true);
+      else if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', () => finish(true));
+    nameEl.replaceWith(input);
+    input.focus();
+    input.select();
   }
 
   /**
@@ -861,6 +959,7 @@ export class ScenePanel extends SidePanel {
   }
 
   override dispose(): void {
+    this.offMeasure();
     clearInterval(this.floorTimer);
     this.offKeymap();
     this.closeMenus();

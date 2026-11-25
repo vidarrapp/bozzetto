@@ -701,8 +701,39 @@ Tool, with Material before it.
   measurements of the selected object, a row each with its name (tap to
   rename), its length in the mono face, a mirror toggle, the eye and the
   trash. A mirrored one shows a line under it with the other length and
-  the difference. A delete is not a sculpt undo step; the section
-  offers Undo for the last one deleted.
+  the difference. A delete is an undo step (Edit > Undo), as a pin, a
+  rename and the eye are.
+- **Calipers in the Scene panel.** A group "Calipers" under the object
+  rows (and under Cameras when that group exists), shown only with a
+  pinned caliper: a small mono heading, then a row each. A row is the
+  object row's eye, a ruler mark (where an object has its padlock), the
+  name (double-click renames in place, as an object's does), the length
+  as a quiet second text in the mono face, and, on the picked row, a
+  trash. No lock, no material, no dragging into groups. A tap on the row
+  picks the caliper (the row is marked as the active object's is); the
+  line and its end dots are then drawn in the interface orange, and
+  Delete or Backspace removes it. A tap on the line with the Calipers
+  tool in hand picks it and its row the same way, unless a first point is
+  waiting for its second. Picking an object, the armature's row or a new
+  measurement lets go. The eye hides one caliper in the view; hidden
+  ones are kept (and stay hidden through a reload) and never drawn. The
+  lines are on the interface's own canvas, so no capture or published
+  picture holds them, hidden or shown. Pin, delete, rename and hide are
+  undo steps.
+- **Calipers on the mannequin.** With the armature standing in the scene
+  and shown, the Calipers tool lands on it as on an object (the nearer
+  surface wins), in Sculpt; the tool is not in the Armature workspace.
+  Both points of one caliper are on the mannequin. Each end is stored as
+  a point in the frame of the part it was placed on (the bone and the
+  point), so posing the figure carries it and the length follows. When
+  the mannequin is replaced or a figure is made from it, such an end
+  keeps the world position it last had and is no longer tied, with no
+  message. A caliper on the mannequin is saved with the scene record
+  (`armatureMeasures`: name, the two points, the two ties, the world
+  positions last known, the eye); a reload waits for the armature to load
+  and takes the first figure of the same rig, drawing from the saved
+  world positions until then. A scene with the mannequin and no object is
+  not autosaved, so its calipers are not kept.
 
 
 ### Asset library window

@@ -374,6 +374,8 @@ export class SculptSession {
       for (const entry of entries) this.cssWidth = entry.contentRect.width;
     });
     this.sizeObserver.observe(canvas);
+    // Pinning, deleting, renaming and hiding a caliper are steps of the history.
+    this.measure.history = (undo, redo) => this.stateManager.pushStateCustom(undo, redo);
     // Deeper than upstream's 15: the WS2 fuzz exercises 50-deep undo, and
     // history is worth keeping (a stroke state holds only the touched
     // vertices).
@@ -2357,6 +2359,8 @@ export class SculptSession {
       // a scene from before real units, as one written before it did.
       ...(this.units ? { units: this.units } : {}),
       ...(!this.units && this.scaleDismissed ? { scaleDismissed: true } : {}),
+      // The calipers placed on the mannequin, with the parts their ends are tied to.
+      ...(this.measure.serializeArmature() ? { armatureMeasures: this.measure.serializeArmature() } : {}),
     };
   }
 
@@ -2416,6 +2420,7 @@ export class SculptSession {
   restoreScene(saved: SavedScene): Multimesh {
     this.sceneEpoch++;
     this.measure.reset();
+    this.measure.restore(null, saved.armatureMeasures);
     const built: Multimesh[] = [];
     for (const savedMesh of saved.meshes) {
       const mesh = this.buildRestoredMesh(savedMesh);

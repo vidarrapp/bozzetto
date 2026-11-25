@@ -695,18 +695,6 @@ export class ModelPanel extends SidePanel {
         list.appendChild(pair);
       }
     }
-    // Deleting a pinned measurement is not a sculpt undo step (the scene's
-    // history carries meshes only); the one deleted last can be brought back here.
-    const gone = store.lastDeleted;
-    if (gone && gone.mesh === mesh) {
-      const row = div('sculpt-panel__row measure-undo');
-      const text = div('sculpt-panel__hint muted');
-      text.textContent = `Deleted ${gone.measure.name}.`;
-      const undo = this.tapButton('Undo', () => store.restoreDeleted());
-      undo.dataset.role = 'measure-undo';
-      row.append(text, undo);
-      list.appendChild(row);
-    }
   }
 
   /** The name swapped for a field; Enter or leaving it renames, Escape keeps the name. */

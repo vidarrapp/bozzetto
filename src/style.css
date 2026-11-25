@@ -1473,11 +1473,6 @@ body.presenting .measure-overlay {
   color: var(--bz-text);
 }
 
-.measure-undo {
-  align-items: center;
-  justify-content: space-between;
-}
-
 /* The symmetry ghost: the mirrored brush ring, drawn on hover. Faint on
    purpose - it says "this is where the other half lands", and must never
    compete with the ring you are aiming. */
@@ -1820,7 +1815,8 @@ body.presenting .measure-overlay {
   background: var(--hover);
 }
 
-.outliner__row--active {
+.outliner__row--active,
+.outliner__row--picked {
   background: var(--accent-soft);
   color: var(--accent-hover);
 }
@@ -6461,7 +6457,9 @@ h1,
 }
 
 .outliner__row--active,
+.outliner__row--picked,
 .outliner__row--active:hover,
+.outliner__row--picked:hover,
 .outliner__row--selected,
 .outliner__row--selected:hover {
   background: var(--bz-hover);

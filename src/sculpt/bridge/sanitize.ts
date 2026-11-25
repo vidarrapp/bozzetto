@@ -539,6 +539,7 @@ export function sanitizeScene(scene: SavedScene): SavedScene {
     // before real units, which is what it would have been read as.
     units: isUnits(scene.units) ? scene.units : undefined,
     scaleDismissed: !isUnits(scene.units) && scene.scaleDismissed === true ? true : undefined,
+    armatureMeasures: sanitizeMeasures(scene.armatureMeasures),
     project: sanitizeLink(scene.project),
     unsent: isProjectId(scene.unsent) ? scene.unsent : undefined,
     synced: scene.synced === true ? true : undefined,
