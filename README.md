@@ -176,7 +176,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
-### Unreleased
+### v0.7.17
 
 - **The armature's row is named for the mannequin.** In the Scene tab it says, for instance, "Male mannequin, realistic" (or the model file's name), not the scene's name, and follows a change of preset.
 - **An eye on the armature's row.** It hides and shows the mannequin in Sculpt, Paint and Present; a hidden mannequin takes no press, casts no shadow and is left out of framing. In Armature it always shows. It stays as you left it after a reload.
