@@ -111,7 +111,7 @@ export const PANELS: Topic[] = [
       p('The **Scene** panel, on the left, lists the objects in the scene and adds new ones.'),
       h('Create'),
       p('A new scene is empty, and the Scene panel opens on the choices for adding something: the line "Add something to start." and the same tiles the **Create** button\'s menu has. Choosing one adds it, selects it and brings it into view, and the panel goes back to its list. If you delete the last object the choices come back. If you close the panel it stays closed until you open it, but a scene that is empty when the page loads opens it.'),
-      p('Once the scene has objects, the **Create** button opens the same choices as a menu.'),
+      p('Once the scene has objects, the **Create** button opens the same choices as a menu. The **Models** tab of the Asset library has the same choices as tiles.'),
       options(
         ['Primitives', 'Sphere, Cube, Cylinder, Torus, Cone, Capsule and Plane. In a scene on real units each one comes at a real size, which the menu shows beside it.'],
         ['Base meshes', 'Blender Studio\'s Human Base Meshes, as picture tiles in the groups Figures, Heads and Parts. A tile downloads its file when you pick it.'],
@@ -165,7 +165,7 @@ export const PANELS: Topic[] = [
       p('How the model is drawn. It is saved with the scene, and with a published project.'),
       options(
         ['Mode', '**Lit (PBR)** shades with the lights. **Matcap** shades with a picture of a lit sphere and ignores the lights.'],
-        ['Matcap', 'In Matcap mode, a thumbnail gallery of matcaps to choose from.'],
+        ['Matcap', 'In Matcap mode, a thumbnail gallery of matcaps to choose from. The **Materials** tab of the Asset library has the same matcaps.'],
         ['Colour', 'In a sculpt, in Sculpt, Paint and Present: **Albedo and paint** shows the albedo times the paint, **Albedo only** the albedo alone and **Paint only** the paint exactly as picked, as under a white albedo, without changing the albedo. Over a published model with painted colours, **Sculpt colours** keeps its colours and **Plain colour** covers it in its albedo.'],
         ['Albedo, Roughness, Metalness', 'In Present for a published project, in Lit (PBR), the model\'s own values (with Plain colour, if it has painted colours).'],
         ['Smooth shading', 'On by default. Off, the surface shows its flat facets.'],
@@ -221,7 +221,7 @@ export const PANELS: Topic[] = [
     group: G,
     blocks: [
       p('The **Asset library** is one window that floats over the view and stays open while you work. Open it with the **Library** button at the top of the Tool panel, or **View**, then **Asset library**. It does not block anything under it: you can sculpt and paint on the model while it is open. Drag it by its title row, resize it from the lower right corner, and close it with the **×**, with **Esc** while it has the focus, or from **View** again. **Tab** hides it with the rest of the interface. It keeps its place, size and last tab on this device when saving is on.'),
-      p('It has four tabs: **Tools**, **Materials**, **Lighting** and **HDRIs**. Only Tools has anything in it today; the others say they come in a later version. Under the tabs, **Bozzetto** shows what ships with the app and **Mine** shows your own copies, which come in a later version. **Search** narrows the tiles that show by name as you type.'),
+      p('It has five tabs: **Tools**, **Models**, **Materials**, **Lighting** and **HDRIs**. Under the tabs, **Bozzetto** shows what ships with the app and **Mine** shows your own: the rigs you saved in the Lighting tab, and copies of tools later. **Search** narrows the tiles that show by name as you type.'),
       h('The Tools tab'),
       p('Every tool is a tile with its icon and its name, in two groups, **Sculpt** and **Paint**, the group of the workspace you are in first. A number in a tile\'s corner is the tool\'s key on that workspace\'s tool bar; a tile with no number is not on the bar. The tool in hand has the orange tile, as on the bar.'),
       options(
@@ -229,6 +229,8 @@ export const PANELS: Topic[] = [
         ['Press and hold, then drag', 'Lifts the tool, with the Pencil or a finger (with a mouse, press and drag). Move it over the tool bar and the others make room; let go and the tool is on the bar at that place. If it was already on the bar it moves there. Let go anywhere else and it flies back to the window. Only a tool of the workspace you are in lifts.'],
         ['Press and hold, let go', 'Opens a small menu at the tile: **Use**, and **Add to tool bar** or **Remove from tool bar**.'],
       ),
+      h('The Models, Materials, Lighting and HDRIs tabs'),
+      p('**Models** has the same choices as **Create** in the Scene panel, in the same groups: Primitives, Armatures and Base meshes. A tap adds the object, or sets the armature (asking first when it would replace one you have posed). **Materials** has the ten matcaps; a tap shows the view in that matcap, and the Material panel\'s picker follows. **Lighting** has the built-in rigs, each with a small ball lit by it; a tap applies it, and the Lighting tab\'s Rig select follows. Rigs you saved there show under **Mine**. **HDRIs** has **None** and the six environments; the file of one is fetched only when you tap it, and its tile shows a mark while it comes. The tile in use is orange, as the tool in hand is. Lights and the environment show in Present, and in the working view while it is in Lit; where you cannot see the change the foot says **Shows in Present.** A drag on these tiles scrolls the window; only a tap uses one.'),
       p('Taking a tool off the bar, and the extra tile for a tool in hand that is not on it, are in the Getting started topic, under **Take a tool off the tool bar**.'),
     ],
   },
@@ -240,7 +242,7 @@ export const PANELS: Topic[] = [
       p('The look of the scene is three tabs, **Lighting**, **Camera** and **Render**, at the left in **Present** (from Sculpt, and for a published project). Sculpt and Armature do not have them: the key light is moved with the **L** key or **View**, **Move light**, and the cavity is on the **Material** tab. A look set in Sculpt is saved with the scene and is what Present and Publish use. The public viewer and review mode have the **Lighting** tab alone, at the right, after Material. In the viewer, what you change is yours to look at and is never saved.'),
       p('How the model is drawn (mode, matcap, shading, wireframe) is in the **Material** tab, on the right. These tabs never hold it.'),
       h('Lighting'),
-      p('The **Rig** is the set of lights. Pick one from the list: **Built in** has **Three-point**, **Key only** (what Sculpt opens with: the fill and the rim off), **Rembrandt**, **Butterfly**, **Split**, **Rim**, **Top light**, **Under light**, **Soft front** and **Raking key (form study)**, and **My rigs** has the ones you saved. It reads **Custom** once you change a light.'),
+      p('The **Rig** is the set of lights. Pick one from the list: **Built in** has **Three-point**, **Key only** (what Sculpt opens with: the fill and the rim off), **Rembrandt**, **Butterfly**, **Split**, **Rim**, **Top light**, **Under light**, **Soft front** and **Raking key (form study)**, and **My rigs** has the ones you saved. It reads **Custom** once you change a light. The **Lighting** and **HDRIs** tabs of the Asset library have the same rigs and environments as tiles.'),
       options(
         ['Save rig…', 'Asks for a name and keeps the lights as they are, on this device. It needs saving on this device to be on.'],
         ['Import rig…', 'Reads a `.bozzrig` file, keeps it in My rigs and applies it. A file that is not a rig, or has a value that is not a number or a colour, is refused and changes nothing. Numbers past the sliders\' limits are held to them.'],

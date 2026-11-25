@@ -196,6 +196,37 @@ async function between(page, a, b) {
   return [(ax + bx) / 2, ay];
 }
 
+const SHOTS = '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9835c4/scratchpad/app/libtabs';
+const showTab = async (page, name) => {
+  await page.click(`.lib-tab:text-is("${name}")`);
+  await wait(page, 200);
+};
+const tabTiles = (page, tab) =>
+  page.evaluate(
+    (id) =>
+      [...document.querySelectorAll(`.lib-body[data-tab="${id}"] .lib-tile`)]
+        .filter((b) => !b.hidden)
+        .map((b) => ({ id: b.dataset.asset, label: b.querySelector('.lib-tile__name').textContent, state: b.dataset.state || '', img: !!b.querySelector('img') })),
+    tab,
+  );
+const tapAsset = (page, tab, id) => page.evaluate(([tb, i]) => document.querySelector(`.lib-body[data-tab="${tb}"] .lib-tile[data-asset="${i}"]`).click(), [tab, id]);
+const waitMark = (page, tab, id, state) =>
+  page.waitForFunction(([tb, i, s]) => document.querySelector(`.lib-body[data-tab="${tb}"] .lib-tile[data-asset="${i}"]`)?.dataset.state === s, [tab, id, state], { timeout: 20000 });
+/** Scroll every picture of a tab into view and say which did not load. */
+const thumbsLoad = (page, tab) =>
+  page.evaluate(async (id) => {
+    const body = document.querySelector(`.lib-body[data-tab="${id}"]`);
+    const imgs = [...body.querySelectorAll('.lib-tile:not([hidden]) img')];
+    for (const im of imgs) {
+      im.scrollIntoView({ block: 'center' });
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    const t0 = Date.now();
+    while (Date.now() - t0 < 20000 && imgs.some((i) => !i.complete)) await new Promise((r) => setTimeout(r, 150));
+    body.scrollTop = 0;
+    return imgs.filter((i) => !(i.complete && i.naturalWidth > 0)).map((i) => i.src);
+  }, tab);
+
 const KINDS = ['mouse', 'pen', 'touch'];
 const stripKey = (rec) => JSON.stringify(rec);
 
@@ -264,18 +295,14 @@ export const suites = {
 
     // --- the tabs, the wheres, the search ---
     await openLib(page);
-    t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-tab')].map((b) => b.textContent).join()), 'Tools,Materials,Lighting,HDRIs', 'four tabs, always there');
+    t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-tab')].map((b) => b.textContent).join()), 'Tools,Models,Materials,Lighting,HDRIs', 'five tabs, always there');
     t.eq(await page.evaluate(() => document.querySelector('.lib-tab.is-on').textContent), 'Tools', 'the window opens on Tools');
     t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-where')].map((b) => b.textContent).join()), 'Bozzetto,Mine', 'Bozzetto and Mine under the tabs (the Community comes later, and is not shown)');
     t.eq(await page.evaluate(() => document.querySelector('.lib-where.is-on').textContent), 'Bozzetto', 'Bozzetto is the one showing');
-    const lines = {};
-    for (const [tab, text] of [['Materials', 'Materials come to the library in a later version.'], ['Lighting', 'Light rigs come to the library in a later version.'], ['HDRIs', 'HDRIs come to the library in a later version.']]) {
+    for (const tab of ['Models', 'Materials', 'Lighting', 'HDRIs']) {
       await page.click(`.lib-tab:text-is("${tab}")`);
-      lines[tab] = await page.evaluate(() => {
-        const b = document.querySelector('.lib-body:not([hidden])');
-        return { text: b.querySelector('.lib-later')?.textContent ?? '', tiles: b.querySelectorAll('.lib-tile').length };
-      });
-      t.ok(lines[tab].text === text && lines[tab].tiles === 0, `${tab} says one quiet line (${lines[tab].text})`);
+      const n = await page.evaluate(() => document.querySelectorAll('.lib-body:not([hidden]) .lib-tile').length);
+      t.ok(n > 0, `${tab} has its tiles (${n})`);
     }
     await page.click('.lib-tab:text-is("Tools")');
     t.eq(await page.evaluate(() => document.querySelectorAll('.lib-body:not([hidden]) .lib-tile:not([hidden])').length), 15, 'Tools shows the 15 tools of the two bars');
@@ -1028,6 +1055,290 @@ export const suites = {
     }, SCULPT_BAR);
     t.ok(capped.n === 8 && capped.clean === 8 && capped.stored === 9, `nine tools set on a bar of eight keep the first eight, and a stored order is held to the limit too (${JSON.stringify(capped)})`);
     t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
+  // The Models, Materials, Lighting and HDRIs tabs (docs/plans/asset-library.md): one list behind every picker.
+  async libraryTabs(page, base, t) {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await boot(page, base);
+    await openLib(page);
+    await wait(page, 600);
+
+    // --- no build or allocation on opening or switching tabs ---
+    const counters = () => page.evaluate(() => window.__bozzetto.renderCounters());
+    const grew = (a, b) => Object.fromEntries(Object.keys(a).filter((k) => b[k] !== a[k]).map((k) => [k, b[k] - a[k]]));
+    const before = await counters();
+    for (const tab of ['Models', 'Materials', 'Lighting', 'HDRIs', 'Tools', 'Models']) await showTab(page, tab);
+    await wait(page, 800);
+    t.eq(JSON.stringify(grew(before, await counters())), '{}', 'no build, compile or allocation in the view on opening or switching tabs');
+
+    // --- Models: the Create choices, same ids, labels, order and groups ---
+    const create = await page.evaluate(() => {
+      const m = document.querySelector('.outliner__menu--create');
+      const out = [];
+      for (const b of m.querySelectorAll('.outliner__menu-item[data-kind], .outliner__tile')) {
+        if (b.dataset.kind) out.push({ id: b.dataset.kind, label: b.childNodes[0].textContent });
+        else out.push({ id: b.dataset.armature ?? b.dataset.id, label: b.querySelector('.outliner__tile-name').textContent });
+      }
+      return out;
+    });
+    const models = await tabTiles(page, 'models');
+    t.ok(create.length > 20, `the Create menu lists its choices (${create.length})`);
+    t.eq(JSON.stringify(models.map(({ id, label }) => ({ id, label }))), JSON.stringify(create), 'Models lists what Create lists: same ids, labels and order');
+    t.eq(
+      await page.evaluate(() => [...document.querySelectorAll('.lib-body[data-tab="models"] .lib-group__head')].map((h) => h.firstChild.textContent).join()),
+      'Primitives,Armatures,Base meshes,Figures,Heads,Parts',
+      'in the same groups',
+    );
+    t.ok(models.filter((m) => m.img).length === models.length - 7, 'every tile has its picture but the primitives, which are their names');
+    t.eq(await thumbsLoad(page, 'models'), [], 'every Models thumbnail loads');
+    await page.screenshot({ path: `${SHOTS}/models.png` });
+
+    // A tap does what Create does.
+    const meshes = () => page.evaluate(() => window.__sculpt.session.getMeshes().length);
+    const verts = () => page.evaluate(() => window.__sculpt.session.getMesh().getNbVertices());
+    const n0 = await meshes();
+    await tapAsset(page, 'models', 'cone');
+    await wait(page, 500);
+    t.eq(await meshes(), n0 + 1, 'a primitive tile adds the object');
+    const viaWindow = await verts();
+    await page.evaluate(() => document.querySelector('.outliner__menu-item[data-kind="cone"]').click());
+    await wait(page, 500);
+    t.eq(await verts(), viaWindow, 'the same object the Create choice adds');
+    const n1 = await meshes();
+    await tapAsset(page, 'models', 'head-generic');
+    await page.waitForFunction((n) => window.__sculpt.session.getMeshes().length > n, n1, { timeout: 20000 });
+    await wait(page, 300);
+    const addedWin = (await meshes()) - n1;
+    const n2 = await meshes();
+    await page.evaluate(() => document.querySelector('.outliner__tile[data-id="head-generic"]').click());
+    await page.waitForFunction((n) => window.__sculpt.session.getMeshes().length > n, n2, { timeout: 20000 });
+    await wait(page, 300);
+    t.eq((await meshes()) - n2, addedWin, `a base mesh tile adds what the Create tile adds (${addedWin} objects)`);
+
+    // The search filters by name.
+    await page.fill('.lib-search', 'head');
+    t.ok((await tabTiles(page, 'models')).length > 0 && (await tabTiles(page, 'models')).every((m) => m.label.toLowerCase().includes('head')), 'the search filters Models by name');
+    await page.fill('.lib-search', 'zzz');
+    t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="models"] .lib-empty:not([hidden])')?.textContent ?? ''), 'Nothing called that.', 'and says so when nothing matches');
+    await page.fill('.lib-search', '');
+    await page.click('.lib-where:text-is("Mine")');
+    t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="models"] .lib-empty:not([hidden])')?.textContent ?? ''), 'Nothing of yours here yet.', 'Mine on Models says its plain line');
+    await page.click('.lib-where:text-is("Bozzetto")');
+
+    // --- Materials: the matcaps, in step with the Material panel ---
+    await showTab(page, 'Materials');
+    await page.evaluate(() => {
+      window.__sculpt.viewer.setMaterial('matcap');
+      window.dispatchEvent(new Event('bozzetto:controls-refresh'));
+    });
+    await page.evaluate(() => document.querySelector('.panel--material > .panel__handle').click());
+    await wait(page, 400);
+    await page.evaluate(() => document.querySelector('.mcpick__trigger').click());
+    await wait(page, 300);
+    const panelCaps = await page.evaluate(() => [...document.querySelectorAll('.matcap-grid--pop .matcap-swatch')].map((b) => ({ id: /thumbs\/(\w+)\.png/.exec(b.querySelector('img').src)[1], label: b.title })));
+    const caps = await tabTiles(page, 'materials');
+    t.eq(caps.length, 10, 'Materials lists the ten matcaps');
+    t.eq(JSON.stringify(caps.map(({ id, label }) => ({ id, label }))), JSON.stringify(panelCaps), "the same ids, labels and order as the Material panel's picker");
+    t.eq(await thumbsLoad(page, 'materials'), [], 'every matcap tile shows its picture');
+    t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="materials"] .lib-group__head').textContent), 'Matcaps', 'under the group Matcaps');
+    t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="materials"] [data-role="library-tail"]').textContent), 'Lit shows the materials again (Material tab).', 'and the line about Lit');
+    await page.evaluate(() => window.__sculpt.viewer.setMaterial('lit'));
+    await tapAsset(page, 'materials', 'vr04');
+    await wait(page, 300);
+    const st = await page.evaluate(() => ({ mode: window.__sculpt.viewer.getMaterial(), i: window.__sculpt.viewer.materials.getMaterialState().matcapIndex, on: [...document.querySelectorAll('.matcap-swatch--on')].map((b) => b.title).join(), mode2: document.querySelector('.panel--material select')?.value }));
+    t.ok(st.mode === 'matcap' && st.i === 3, `a matcap tile sets the view to Matcap with that one (${st.mode}, ${st.i})`);
+    t.eq(st.on, 'VR04', "the Material panel's picker follows");
+    t.eq(st.mode2, 'matcap', 'and its Mode');
+    t.eq((await tabTiles(page, 'materials')).filter((c) => c.state === 'use').map((c) => c.id).join(), 'vr04', 'the tile in use is marked');
+    await page.screenshot({ path: `${SHOTS}/materials-with-panel.png` });
+    await page.evaluate(() => document.querySelectorAll('.matcap-grid--pop .matcap-swatch')[7].click());
+    await page.waitForFunction(() => document.querySelector('.lib-body[data-tab="materials"] .lib-tile[data-asset="vr08"]')?.dataset.state === 'use', null, { timeout: 5000 });
+    t.eq((await tabTiles(page, 'materials')).filter((c) => c.state === 'use').map((c) => c.id).join(), 'vr08', 'picking in the panel moves the mark in the window');
+    await page.evaluate(() => window.__sculpt.viewer.setMaterial('lit'));
+    await page.waitForFunction(() => !document.querySelector('.lib-body[data-tab="materials"] .lib-tile[data-state="use"]'), null, { timeout: 5000 });
+    t.ok(true, 'Lit takes the mark away');
+    await page.click('.lib-where:text-is("Mine")');
+    t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="materials"] .lib-empty:not([hidden])')?.textContent ?? ''), 'Nothing of yours here yet.', 'Mine on Materials says its plain line');
+    await page.click('.lib-where:text-is("Bozzetto")');
+    await page.fill('.lib-search', 'vr0');
+    t.eq((await tabTiles(page, 'materials')).length, 9, 'the search filters the matcaps (VR01 to VR09)');
+    await page.fill('.lib-search', '');
+
+    // --- Models: an armature tile, last (it goes to Armature) ---
+    await showTab(page, 'Models');
+    await tapAsset(page, 'models', 'placeholder-male');
+    await page.waitForFunction(() => window.__sculpt.studio.now() === 'armature', null, { timeout: 60000 });
+    t.ok(true, 'an armature tile sets the armature and goes to Armature, as the Create choice does');
+    t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
+
+  // The Lighting and HDRIs tabs.
+  async libraryLook(page, base, t) {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    const hdrs = [];
+    page.on('request', (r) => {
+      if (/\.hdr(\?|$)/.test(r.url())) hdrs.push(r.url().replace(/^.*\//, '').replace(/\?.*$/, ''));
+    });
+    await boot(page, base);
+    await page.evaluate(() => window.__sculpt.present.enter());
+    await page.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 5000 });
+    await page.evaluate(() => document.querySelector('.panel--lighting > .panel__handle').click());
+    await wait(page, 500);
+    await page.evaluate(() => window.__sculpt.studio.library.open('lighting'));
+    await page.waitForSelector('.lib-window:not([hidden])');
+    await wait(page, 300);
+    const ENV_SELECT = '.panel--lighting select:has(option[value="plaza"])';
+
+    // --- Lighting: the Rig select's built-in rigs ---
+    const select = (sel) => page.evaluate((s) => [...document.querySelector(s).options].map((o) => ({ value: o.value, label: o.textContent })), sel);
+    const panelRigs = (await select('.panel--lighting select')).filter((o) => o.value.startsWith('built:')).map((o) => ({ id: o.value.slice(6), label: o.label }));
+    const rigs = await tabTiles(page, 'lighting');
+    t.eq(rigs.length, 10, 'Lighting lists the ten built-in rigs');
+    t.eq(JSON.stringify(rigs.map(({ id, label }) => ({ id, label }))), JSON.stringify(panelRigs), "the same ids, labels and order as the Lighting tab's Rig select");
+    t.eq(await thumbsLoad(page, 'lighting'), [], 'every rig tile shows its picture');
+    await page.screenshot({ path: `${SHOTS}/lighting.png` });
+    await tapAsset(page, 'lighting', 'rembrandt');
+    await wait(page, 400);
+    t.eq(await page.evaluate(() => window.__bozzetto.lighting.activePreset()), 'rembrandt', 'a rig tile applies the rig');
+    t.eq(await page.evaluate(() => document.querySelector('.panel--lighting select').value), 'built:rembrandt', "and the Lighting tab's select follows");
+    t.eq((await tabTiles(page, 'lighting')).filter((c) => c.state === 'use').map((c) => c.id).join(), 'rembrandt', 'the rig in use is marked');
+    t.eq(await foot(page), '', 'in Present nothing is said about where it shows');
+    await page.selectOption('.panel--lighting select', 'built:split');
+    await page.waitForFunction(() => document.querySelector('.lib-body[data-tab="lighting"] .lib-tile[data-asset="split"]')?.dataset.state === 'use', null, { timeout: 5000 });
+    t.ok(true, 'picking in the select moves the mark in the window');
+
+    // --- Mine: a saved rig ---
+    await page.click('.lib-where:text-is("Mine")');
+    t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="lighting"] .lib-empty:not([hidden])')?.textContent ?? ''), 'Rigs you save in the Lighting tab show here.', 'Mine says where its rigs come from');
+    await page.click('.lib-where:text-is("Bozzetto")');
+    await page.selectOption('.panel--lighting select', 'built:rembrandt');
+    await page.evaluate(() => window.__bozzetto.lighting.setAngles('key', 77, 33));
+    page.once('dialog', (d) => d.accept('Mine one'));
+    await page.evaluate(() => [...document.querySelectorAll('.panel--lighting button')].find((b) => b.textContent === 'Save rig…').click());
+    await page.waitForFunction(() => [...document.querySelectorAll('.panel--lighting select optgroup')].some((g) => g.label === 'My rigs'), null, { timeout: 5000 });
+    await page.click('.lib-where:text-is("Mine")');
+    await wait(page, 700);
+    t.eq((await tabTiles(page, 'lighting')).map((c) => c.label).join(), 'Mine one', 'a rig saved in the Lighting tab shows under Mine');
+    t.eq((await tabTiles(page, 'lighting')).map((c) => c.state).join(), 'use', 'marked, as the lights are that rig');
+    await page.screenshot({ path: `${SHOTS}/lighting-mine.png` });
+    await page.selectOption('.panel--lighting select', 'built:top_light');
+    await wait(page, 700);
+    await page.evaluate(() => document.querySelector('.lib-body[data-tab="lighting"] .lib-grid .lib-tile').click());
+    await wait(page, 300);
+    const key = await page.evaluate(() => window.__bozzetto.lighting.state().find((l) => l.id === 'key'));
+    t.ok(key.azimuth === 77 && key.elevation === 33, `a Mine tile applies the saved rig (${key.azimuth}, ${key.elevation})`);
+    t.eq(await page.evaluate(() => document.querySelector('.panel--lighting select').selectedOptions[0].textContent), 'Mine one', 'and the select reads it');
+    await page.fill('.lib-search', 'zzz');
+    t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="lighting"] .lib-empty:not([hidden])')?.textContent ?? ''), 'Nothing called that.', 'the search filters Mine too');
+    await page.fill('.lib-search', '');
+    await page.click('.lib-where:text-is("Bozzetto")');
+    await page.fill('.lib-search', 'raking');
+    t.eq((await tabTiles(page, 'lighting')).map((c) => c.id).join(), 'raking_key', 'the search filters the rigs by name');
+    await page.fill('.lib-search', '');
+
+    // --- HDRIs ---
+    await showTab(page, 'HDRIs');
+    const panelEnvs = await select(ENV_SELECT);
+    const envs = await tabTiles(page, 'hdris');
+    t.eq(JSON.stringify(envs.map(({ id, label }) => ({ id, label }))), JSON.stringify(panelEnvs.map((o) => ({ id: o.value, label: o.label }))), "HDRIs lists None and the six, as the Lighting tab's HDRI select does (same ids, labels, order)");
+    t.eq(envs[0].label, 'None', 'None first');
+    t.eq(await thumbsLoad(page, 'hdris'), [], 'every HDRI tile shows its picture');
+    t.eq(hdrs.length, 0, `no .hdr file is fetched by looking (${hdrs.join()})`);
+    t.eq(envs.find((e) => e.id === '').state, 'use', 'None is the one in use at first');
+    await page.screenshot({ path: `${SHOTS}/hdris.png` });
+
+    // A slow file: the tile reads loading, then in use; only that file is fetched.
+    await page.route('**/studio-photo.hdr*', async (route) => {
+      await new Promise((r) => setTimeout(r, 2500));
+      await route.continue();
+    });
+    await tapAsset(page, 'hdris', 'studio-photo');
+    await waitMark(page, 'hdris', 'studio-photo', 'loading');
+    t.ok(true, 'a tapped HDRI tile reads loading while its file comes');
+    const rect = (id) => page.evaluate((i) => { const r = document.querySelector(`.lib-body[data-tab="hdris"] .lib-tile[data-asset="${i}"]`).getBoundingClientRect(); return [r.width, r.height]; }, id);
+    const loadingBox = await rect('studio-photo');
+    await page.screenshot({ path: `${SHOTS}/hdri-loading.png` });
+    await waitMark(page, 'hdris', 'studio-photo', 'use');
+    t.eq(JSON.stringify(await rect('studio-photo')), JSON.stringify(loadingBox), 'with no change of size');
+    t.eq(hdrs.join(), 'studio-photo.hdr', 'only the tapped file was fetched');
+    t.eq(await page.evaluate(() => window.__bozzetto.environment.getState().id), 'studio-photo', "the scene's environment is set");
+    await page.evaluate(() => window.dispatchEvent(new Event('bozzetto:controls-refresh')));
+    t.eq(await page.evaluate((s) => document.querySelector(s).value, ENV_SELECT), 'studio-photo', "and the Lighting tab's select follows");
+    await page.selectOption(ENV_SELECT, 'overcast');
+    await page.waitForFunction(() => document.querySelector('.lib-body[data-tab="hdris"] .lib-tile[data-asset="overcast"]')?.dataset.state === 'use', null, { timeout: 15000 });
+    t.ok(true, 'and the other way, the window follows the select');
+
+    // A failed fetch leaves the environment as it was and says so.
+    await page.route('**/garage.hdr*', (route) => route.abort());
+    await tapAsset(page, 'hdris', 'garage');
+    await page.waitForFunction(() => /could not be loaded/.test(document.querySelector('.lib-foot')?.textContent ?? ''), null, { timeout: 15000 });
+    t.eq(await foot(page), 'Garage could not be loaded. The environment is as it was.', 'a failed fetch says so in the foot');
+    t.eq(await page.evaluate(() => window.__bozzetto.environment.getState().id), 'overcast', 'and leaves the environment as it was');
+    t.eq((await tabTiles(page, 'hdris')).filter((c) => c.state === 'use').map((c) => c.id).join(), 'overcast', 'with the mark where it was');
+    await tapAsset(page, 'hdris', '');
+    await wait(page, 500);
+    t.eq(await page.evaluate(() => window.__bozzetto.environment.getState().id), null, 'None takes the environment off');
+    await page.click('.lib-where:text-is("Mine")');
+    t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="hdris"] .lib-empty:not([hidden])')?.textContent ?? ''), 'Nothing of yours here yet.', 'Mine on HDRIs says its plain line');
+    await page.click('.lib-where:text-is("Bozzetto")');
+
+    // --- Where it shows ---
+    await page.evaluate(() => window.__sculpt.present.leave());
+    await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 });
+    await page.evaluate(() => window.__sculpt.studio.library.open('lighting'));
+    await page.evaluate(() => window.__sculpt.viewer.setMaterial('lit'));
+    await page.evaluate(() => (document.querySelector('.lib-foot').textContent = ''));
+    await tapAsset(page, 'lighting', 'butterfly');
+    await wait(page, 300);
+    t.eq(await foot(page), '', 'a rig applied in Lit, where the lights show, says nothing');
+    await page.evaluate(() => window.__sculpt.viewer.setMaterial('matcap'));
+    await tapAsset(page, 'lighting', 'split');
+    await wait(page, 300);
+    t.eq(await foot(page), 'Shows in Present.', 'a rig applied under a matcap, where the lights are not seen, says Shows in Present.');
+    await page.evaluate(() => (document.querySelector('.lib-foot').textContent = ''));
+    await showTab(page, 'HDRIs');
+    await tapAsset(page, 'hdris', 'plaza');
+    await waitMark(page, 'hdris', 'plaza', 'use');
+    t.eq(await foot(page), 'Shows in Present.', 'and so does an HDRI');
+    await page.evaluate(() => window.__sculpt.viewer.setMaterial('lit'));
+    await page.evaluate(() => (document.querySelector('.lib-foot').textContent = ''));
+    await tapAsset(page, 'hdris', 'garage');
+    await waitMark(page, 'hdris', 'garage', 'use');
+    t.eq(await foot(page), '', 'an HDRI set in Lit says nothing');
+    t.eq(await page.evaluate(() => !!window.__sculpt.viewer.scene.environment), true, 'and the working view has it as its light');
+    t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
+
+  // A finger that drags on a tile of the picture tabs scrolls the window and uses nothing.
+  async libraryScroll(page, base, t) {
+    const { p, ctx, errors } = await touchPage(page, base);
+    try {
+      await openLib(p);
+      await showTab(p, 'Models');
+      const meshes = () => p.evaluate(() => window.__sculpt.session.getMeshes().length);
+      const n0 = await meshes();
+      const touch = await pointer(p, 'touch');
+      const [x, y] = await p.evaluate(() => {
+        const r = document.querySelector('.lib-body[data-tab="models"] .lib-tile[data-asset="cube"]').getBoundingClientRect();
+        return [r.left + r.width / 2, r.top + r.height / 2];
+      });
+      await touch.down(x, y);
+      for (const [mx, my] of along([x, y], [x, y - 220], 8)) await touch.move(mx, my);
+      await touch.up();
+      await wait(p, 600);
+      const top = await p.evaluate(() => document.querySelector('.lib-body[data-tab="models"]').scrollTop);
+      t.ok(top > 60, `a finger drag on a tile scrolls the Models tab (${top}px)`);
+      t.eq(await meshes(), n0, 'and adds nothing');
+      const small = await p.evaluate(() => [...document.querySelectorAll('.lib-body[data-tab="models"] .lib-tile:not([hidden])')].filter((b) => { const r = b.getBoundingClientRect(); return r.width < 64 || r.height < 64; }).length);
+      t.eq(small, 0, 'every tile is at least 64 px');
+      await showTab(p, 'HDRIs');
+      t.eq(await p.evaluate(() => getComputedStyle(document.querySelector('.lib-body[data-tab="hdris"] .lib-tile')).touchAction), 'pan-y', 'the HDRI tiles let a finger scroll too');
+      t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+    } finally {
+      await ctx.close();
+    }
   },
 };
 

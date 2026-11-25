@@ -326,7 +326,7 @@ export interface LookHost {
  * working views draw them only in Lit (Matcap ignores the scene's lights).
  */
 export function lightShows(host: LookHost): boolean {
-  return host.workspace() === 'present' || host.viewer.getMaterial() === 'lit';
+  return host.workspace() === 'present' || document.body.classList.contains('presenting') || host.viewer.getMaterial() === 'lit';
 }
 
 const refreshControls = (): void => void window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));

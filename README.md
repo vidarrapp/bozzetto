@@ -176,6 +176,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **Asset library, more tabs.** The library has a **Models** tab with what Create offers (primitives, armatures and base meshes, with their pictures), and its **Materials**, **Lighting** and **HDRIs** tabs now hold the ten matcaps, the light rigs and the six environments as tiles. A tap uses one, as picking it in its panel does, and the panel and the window stay in step. An HDRI file is fetched only when you tap its tile.
+
 ### v0.7.19
 
 - **A new scene starts empty, on Create.** A first visit, File, New sculpt and the gallery's new sculpt no longer begin with a sphere: the Scene panel opens on the choices you add things with, and a tap on one puts it in the scene, selected and in view. Old scenes open as they were.
@@ -219,7 +223,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ### v0.7.11
 
-- **Asset library.** A window that floats over the view and stays open while you work. Open it with the **Library** button in the Tool panel or **View**, then **Asset library**. Its Tools tab shows every tool, Sculpt and Paint, and a tap takes one in hand. Press and hold a tool there and drag it onto the tool bar to put it at that place. Materials, Lighting and HDRIs come to it in a later version.
+- **Asset library.** A window that floats over the view and stays open while you work. Open it with the **Library** button in the Tool panel or **View**, then **Asset library**. Its Tools tab shows every tool, Sculpt and Paint, and a tap takes one in hand. Press and hold a tool there and drag it onto the tool bar to put it at that place. Its Models, Materials, Lighting and HDRIs tabs hold what Create, the Material panel, the Lighting tab and its HDRI list offer.
 - **Take a tool off the tool bar.** Drag it off the bar and let go, and it is off the bar and still in the library, with an **Undo**. The bar can be emptied, and **View**, then **Reset tool bar**, brings every tool back.
 - **A tool in hand that is not on the bar** shows as one extra tile at the end of the tools, with a dashed line and no number. Drag it onto the bar to keep it.
 - **Ten tools on a bar.** A tool bar holds ten tools, one for each number key. A full bar takes no more and says so.

@@ -681,6 +681,32 @@ Tool, with Material before it.
 
 ### Asset library window
 
+- **The picture tabs** (`src/library/TileViews.ts`; the lists they and the
+  panels' pickers share are `assets.ts`, `modelAssets.ts` and the data in
+  `Lighting.ts`: nothing else lists a matcap, a rig, an environment or a
+  Create choice). A tile is a 48px picture over its name, at least 64px,
+  and its touches are the window's (`touch-action: pan-y`), so a drag on
+  it scrolls and only a tap uses it. The one in use is orange, as the tool
+  in hand is, and read again every half second while the tab shows (the
+  panels, the hotkeys and a restored look change it). **Models**: the
+  Create choices in their groups (Primitives as words, Armatures, Base
+  meshes: Figures, Heads, Parts); a tap does what the Create choice does.
+  **Materials**: the group Matcaps, ten tiles with the matcap's own
+  picture, a tap sets the mode to Matcap and the matcap, and the line "Lit
+  shows the materials again (Material tab)." under it. **Lighting**: the
+  ten built-in rigs, each a grey ball under it; Mine holds the saved rigs
+  ("Rigs you save in the Lighting tab show here."). **HDRIs**: None, then
+  the six; the `.hdr` file is fetched only on the tap, the tile shows a
+  mark ("…", no change of size) while it comes, a failed fetch says
+  "Garage could not be loaded. The environment is as it was." in the foot
+  and changes nothing. An environment entry carries a list of files so
+  more resolutions can come from a server later. **Shows in Present.**
+  is said in the foot when a rig or an HDRI is applied where it is not
+  drawn: Present always draws them, a working view only while its mode is
+  Lit (a matcap ignores the lights). Pictures: `public/assets/rigs` and
+  `public/assets/env/thumbs`, made by `tools/render-library-thumbs.mjs`.
+  The other tabs' Mine says "Nothing of yours here yet."
+
 - **One floating window**, "Asset library", over the view (`src/library`,
   owned by the Studio shell so every workspace can open it). It has no
   backdrop: the view under it stays live, a stroke on the model works with
@@ -700,8 +726,8 @@ Tool, with Material before it.
   Present (no key). The × in the title row is an icon button with the label
   Close. Esc closes it when the focus is inside it. Tab hides it with the
   rest of the interface; it is not closed by the panels' first Tab.
-- **Tabs and where from.** Tools, Materials, Lighting and HDRIs, always all
-  four. A tab's body is a view registered for it (`AssetLibrary.register`:
+- **Tabs and where from.** Tools, Models, Materials, Lighting and HDRIs,
+  always all five. A tab's body is a view registered for it (`AssetLibrary.register`:
   `mount`, `refresh`, `dispose`); a tab with none says one quiet line, for
   example "Materials come to the library in a later version." Under the
   tabs, two buttons, **Bozzetto** and **Mine** (the Community comes with a
