@@ -479,7 +479,7 @@ export const suites = {
     // --- the triangle Export OBJ is as it was --------------------------------------
     await page.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
     await booted(page);
-    await page.evaluate(() => window.__sculpt.fileActions.newScene());
+    await page.evaluate(() => window.__sculpt.fileActions.newScene({ sphere: true }));
     const triAfter = await page.evaluate(() => window.__sculpt.file.toOBJ());
     t.ok(triAfter === triBefore && /^# Bozzetto sculpt export\no Sphere\nv /.test(triAfter), 'Export OBJ still writes the triangles of a fresh sphere as before');
     void named;

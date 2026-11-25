@@ -1445,8 +1445,8 @@ export const suites = {
     t.eq((await names(page))[0], 'Sphere', 'and it is the sphere');
     const faces = await page.evaluate(() => window.__sculpt.session.getMesh().getNbFaces());
     t.ok(faces >= 20000, `the sphere is subdivided (${faces} faces)`);
-    const tiles = await page.evaluate(() => document.querySelectorAll('.outliner__tile').length);
-    const words = await page.evaluate(() => document.querySelectorAll('.outliner__menu-grid--words .outliner__menu-item').length);
+    const tiles = await page.evaluate(() => document.querySelectorAll('.outliner__menu--create .outliner__tile:not(.outliner__tile--armature)').length);
+    const words = await page.evaluate(() => document.querySelectorAll('.outliner__menu--create .outliner__menu-grid--words .outliner__menu-item').length);
     t.eq(tiles, 23, 'the Create menu lists every base mesh');
     t.eq(words, 7, 'and every primitive');
   },
@@ -1593,7 +1593,7 @@ export const suites = {
     t.ok(split.faces.every((f) => f >= 1000 && f < 20000), `parts subdivided modestly (${Math.min(...split.faces)}–${Math.max(...split.faces)} faces)`);
     await page.evaluate(() => window.__sculpt.session.undo());
     t.eq(await count(page), before, 'blockout parts: one undo removes them all');
-    const pills = await page.evaluate(() => [...document.querySelectorAll('.outliner__menu-pill')].map((p) => `${p.textContent}:${p.getAttribute('aria-pressed')}`));
+    const pills = await page.evaluate(() => [...document.querySelectorAll('.outliner__menu--create .outliner__menu-pill')].map((p) => `${p.textContent}:${p.getAttribute('aria-pressed')}`));
     t.eq(pills.join(' '), 'one object:true parts:false', 'the switch defaults to one object');
 
     // A figure's right-hand lumps are its left ones mirrored in the bundle,
@@ -4108,7 +4108,8 @@ export const suites = {
     });
     const layout = await page.evaluate(() => {
       const panel = document.querySelector('.panel--scene');
-      const order = [...panel.querySelector('.panel__body').children].map((c) => c.classList[0]);
+      // The empty scene's Create choices are the panel's other face, shown in place of these.
+      const order = [...panel.querySelector('.panel__body').children].map((c) => c.classList[0]).filter((c) => c !== 'outliner__empty');
       const probe = document.createElement('span');
       document.body.appendChild(probe);
       const rust = (v) => {

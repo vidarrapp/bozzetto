@@ -151,7 +151,6 @@ export class ScenePanel extends SidePanel {
     const choices = div('outliner__choices');
     this.buildCreateChoices(choices);
     this.emptyEl.append(line, choices);
-    this.body.appendChild(this.emptyEl);
     addBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (this.addMenu.hidden) this.openMenu(this.addMenu, addBtn);
@@ -182,6 +181,8 @@ export class ScenePanel extends SidePanel {
     this.floorInput = this.floorRow.querySelector('input') as HTMLInputElement;
     measure.append(this.floorRow);
     this.body.appendChild(measure);
+    // After the rest, so the header is still the body's first child.
+    this.body.appendChild(this.emptyEl);
     this.floorTimer = window.setInterval(() => this.refreshFloor(), 500);
 
     // A collapsing panel must not leave its popup menu armed.

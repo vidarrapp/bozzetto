@@ -11,7 +11,7 @@ export const BASICS: Topic[] = [
     blocks: [
       p('Bozzetto Web is a browser app for posing, sculpting and presenting. **Armature** is a posable mannequin you pose and make into a figure, with **Remesh to a figure**, as a base for Sculpt. **Sculpt** is clay, brushes and paint. **Present** lights and frames the finished work, and publishes it. You find it in three places: the gallery, the viewer and the editors.'),
       h('Start a sculpt'),
-      p('In the gallery, choose **Create**. You can start a **New Sculpt** (a sphere of clay, brushes and paint), a **New Armature** (a posable figure) or **Import OBJ** (one .obj file from another app, opened in Sculpt as a new scene).'),
+      p('In the gallery, choose **Create**. You can start a **New Sculpt** (an empty scene with clay, brushes and paint, which opens on the choices for what to add first: a primitive, a base mesh or an armature), a **New Armature** (a posable figure) or **Import OBJ** (one .obj file from another app, opened in Sculpt as a new scene).'),
       p('The gallery and the other pages (Community, My projects, Account, Review, Owner tools) have the same title strip as the editors. **File** starts a new sculpt, a new armature or an OBJ import, **View** lists the pages you may visit with the one you are on checked, **Help** is the same everywhere, the page\'s name is in the middle, and **Sign in**, or your @handle menu with **Account** and **Sign out**, is at the right. When you are signed in, the @handle menu is at the right end of the strip in the editors and the viewer too.'),
       h('What is on the screen in Sculpt'),
       list(

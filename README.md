@@ -176,6 +176,11 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **A new scene starts empty, on Create.** A first visit, File, New sculpt and the gallery's new sculpt no longer begin with a sphere: the Scene panel opens on the choices you add things with, and a tap on one puts it in the scene, selected and in view. Old scenes open as they were.
+- **Armatures in Create.** The Create menu and the empty Scene panel have an Armatures group with a picture tile for each mannequin and block figure. A tap loads Armature with that mannequin in its rest pose. If the scene's armature has been posed, it asks before replacing it.
+
 ### v0.7.18
 
 - **Smooth and Mask buttons beside Carve.** On the left edge, a tap on Smooth or Mask applies it to the next stroke, and a long press keeps it on until you tap again, so an iPad without a keyboard can smooth and mask. Holding Shift or Ctrl still works, and Mask with Carve on unmasks. In Paint, Smooth is Blur and shows with the Paint tool.
