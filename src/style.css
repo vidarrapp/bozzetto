@@ -1442,6 +1442,22 @@ body.presenting .measure-overlay {
   display: none;
 }
 
+/* Present's light markers (LightMarkers): a canvas over the view, drawn only while Present moves a light. Not
+   interface to hide with Tab, and nothing in it takes a press. */
+.light-markers {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9;
+}
+
+.light-markers canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 /* The Measure section of the Model panel: a length beside each name. */
 .measure-row__len {
   flex: none;

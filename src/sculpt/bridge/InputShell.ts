@@ -106,8 +106,10 @@ export interface InputShellHooks {
   toggleWireframe(): void;
   /** alt+r: arrange (unlock) or lock the reference pictures in the view. */
   toggleArrangeReferences(): void;
-  /** l + drag: move the key light by azimuth/elevation degree deltas. */
+  /** l + drag: move the key light (in Present, the light 1, 2 or 3 picked) by azimuth/elevation degree deltas. */
   moveKeyLight(deltaAzimuth: number, deltaElevation: number): void;
+  /** Present: 1, 2 and 3 pick which light L moves (0 key, 1 fill, 2 rim). */
+  pickLight(index: number): void;
   /** Arrow keys: turntable step around the subject (degrees). */
   orbitY(deltaDeg: number): void;
   /**
@@ -132,33 +134,6 @@ export interface InputShellHooks {
   /** Ctrl+G: the masked faces into a new poly group. */
   groupFromMask(): void;
 }
-
-/**
- * What the keyboard still does in Present mode: look round the model,
- * change how it is lit and shown, leave (or go to another workspace), and the guides. Every other
- * action this shell answers edits the scene, picks a tool or moves the
- * selection, and is claimed and dropped there.
- */
-const PRESENT_KEYS = new Set([
-  'play.toggle',
-  'ws.armature',
-  'ws.sculpt',
-  'ws.paint',
-  'ws.present',
-  'file.save',
-  'ui.chrome',
-  'ui.show',
-  'ui.help',
-  'ui.fps',
-  'ui.preferences',
-  'view.frame',
-  'view.frameAll',
-  'view.turnLeft',
-  'view.turnRight',
-  'view.shadows',
-  'view.wireframe',
-  'light.move',
-]);
 
 /** A select-tool press that travels past this is a marquee, not a click. */
 const MARQUEE_SLOP = 5;
@@ -2587,7 +2562,11 @@ export class InputShell {
 
     // The keymap says what this chord means here; the table is the user's
     // to edit (Preferences), so nothing below names a key.
-    const action = keymap.actionFor(e, this.paintMode ? 'paint' : 'sculpt');
+    const action = keymap.actionFor(e, this.presenting ? 'present' : this.paintMode ? 'paint' : 'sculpt');
+    // Present mode looks and does not touch: what the keymap does not mark as Present's (the brushes, the
+    // gizmo, the mask, the history, the selection) is claimed and goes nowhere, so the viewer's own
+    // bindings on the same keys stay dormant too.
+    if (!action && this.presenting && keymap.actionFor(e, 'sculpt')) return this.claim(e);
     if (!action) {
       if (this.held) return;
       // The digits are the paint tools' alone in Paint: the ones it has no tool for do not reach the viewer's matcaps.
@@ -2612,11 +2591,6 @@ export class InputShell {
     // ctrl+d subdivided level after level, holding shift+s strobed the
     // shadows.
     if (e.repeat && !action.repeat) return this.claim(e);
-
-    // Present mode looks and does not touch: the brushes, the gizmo, the
-    // mask, the history and the selection are claimed and go nowhere,
-    // so the viewer's own bindings on the same keys stay dormant too.
-    if (this.presenting && !PRESENT_KEYS.has(action.id)) return this.claim(e);
 
     switch (action.id) {
       case 'ui.chrome':
@@ -2766,6 +2740,11 @@ export class InputShell {
       case 'brush.symmetry':
         s.toggleSymmetry();
         return this.claim(e);
+      case 'present.light1':
+      case 'present.light2':
+      case 'present.light3':
+        this.hooks.pickLight(Number(action.id.slice(-1)) - 1);
+        return this.claim(e);
       case 'light.move':
         if (!this.lKeyHeld) this.lightFromX = NaN;
         this.lKeyHeld = true;
@@ -2870,6 +2849,11 @@ export class InputShell {
     this.lKeyHeld = on;
     this.lightFromX = NaN;
     this.cursor.hide();
+  }
+
+  /** L is held, or View > Move light is armed: a drag moves a light. */
+  isMovingLight(): boolean {
+    return this.lKeyHeld;
   }
 
   isLightArmed(): boolean {

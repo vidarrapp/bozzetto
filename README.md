@@ -172,9 +172,15 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 | `1`, `2` to `9` | Lit, or a matcap |
 | `Shift`+`S` | Shadows on or off |
 | `G` | Cycle the ground |
-| `L`, held while dragging | Move the key light |
+| `L`, held while dragging | Move the key light (in Present, the light picked with `1`, `2` or `3`) |
+| `1`, `2`, `3` in Present | Pick the key, fill or rim light for `L` |
 
 ## Changelog
+
+### Unreleased
+
+- **Hold L moves the light from where it is.** With a finger or the Pencil, the light now turns only by what you drag after you touch down, so it no longer jumps to where the last touch ended. The same in Armature and in the viewer.
+- **In Present, 1, 2 and 3 pick which light L moves.** Key, Fill or Rim, in the order the Lighting tab lists them; Key is the pick when you enter Present, and the status line names the light. While L is held, and for a moment after a pick, a marker for each light that is on shows around the model: orange for the one you will move, grey for the others. The markers are never in a saved image, turntable or thumbnail.
 
 ### v0.7.23
 

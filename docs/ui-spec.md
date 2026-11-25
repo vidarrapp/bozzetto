@@ -165,6 +165,20 @@ no separate touch density. An earlier draft of this spec had one, with
 - **Move the key light** without a keyboard: View, **Move light** (Sculpt,
   Armature, Present) arms the next drag on the view as a move of the key light,
   across and up as with the L key, then lets go; Esc or the item again cancels.
+  The light turns by movement made since the press (or since L went down, for a
+  hovering mouse): the first event only sets the reference, so a finger or Pencil
+  that lands away from the last pointer position does not make the light jump.
+  **In Present** the keys 1, 2 and 3 (keymap actions `present.light1` to `3`,
+  group Lighting, rebindable) pick which light L and Move light turn: Key, Fill,
+  Rim, as the Lighting tab lists them; Key when Present is entered. A pick says
+  "Key light", "Fill light" or "Rim light" on the status line, or "Fill is off"
+  for a light that is off (it still turns, the tab shows its angles). While L is
+  held or Move light is armed, and for 1.5 s after a pick, one marker per light
+  that is on is drawn on a 2D canvas over the view (src/sculpt/ui/LightMarkers.ts,
+  like the calipers' lines, so no render pass draws it and no saved picture holds
+  it): a disc with a short line toward the subject, in the direction the light
+  comes from, the same size on screen at any zoom; the picked one orange
+  (`--bz-orange`), the others `--bz-text-hint`. Sculpt and Paint show no markers.
   **Cavity**, Sculpt's form shading, is a switch on the Material tab's Display
   section with Strength and Radius under it.
 - **Keyboard.** A web page cannot tell whether an iPad has a keyboard
