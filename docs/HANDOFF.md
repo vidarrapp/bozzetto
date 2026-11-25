@@ -151,7 +151,7 @@
 - Sharing light rigs through the Community (2026-11-17): rigs are saved on the device and passed on as files for now; a shared library of rigs (and later tools and materials) needs server work.
 Ideas Vidar has raised that are not being built yet.
 
-- 2026-11-25: A matcap editor of sorts: making your own matcaps in the app (lights and a surface on a ball, saved as a matcap), which would also settle how a scene carries a matcap of your own.
+- 2026-11-25: A matcap editor of sorts: making your own matcaps in the app (lights and a surface on a ball, saved as a matcap), which would also settle how a scene carries a matcap of your own. With a colour picker that takes the highlight, the mid tone and the shadow from a picture (a photo of clay, say), and a shadow term to set how deep the dark side goes.
 - 2026-11-12: The Material tab as a material library: the materials in the scene as a list with thumbnails (rendered spheres), and a library to pick from. Assigning stays in the Scene tab for now. Decided 2026-11-18: a material library in the same way as the tool library, opening as a floating window over the view (sketch in docs/plans/tool-library-and-nodes.md, section 3). To be designed and built after the tool library's first steps.
 
 ## Notes for Bozzetto Studio
