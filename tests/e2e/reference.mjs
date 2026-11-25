@@ -948,6 +948,43 @@ export const suites = {
     t.ok(!(await visible(page, '.ref-frame')), 'with no outlines');
     t.ok((await drawnOver(page)) > 0, 'and the picture drawn');
 
+    // Pictures kept from an earlier visit outlive ones added and removed after them (owner report, 2026-11-24, on
+    // Safari: removing the later ones lost the first, whose bytes still pointed at the database's file, which the
+    // next write deleted). What is read back is held in memory, apart from the database, and still there after
+    // more writes and a reload. (This browser keeps the file either way: the check here is that they are copies
+    // that can be read and drawn, the order of events being the reported one.)
+    const copied = await page.evaluate(async () => {
+      const { board } = window.__sculpt.reference;
+      const sizes = [];
+      for (const i of board.list()) sizes.push((await i.blob.arrayBuffer()).byteLength === i.blob.size && i.blob.size > 0);
+      return sizes;
+    });
+    t.ok(copied.length === 2 && copied.every(Boolean), 'the pictures read back can be read in full');
+    await addFiles(page, [{ name: 'later-a.png', mimeType: 'image/png', buffer: await png(page, 300, 200) }]);
+    await addFiles(page, [{ name: 'later-b.png', mimeType: 'image/png', buffer: await png(page, 200, 300) }]);
+    await page.evaluate(() => window.__sculpt.reference.board.flush());
+    await page.evaluate(async () => {
+      const { board } = window.__sculpt.reference;
+      for (const i of board.list().filter((x) => x.name.startsWith('later-'))) {
+        board.remove(i.id);
+        await board.flush();
+      }
+    });
+    await page.waitForTimeout(500);
+    const thumbs = async () => {
+      await openPanel(page);
+      await page.waitForFunction(() => [...document.querySelectorAll('.ref-card img')].every((i) => i.complete), null, { timeout: 10_000 }).catch(() => {});
+      return page.evaluate(() => [...document.querySelectorAll('.ref-card')].map((c) => `${c.querySelector('.ref-card__name').textContent}:${c.querySelector('img').naturalWidth > 0}`).join(','));
+    };
+    t.eq(await thumbs(), 'two:true,one:true', 'with later pictures added and removed, the earlier ones keep their thumbnails');
+    await openPanel(page, false);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
+    await page.waitForFunction(() => window.__sculpt.reference.board.list().length === 2, null, { timeout: 15_000 }).catch(() => {});
+    t.eq(await thumbs(), 'two:true,one:true', 'and are still there, with their thumbnails, after a reload');
+    await openPanel(page, false);
+    await page.waitForTimeout(400);
+
     // New sculpt starts with an empty board, and a reload after it has none.
     await page.evaluate(() => window.__sculpt.fileActions.newScene());
     await page.waitForTimeout(500);

@@ -211,7 +211,7 @@ place, each only where the place has it.
   guest sees **Sign in to save to library** instead where the site has
   accounts, and nothing extra where it has none), Keep on this device
   (the Present workspace has one Save, or Save to its place); Import OBJ…, Z-up OBJ import, Load model…, Export
-  OBJ, Send to Sculpt, New sculpt from this, Edit in Present; Publish…;
+  OBJ, Remesh to a figure (Armature's File menu: the posed mannequin made into a figure, in this scene), New sculpt from this, Edit in Present; Publish…;
   Close, always last, with the page it returns to as its hint.
 - **Open recent** is a row with a chevron that opens a second list beside
   the menu (flipped to the left at the screen's edge; on a phone it takes
@@ -419,7 +419,8 @@ document itself scrolls, and there is no CSS switch to turn that off.
   2026-11-11: one panel open per side, with folder tabs). Material is on the
   right everywhere (owner call, 2026-11-17). Tab order, left to right.
   Sculpt: left Scene, Model, Layers; right Tool, Material, Reference.
-  Armature: left Armature; right Material, Reference. Present from Sculpt:
+  Armature: left Armature; right Material, Reference (the page's own, the
+  same as in Sculpt and Paint). Present from Sculpt:
   left Lighting, Camera, Render; right Material, Output. The Present
   workspace (owner): left Lighting, Camera, Render; right Frames, Project,
   Material, Output. The viewer and review mode: right Material, Lighting,
@@ -600,19 +601,45 @@ Tool, with Material before it.
   shows its digit, even with Hotkeys on tools off. Along the bar the others
   slide aside (transform, 140ms ease-out, none with reduced motion) and
   their badges show the digit they will have; letting go puts the tool there
-  (no notice; the tool in hand stays in hand). Letting go off the bar (more
-  than 56px above it or 24px past its ends), Esc, a cancelled pointer, the
+  (no notice; the tool in hand stays in hand). Esc, a cancelled pointer, the
   window losing focus or a second pointer going down fly the ghost back and
-  change nothing. A long press that ends without moving drops the tile back
-  and opens nothing yet. Nothing lifts mid-stroke, and the number keys wait
-  while a tool is lifted. Each workspace's order is kept through
-  `deviceStore` as `bozzetto-toolbar` (`{ v: 1, sculpt?, paint? }`, only an
-  order that differs from the default), read at start and made safe (unknown
-  ids and repeats dropped, tools a stored order lacks appended in the default
-  order); with saving off it holds for the visit and one notice says it will
-  not be kept. **View > Reset tool bar** (Sculpt and Paint, greyed while the
-  bar is the default) puts the default order back with a notice that has
-  Undo.
+  change nothing. Nothing lifts mid-stroke, and the number keys wait while a
+  tool is lifted.
+- **Taking a tool off the bar.** Letting go of a tile lifted from the bar
+  more than 56px above it or 24px past its ends takes the tool off that
+  bar. Out of the zone the ghost dims to half, so the outcome shows before
+  letting go, and the others close the gap and show the digits they will
+  have. On letting go the ghost shrinks away (160ms) and a notice says
+  "Clay is off the tool bar. It is still in the library." with Undo, which
+  puts the tool back in its old place. A bar may be emptied; Select,
+  Transform and Calipers stay. Each workspace's order is kept through
+  `deviceStore` as `bozzetto-toolbar`, `{ v: 2, sculpt?: { ids, known },
+  paint?: { ids, known } }`, only for an order that differs from the default.
+  `known` is the list of tools the app had for that bar when the record was
+  written: on load, only tools that are in the default bar and not in
+  `known` are appended (a tool a later version added); tools that are not in
+  the registry, not brushes of that workspace, or repeats are dropped. A
+  `v: 1` record (`{ sculpt?: ids, paint?: ids }`) is read as before, every
+  missing tool appended. With saving off the order holds for the visit and
+  one notice says it will not be kept. **View > Reset tool bar** (Sculpt and
+  Paint, greyed while the bar is the default) puts the default order back,
+  removed tools included, with a notice that has Undo.
+- **Ten tools at most.** A bar holds one tool for each of the ten place keys
+  (`ToolBars.limit`). A lift towards a full bar from the window or the extra
+  tile does not start, and the menus' Add to tool bar adds nothing; either way
+  a notice says "The tool bar is full (10 tools). Take one off to add
+  another." Tool groups, for more tools on one key, wait for 1.0.
+- **A tool in hand that is not on the bar** shows as one extra tile after
+  the last tool of the bar (before Transform), orange as the tool in hand,
+  with no digit and a dashed line inside it that says it is not kept. Its
+  name tip reads "Rake, not on the tool bar". Picking another tool makes it
+  go; lifting it and putting it on the bar keeps the tool there.
+- **The tile's menu.** A long press on a tile that ends without moving
+  (the lift is the long press; it did not go further than 8px) opens a small
+  menu at the tile in the app's menu look: **Tool settings** (takes the
+  tool in hand and opens the Tool panel) and **Remove from tool bar**, or
+  **Add to tool bar** for the extra tile. It closes on a tap outside, on Esc
+  and on a choice.
 - **Calipers** (hotkey C) is the last button, after Transform. It is not
   a brush: it measures between two points on the model and edits
   nothing. Its icon is the Uicons ruler until a drawn calipers glyph is
@@ -628,12 +655,65 @@ Tool, with Material before it.
   pinned measurement is a lighter grey, a mirror is dashed. All of it is
   interface: Tab and Present hide it. It never takes the Pencil away from
   the model, and two fingers still navigate.
+- **Poly groups and dynamic topology.** With dynamic topology on, an object keeps its groups (they follow the triangles and may drift) but they cannot be made or edited: the Model panel's Groups note says "Poly groups need dynamic topology off." with a Turn off dynamic topology button, the making buttons are off, and Ctrl+G says the same notice. Show, hide, isolate and the colour switch still work.
 - **Measure section** (Model panel, after Poly groups): the pinned
   measurements of the selected object, a row each with its name (tap to
   rename), its length in the mono face, a mirror toggle, the eye and the
   trash. A mirrored one shows a line under it with the other length and
   the difference. A delete is not a sculpt undo step; the section
   offers Undo for the last one deleted.
+
+
+### Asset library window
+
+- **One floating window**, "Asset library", over the view (`src/library`,
+  owned by the Studio shell so every workspace can open it). It has no
+  backdrop: the view under it stays live, a stroke on the model works with
+  it open, and only presses that start on the window are its own. Raised
+  grey with the 1px border and shadow of a window (docs/ui-foundations.md),
+  at z-index 30: above the panels, below the menus, the notices and every
+  asking window.
+- **Place and size.** About 420 by 480px, right of the middle, under the
+  strip and clear of the tool bar and the edge column. Dragged by its title
+  row (mouse, finger, Pencil; the row owns its touches) and resized from
+  the lower right corner (a 44px square). It is kept inside the view when
+  the page is resized. Place, size and last tab are kept through
+  `deviceStore` as `bozzetto-library`, `{ v: 1, x, y, w, h, tab }`; the
+  window itself does not reopen after a reload.
+- **Opening and closing.** A small **Library** button in the heading of the
+  Tool panel, and **View > Asset library**, a toggle in Sculpt, Paint and
+  Present (no key). The × in the title row is an icon button with the label
+  Close. Esc closes it when the focus is inside it. Tab hides it with the
+  rest of the interface; it is not closed by the panels' first Tab.
+- **Tabs and where from.** Tools, Materials, Lighting and HDRIs, always all
+  four. A tab's body is a view registered for it (`AssetLibrary.register`:
+  `mount`, `refresh`, `dispose`); a tab with none says one quiet line, for
+  example "Materials come to the library in a later version." Under the
+  tabs, two buttons, **Bozzetto** and **Mine** (the Community comes with a
+  later step and is not shown; room is left), and a **Search** field that
+  filters the tiles showing by name as you type ("Nothing called that." when
+  none match). Mine says "Copies you make of a tool show here." until there
+  are copies.
+- **The Tools tab, Bozzetto.** Every tool a bar can hold, in two groups
+  with small headings, **Sculpt** and **Paint**, the workspace you are in
+  first. A tile is at least 64px, the tool's icon with its name under it
+  and, while the tool is on its bar, its key there in the corner (the bar's
+  own digit; a dot for a place with no plain key). The tool in
+  hand has the orange tile, as on the bar. **Tap** takes the tool in hand.
+  A tool of the other workspace is dimmed, and a tap on it says "This is a
+  Paint tool. It is used in Paint." (or the Sculpt wording) in the window's
+  foot and does nothing else; in Present a tap says "Tools are not used in
+  Present."
+- **Lifting from the window** is the dock's (same long press, same mouse
+  drag; only a tool of the workspace you are in lifts, and nothing lifts
+  mid-stroke). The tile stays and dims. Over the bar the gap opens at the
+  insertion point exactly as for a move: for a tool that is not on the bar
+  the bar's box widens and the tiles go where the layout will put them, so
+  nothing jumps when the order is set. Letting go on the bar puts the tool
+  at that place (a tool already on the bar moves there); letting go anywhere
+  else flies the ghost back to its tile. A long press on a tile that ends
+  without moving opens its menu: **Use**, and **Add to tool bar** or
+  **Remove from tool bar**.
 
 ### Edge controls
 
@@ -707,19 +787,44 @@ figure, with a stroke of 2 px (3 px when orange) and a faint soft shade
 under it (`--bz-view-shade-line`, no hard dark border) so it reads over pale clay, and
 each has an invisible pick circle 44 px across.
 
-- **Reach** (hands, feet): a ring that faces the camera, 22 px in radius (RING_RADIUS). Pinned, a small
-  dot in its middle. A tap selects it, with the move gizmo.
-- **Root**: a wire box (12 edges) around the pelvis part, in the pelvis's own frame, so it turns with the hips; drag it and the whole figure moves.
-  It is orange while dragged or while the pelvis is selected.
-- **Pole** (knee, elbow): an arrowhead out from the joint along the way it
-  points, half the limb segment above it away (in front of a knee, behind
-  an elbow), pointing away from the joint, the way it aims, joined to it by a thin dashed
-  line. Dragging it turns the joint toward it.
-- **Look-at** (head): the same arrowhead and dashed line, a head and a
-  half in front of the face. Dragging it turns the head to face it, the
-  neck about half as far and the chest and spine a little (about 12 and 6
-  percent), measured from the chest: up to 80 degrees to a side and 60 up
-  or down, past which the head holds at the limit. The hips never move.
+- **Reach** (hands, feet): a ring that faces the camera, 22 px in radius (RING_RADIUS), centred on the middle of the hand's or foot's own geometry as posed (the middle of the part's box; the reach itself is aimed at the effector point, and a press keeps its offset from it, so nothing jumps). Pinned, a small
+  dot in its middle. A tap selects it, with the move gizmo. A double-click or double-tap, or a Pencil or finger press held
+  still for LONG_PRESS_MS (600 ms; a second finger, or travel past 4 px, cancels it; a mouse has the double-click), pins it or frees it, one undo step; the long press acts while the press is still
+  down, and its lift does nothing more. The double-tap window is 350 ms and 24 px (6 px for a mouse).
+  The pole targets, the look-at target and the hip box do not pin.
+- **Root**: a wire box (12 edges), the same box the pelvis part shows when it is selected (the part's own
+  box, 8 mm off its faces, with the pelvis's proportions and turn), so the two never disagree. It is orange
+  while dragged or while the pelvis is selected. A tap or click on it (travel within the tap distance)
+  selects the hips and brings up the move arrows and the turn rings together, at the box's middle; the hips
+  turn about that middle, and pinned and planted feet hold. A press that drags moves the whole figure in the
+  screen plane and leaves the selection as it was. The box takes the press before the part under it.
+- **Pole** (knee, elbow): an arrowhead on a point the person places, joined to the joint by a thin
+  dashed line. It starts out from the joint, half the limb segment above it away (in front of a
+  knee, behind an elbow). Dragging it moves it in the plane that faces the camera through where it
+  is, anywhere on the screen, under the pointer (never onto the limb's line: within a centimetre of
+  it the target stays); the joint turns toward it. The point is held in the frame of what the limb
+  hangs from (the pelvis for a leg, the chest for an arm), not in the world, so it goes with the
+  body when the hips are moved or turned and stays on the body while a hand or foot moves
+  (Armature.POLES_IN_BODY_FRAME). It is kept in the record, in every undo step, mirrored by Mirror
+  pose and symmetry, put back out from the joint by Reset pose; turning a joint of the limb by hand,
+  or the panel's Aim, carries it out along the way the joint now points, at its distance. Tapped it is
+  selected, and its move gizmo moves it. Dimmer while the joint cannot bend toward it.
+- **Look-at** (head): the same arrowhead and dashed line, to a point in the
+  scene (kept in the record, in every undo step, mirrored by Mirror pose and
+  put back a head and a half in front of the face by Reset pose; a record with
+  none gets it there). Dragging it moves it in the plane that faces the camera
+  through where it is, anywhere on the screen, under the pointer. The head
+  faces it all the time, after anything that changes the figure: the head and
+  the neck are worked out from the chest as it stands, as a turn and a tilt
+  with no roll, so they are a function of the body's pose and the point (the
+  hips away and back leave the head as it was). The neck takes about half the
+  turn; while the point is dragged the chest and spine take a little (about
+  12 and 6 percent), from where they stood as the drag began, and keep it.
+  Up to 80 degrees to a side and 60 up or down from the chest; past that the
+  head holds at the limit, the point stays where it was put, and the point and
+  its line are drawn dimmer. Turning the head or the neck by hand carries the
+  point out along the head's new facing at its distance; turning the chest or
+  spine leaves it. The hips never move.
 - **Floor ring** under a planted foot: a flat ring, neutral.
 
 ## 9. Windows, notices and progress
@@ -829,10 +934,59 @@ byte a vertex of the highest level (255 shows the layer, 0 hides it where the
 working mask protected), saved run-length; records are version 2 and old
 records open.
 
-## The three workspaces as tabs
+## The four workspaces as tabs
 
-Sculpt, Paint and Present are tabs of one mode (owner, 2026-11-18): from any
-of them to any other in one step, and each keeps its own panels and tool.
+Armature, Sculpt, Paint and Present are tabs of one page (owner, 2026-11-18):
+from any of them to any other in one step, and each keeps its own panels and
+tool. The page is the Sculpt page: `/?sculpt=1` opens it on Sculpt,
+`/?armature=1` on Armature (with the `project=`, `template=` and `scope=` of an
+armature, which Armature reads and cleans off the address), and the address
+follows the workspace (`armature=1` while Armature is in front, `sculpt=1`
+when it is left, `paint=1` as before).
+
+- **Armature is loaded on first use.** Its code and the four mannequin files
+  are fetched the first time the workspace is entered (`src/armature/
+  workspace.ts` is the facade the page carries), so Sculpt starts as fast as it
+  did. The path shows Armature current at once, a quiet notice says "Loading
+  Armature…", and the switch is not held up: another step still works, and
+  the load ends put away if it is used.
+- **One working view.** Armature shows Sculpt's view (its light, its shading,
+  the cavity pass, flat clay, the one look of the scene) with the floor shown
+  and fixed where the mannequin stands, so changing tab changes nothing but
+  the tools. `src/armature/viewerNeeds.ts` lists what Armature still asks of
+  the viewer on entering and gives back on leaving: the fixed floor, the
+  ground shown, and the pose drag counted as a move for the frame meter. The
+  shadows' bound (Sculpt's) takes the posed mannequin in while it is drawn.
+  Sculpt's tool bar, brush fields, Solo, Negative and ring are put away in
+  Armature (`body.armature-ws`); Undo, Redo and Arrange stay on the edge
+  column, and Undo and Redo act on the workspace in front (Armature has its
+  own steps until there is one history).
+- **The mannequin and the figure.** A figure is made only by pressing
+  **Remesh to a figure** (the Figure section of the Armature tab, the Figure
+  section at the top of the Model tab, Armature's File menu, Ctrl+Enter in
+  Armature, or Remesh in the question below), never by changing tab. It is
+  the posed mannequin baked to world triangles and voxelised at the
+  Resolution (one slider, shared by the two panels) into one object named
+  Figure, in one undo step (a scene with nothing done to it makes way for it;
+  one with work keeps its objects; pressed again it adds Figure 2); a grid
+  the device cannot spare is refused with the reason. Until a figure stands in
+  the scene the posed mannequin is drawn in Sculpt, Paint and Present too,
+  without handles, listed in the Scene tab as a row of its own (the bone
+  icon, its name, no eye, lock, material or delete), and takes no strokes:
+  a stroke that starts on it asks once a visit `Remesh "Figure" to sculpt
+  it?`, text `Sculpting needs a surface of its own. The armature keeps its pose,
+  and you can make another figure from it later.`, with **Remesh** (an ordinary
+  main action, not the danger style) and Cancel; Cancel leaves everything as
+  it was and the press goes to the view. Once a figure stands in the scene
+  (its step is in the history: undoing it brings the mannequin back) the
+  mannequin shows only in Armature. The scene has an armature from the first
+  entry to Armature in a visit; the second half of step C saves it in the
+  scene's record, so it is there from the start.
+- **Panels.** Armature: left Armature; right Material, Reference (the same
+  two panels and the same board as in the other workspaces; pictures on the
+  old Armature board are added to the page's board once, on first load). The
+  Armature tab's sections: Mannequin, Joint, Proportions, Reach, Figure
+  (where things stand, Resolution, Remesh to a figure).
 
 - **Keys.** `ws.armature` Shift+1, `ws.sculpt` Shift+2, `ws.paint` Shift+3,
   `ws.present` Shift+4 (rebindable, in the View menu and the hotkey guide),
@@ -856,8 +1010,7 @@ of them to any other in one step, and each keeps its own panels and tool.
 - **Tool.** Paint comes back to the paint tool it last had (kept on the
   device); Sculpt to the one it left.
 - **Nothing stops a switch.** It is refused only mid-stroke or mid-drag. No
-  question is asked on the way between the three (Armature's step asks, as it
-  leaves the page). Kept across a switch: the camera, the active object and
+  question is asked on the way between the four. Kept across a switch: the camera, the active object and
   selection, the undo history, symmetry and the scene's look. Present entered
   from Paint is left by a key or the path to the workspace asked for (the
   turntable stopped, a clip being saved cancelled), landing on that

@@ -531,6 +531,18 @@ export class InputShell {
    * transform gizmo are put away, and Shift swaps the blur in over Paint only.
    */
   paintMode = false;
+  /**
+   * Another workspace has the view (Armature): this shell hears neither the pointer nor the keys
+   * but the workspace keys (Shift+1 to 4), and the viewer's own handlers and that workspace's
+   * take what it lets by.
+   */
+  held = false;
+  /**
+   * Asked before a stroke is let begin: true says the press is not a stroke (the posed mannequin
+   * is not an object that can be sculpted, and asks about it); it orbits instead, as a press on
+   * a locked object does.
+   */
+  strokeGate: ((e: PointerEvent) => boolean) | null = null;
   /** A paint stroke was refused before it started (a hidden layer, no layer to erase on): the shell says why. */
   onPaintRefused: ((why: string) => void) | null = null;
 
@@ -1402,6 +1414,7 @@ export class InputShell {
   // --- pointer machine ----------------------------------------------------
 
   private readonly onPointerDown = (e: PointerEvent): void => {
+    if (this.held) return;
     if (e.pointerType === 'pen') this.lastPenAt = performance.now();
     // Our own re-dispatch on its way to OrbitControls; let it through.
     if (this.handingToOrbit) return;
@@ -1641,6 +1654,16 @@ export class InputShell {
       this.negativeOverride = { tool, prev };
     }
 
+    // The posed mannequin cannot be sculpted or painted: the page asks about it, and the press orbits.
+    if (!this.pickedColor && this.strokeGate?.(e)) {
+      this.restoreStrokeTool();
+      s._action = Enums.Action.NOTHING;
+      this.orbitPointer = e.pointerId;
+      this.verdict?.(`orbit ${e.pointerType} (the mannequin)`);
+      this.hooks.orbitBegin();
+      return;
+    }
+
     // A locked object (outliner padlock) refuses the stroke: probe what the
     // press would edit before the tool commits to it, and orbit instead -
     // the same treatment as missing the mesh entirely. The probe uses the
@@ -1842,6 +1865,7 @@ export class InputShell {
   }
 
   private readonly onPointerMove = (e: PointerEvent): void => {
+    if (this.held) return;
     if (e.pointerType === 'pen') this.lastPenAt = performance.now();
     if (this.measureDrag?.pointerId === e.pointerId) {
       this.measureTool.move(e.clientX, e.clientY);
@@ -2026,6 +2050,7 @@ export class InputShell {
   }
 
   private readonly onPointerUp = (e: PointerEvent): void => {
+    if (this.held) return;
     if (e.pointerType === 'pen') this.lastPenAt = performance.now();
     // Our own cancel, on its way to OrbitControls (the pen took over).
     if (this.handingToOrbit) return;
@@ -2123,6 +2148,7 @@ export class InputShell {
   };
 
   private readonly onPointerLeave = (e: PointerEvent): void => {
+    if (this.held) return;
     // Capture-phase leave fires for every descendant crossing (canvas to
     // overlay chips and back); only the container's own leave means the
     // pointer left the viewport.
@@ -2527,6 +2553,7 @@ export class InputShell {
     // to edit (Preferences), so nothing below names a key.
     const action = keymap.actionFor(e, this.paintMode ? 'paint' : 'sculpt');
     if (!action) {
+      if (this.held) return;
       // The digits are the paint tools' alone in Paint: the ones it has no tool for do not reach the viewer's matcaps.
       if (this.paintMode && /^Digit\d$/.test(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) return this.claim(e);
       // Space unbound from play.toggle would otherwise fall through to the
@@ -2535,6 +2562,9 @@ export class InputShell {
       if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) return this.claim(e);
       return;
     }
+
+    // Another workspace has the keys (Armature): only the workspace keys are this shell's.
+    if (this.held && !action.id.startsWith('ws.')) return;
 
     // Tab clears the screen for focused work - but only when Tab is not
     // busy being Tab: Shift+Tab, a text field, a select or a modal (see

@@ -11,10 +11,17 @@
 import { deviceStore, DeviceStorageOff, mayStore, onDeviceChoice } from '../../ui/deviceStorage';
 import { toolById, type Workspace } from './registry';
 
-/** localStorage: the orders that differ from the default, as `{ v: 1, sculpt?: ids, paint?: ids }`. Kept through deviceStore, so it follows the saving choice. */
+/**
+ * localStorage: the orders that differ from the default, as
+ * `{ v: 2, sculpt?: { ids, known }, paint?: { ids, known } }`. `known` is the
+ * list of tools the app had for that bar when it was saved, so a tool taken
+ * off the bar stays off and only a tool a later version added is appended.
+ * A `{ v: 1, sculpt?: ids, paint?: ids }` record is read as before. Kept
+ * through deviceStore, so it follows the saving choice.
+ */
 export const BARS_KEY = 'bozzetto-toolbar';
 
-/** The keys 1 to 9 and 0: a bar may hold more tools than this, and those past the tenth have no key. */
+/** The keys 1 to 9 and 0, and so how many tools a bar holds: one for each key (ToolBars.limit). */
 export const PLACE_COUNT = 10;
 
 /** Today's order, the default of each workspace's bar. */
@@ -37,27 +44,34 @@ type Listener = () => void;
 
 const WORKSPACES: readonly Workspace[] = ['sculpt', 'paint'];
 
+/** Whether a tool is one a bar of this workspace can hold: a brush with an engine and an icon, of that workspace. */
+export function fitsBar(ws: Workspace, id: string): boolean {
+  const def = toolById(id);
+  return !!def && def.kind === 'brush' && def.engine !== null && !!def.icon && def.workspace === ws;
+}
+
 /**
- * A stored order made safe: what is not a string, is not a tool the bar can
- * hold, or repeats is dropped, and the tools of the default bar that the
- * stored one lacks (a tool a later version added) are appended in the
- * default order, so none is ever lost to an old record.
+ * A stored order made safe: what is not a string, is not a tool this bar can
+ * hold, or repeats is dropped. The tools of the default bar that the stored
+ * order lacks are appended in the default order only where the record does
+ * not say the app already knew them (`known`): a tool a later version added
+ * comes in, a tool taken off the bar stays off. With no `known` (a v1
+ * record) everything missing is appended, as that version always did.
  */
-export function sanitizeOrder(ws: Workspace, raw: unknown): string[] {
+export function sanitizeOrder(ws: Workspace, raw: unknown, known?: unknown, limit = PLACE_COUNT): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  const own = DEFAULT_BARS[ws];
   if (Array.isArray(raw)) {
     for (const id of raw) {
-      if (typeof id !== 'string' || seen.has(id) || !own.includes(id)) continue;
-      const def = toolById(id);
-      if (!def || def.kind !== 'brush' || def.engine === null || !def.icon) continue;
+      if (typeof id !== 'string' || seen.has(id) || !fitsBar(ws, id)) continue;
       seen.add(id);
       out.push(id);
     }
   }
-  for (const id of own) if (!seen.has(id)) out.push(id);
-  return out;
+  const knew = Array.isArray(known) ? new Set(known.filter((k): k is string => typeof k === 'string')) : null;
+  for (const id of DEFAULT_BARS[ws]) if (!seen.has(id) && (!knew || !knew.has(id))) out.push(id);
+  // A bar holds a tool for each key and no more (PLACE_COUNT): what a record has past that is left off.
+  return out.slice(0, limit);
 }
 
 export class ToolBars {
@@ -103,9 +117,14 @@ export class ToolBars {
       if (!raw) return;
       const parsed: unknown = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object') return;
+      const version = (parsed as { v?: unknown }).v;
       for (const ws of WORKSPACES) {
         const stored = (parsed as Record<string, unknown>)[ws];
-        if (stored !== undefined) this.orders[ws] = sanitizeOrder(ws, stored);
+        if (stored === undefined) continue;
+        if (version === 2 && stored && typeof stored === 'object' && !Array.isArray(stored)) {
+          const rec = stored as { ids?: unknown; known?: unknown };
+          this.orders[ws] = sanitizeOrder(ws, rec.ids, rec.known);
+        } else this.orders[ws] = sanitizeOrder(ws, stored);
       }
     } catch {
       // A blocked or corrupt store: the default orders stand.
@@ -115,11 +134,11 @@ export class ToolBars {
   /** Written only when an order differs from the default; with nothing to keep the record goes. */
   private save(): void {
     try {
-      const out: Record<string, unknown> = { v: 1 };
+      const out: Record<string, unknown> = { v: 2 };
       let any = false;
       for (const ws of WORKSPACES) {
         if (this.isDefault(ws)) continue;
-        out[ws] = this.orders[ws];
+        out[ws] = { ids: this.orders[ws], known: [...DEFAULT_BARS[ws]] };
         any = true;
       }
       if (any) deviceStore.set(BARS_KEY, JSON.stringify(out));
@@ -131,6 +150,17 @@ export class ToolBars {
         this.onNotKept?.();
       }
     }
+  }
+
+  /**
+   * How many tools a bar holds: one for each of the ten keys (owner, 2026-11-24; more tools on one key are
+   * for tool groups, later). A property so a test can make a bar full with the tools there are.
+   */
+  limit = PLACE_COUNT;
+
+  /** Whether a workspace's bar has a tool in every place it has. */
+  isFull(ws: Workspace): boolean {
+    return this.orders[ws].length >= this.limit;
   }
 
   /** The ids on a workspace's bar, in order. */
@@ -150,14 +180,16 @@ export class ToolBars {
 
   /**
    * Put a new order on a bar and keep it on the device (when the person
-   * allows that). Ids that are not tools, and repeats, are left out.
+   * allows that). Ids that are not tools, tools of the other workspace, and
+   * repeats are left out, and so is whatever comes after the bar is full
+   * (`limit`). A bar may be emptied.
    */
   set(ws: Workspace, ids: readonly string[]): void {
     const seen = new Set<string>();
     const clean: string[] = [];
     for (const id of ids) {
-      const def = toolById(id);
-      if (!def || def.kind !== 'brush' || seen.has(id)) continue;
+      if (!fitsBar(ws, id) || seen.has(id)) continue;
+      if (clean.length >= this.limit) break;
       seen.add(id);
       clean.push(id);
     }

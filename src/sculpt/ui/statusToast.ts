@@ -7,6 +7,8 @@ import { div } from '../../ui/dom';
  */
 export interface StatusToast {
   set(text: string): void;
+  /** Take the notice away without a word (what it announced is over and needs no ending). */
+  clear(): void;
   done(text: string): void;
   /**
    * How it went wrong. Given a button (Sign in again), the notice carries
@@ -36,6 +38,7 @@ export function statusToast(text: string): StatusToast {
     set: (t) => {
       el.textContent = t;
     },
+    clear: () => el.remove(),
     done: (t) => finish(t, 'done', 2400),
     fail: (t, button, ms) => {
       if (!button) {

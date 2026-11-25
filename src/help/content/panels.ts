@@ -29,6 +29,12 @@ export const PANELS: Topic[] = [
     group: G,
     blocks: [
       p('The **Model** panel, on the left, acts on the active object rather than on a tool. It has these sections, from the top. The object\'s colour, roughness and metalness are in the **Material** panel, next to it.'),
+      h('Figure'),
+      p('At the top, only while the scene has an armature (once you have been to **Armature**).'),
+      options(
+        ['Resolution', 'The voxel grid the posed mannequin is remeshed on. It is the same control as in the Armature tab\'s Figure section.'],
+        ['Remesh to a figure', 'Makes one new object named **Figure** from the mannequin as it is posed, in one undo step. Pressed again, it adds **Figure 2**. Until a figure exists the mannequin is drawn in every workspace and listed in the **Scene** tab, and a stroke on it asks first.'],
+      ),
       h('Topology'),
       options(
         ['Dynamic topology', 'Rebuilds the surface under every stroke so it keeps enough triangles where you work. Turning it on asks first, because it replaces the mesh and flattens the subdivision levels to the current resolution. Ctrl+Z undoes the switch. Turning it off is the way back.'],
@@ -74,7 +80,7 @@ export const PANELS: Topic[] = [
       ),
       p('To paint the mask, hold **Ctrl** and drag. See the Mask (Ctrl) topic.'),
       h('Poly groups'),
-      p('Every face is in a poly group. Groups are shown in colour, can be hidden, and give you a quick way to mask or split an object. Every change here is one undo step.'),
+      p('Every face is in a poly group. Groups are shown in colour, can be hidden, and give you a quick way to mask or split an object. Every change here is one undo step. With dynamic topology on, the groups are kept but cannot be made or edited until it is off again.'),
       options(
         ['Show group colours (Shift+F)', 'Colours each group.'],
         ['From mask', 'Puts the masked faces into a new group and clears the mask. Default hotkey **Ctrl+G**.'],
@@ -171,7 +177,7 @@ export const PANELS: Topic[] = [
     title: 'Reference panel',
     group: G,
     blocks: [
-      p('The **Reference** panel, on the right after Material, holds pictures to look at while you work: a photo of the subject, a drawing, a pose. It is in Sculpt and Armature. It never changes the model.'),
+      p('The **Reference** panel, on the right after Material, holds pictures to look at while you work: a photo of the subject, a drawing, a pose. It is in Sculpt, Paint and Armature, one board for the page: the same pictures in each. Pictures that were on Armature\'s own board before the workspaces joined are added to it once. It never changes the model.'),
       h('Adding pictures'),
       options(
         ['Add picture…', 'Opens the picker. On an iPad or iPhone it offers your Photo Library, Take Photo and Choose File, so you can photograph something and use it at once.'],
@@ -204,6 +210,23 @@ export const PANELS: Topic[] = [
       p('**Tab** hides the outlines and buttons with the rest of the interface; the pictures stay. **View**, **References** shows or hides all the pictures in the view.'),
       h('Where they are kept'),
       p('References stay on the device they were added on and are never uploaded: **Save to library** and **Publish** send the scene without them. They are kept next to your work in progress when saving on this device is on, and last until the page closes when it is off. **File**, **Save file** includes them in the file you download unless you turn **Include references** off; opening that file brings them back. A project opened on another device opens without them. A new sculpt starts with none.'),
+    ],
+  },
+  {
+    id: 'asset-library',
+    title: 'Asset library',
+    group: G,
+    blocks: [
+      p('The **Asset library** is one window that floats over the view and stays open while you work. Open it with the **Library** button at the top of the Tool panel, or **View**, then **Asset library**. It does not block anything under it: you can sculpt and paint on the model while it is open. Drag it by its title row, resize it from the lower right corner, and close it with the **×**, with **Esc** while it has the focus, or from **View** again. **Tab** hides it with the rest of the interface. It keeps its place, size and last tab on this device when saving is on.'),
+      p('It has four tabs: **Tools**, **Materials**, **Lighting** and **HDRIs**. Only Tools has anything in it today; the others say they come in a later version. Under the tabs, **Bozzetto** shows what ships with the app and **Mine** shows your own copies, which come in a later version. **Search** narrows the tiles that show by name as you type.'),
+      h('The Tools tab'),
+      p('Every tool is a tile with its icon and its name, in two groups, **Sculpt** and **Paint**, the group of the workspace you are in first. A number in a tile\'s corner is the tool\'s key on that workspace\'s tool bar; a tile with no number is not on the bar. The tool in hand has the orange tile, as on the bar.'),
+      options(
+        ['Tap', 'Takes the tool in hand, as picking it on the bar. A tool of the other workspace is dimmed: a tap on it says where it is used, and does nothing else.'],
+        ['Press and hold, then drag', 'Lifts the tool, with the Pencil or a finger (with a mouse, press and drag). Move it over the tool bar and the others make room; let go and the tool is on the bar at that place. If it was already on the bar it moves there. Let go anywhere else and it flies back to the window. Only a tool of the workspace you are in lifts.'],
+        ['Press and hold, let go', 'Opens a small menu at the tile: **Use**, and **Add to tool bar** or **Remove from tool bar**.'],
+      ),
+      p('Taking a tool off the bar, and the extra tile for a tool in hand that is not on it, are in the Getting started topic, under **Take a tool off the tool bar**.'),
     ],
   },
   {

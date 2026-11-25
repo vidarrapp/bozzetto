@@ -1,8 +1,9 @@
 // The page's one shell (src/studio/Studio.ts, step A of docs/plans/armature-workspace.md).
 // Nothing a person sees changed when the Sculpt page and Armature's page moved onto it, so
 // this suite is about what is now true of the structure:
-// - each page has exactly one title strip, one edge column, one Material panel, one Reference
-//   panel, one details overlay and one set of four menus;
+// - the page has exactly one title strip, one edge column, one Material panel, one Reference
+//   panel, one details overlay and one set of four menus, in Armature as in Sculpt (step C: Armature
+//   is a workspace of the Sculpt page, loaded on first use);
 // - the menus' items come from the workspace in front: Sculpt, Paint and Present are
 //   switched through the shell and File, Edit and View are read each time;
 // - the path and the readout follow the one in front;
@@ -68,8 +69,8 @@ export const suites = {
     );
     t.eq(
       await page.evaluate(() => [window.__sculpt.studio.now(), window.__sculpt.studio.hosted().join(',')].join(' ')),
-      'sculpt sculpt,paint,present',
-      'Sculpt: the shell hosts Sculpt, Paint and Present, with Sculpt in front',
+      'sculpt armature,sculpt,paint,present',
+      'Sculpt: the shell hosts the four workspaces, with Sculpt in front',
     );
     t.ok(
       await page.evaluate(() => window.__sculpt.studio.edge.el.classList.contains('sculpt-sliders') && window.__sculpt.studio.edge.el === document.querySelector('.bz-edge')),
@@ -106,12 +107,12 @@ export const suites = {
     t.eq(JSON.stringify(await piecesOf(page)), JSON.stringify(first), 'after the switches there is still one of each piece and the same four menus');
     t.eq(JSON.stringify(await buildOf(page)), JSON.stringify(before), 'a switch builds nothing: the scene, the objects and their size are as they were');
 
-    // A step to a workspace the shell does not host is the front's own step; the hosted ones are the shell's.
+    // Every step is the shell's own `go`: it hosts all four.
     const way = await page.evaluate(() => {
       const w = window.__sculpt.studio.way();
       return { current: w.current, steps: Object.fromEntries(Object.entries(w.steps).map(([k, v]) => [k, 'action' in v])) };
     });
-    t.eq(JSON.stringify(way), JSON.stringify({ current: 'sculpt', steps: { paint: true, present: true, armature: true } }), 'the path from Sculpt has a step to every other workspace');
+    t.eq(JSON.stringify(way), JSON.stringify({ current: 'sculpt', steps: { armature: true, paint: true, present: true } }), 'the path from Sculpt has a step to every other workspace');
     t.ok(!(await page.evaluate(() => window.__sculpt.studio.go('sculpt'))), 'asking for the workspace in front changes nothing');
 
     // The controller moving by itself (the console's calls) is followed by the shell.
@@ -130,20 +131,20 @@ export const suites = {
     t.ok(!claimed(resetPose) && !claimed(send), "on the Sculpt page Armature's keys (Shift+R, Ctrl+Enter) are not claimed");
     t.eq(await page.evaluate(() => location.search.includes('armature')), false, 'and Ctrl+Enter did not send anything');
 
-    // ---- Armature's page --------------------------------------------------------------------
+    // ---- Armature, on the same page -----------------------------------------------------------
     await openArmature(page, base);
     await page.waitForTimeout(500);
     const arm = await piecesOf(page);
     t.ok(
       SHELL_PIECES.every((s) => arm[s] === 1) && arm['.bz-menuname'] === 4 && arm['.sculpt-hist'] === 1,
-      `Armature: one strip, one edge column, one Material panel, one Reference panel, one details overlay, one reference view, four menus (${JSON.stringify(arm)})`,
+      `Armature: still one strip, one edge column, one Material panel, one Reference panel, one details overlay, one reference view, four menus (${JSON.stringify(arm)})`,
     );
-    t.eq(await page.evaluate(() => [window.__armature.studio.now(), window.__armature.studio.hosted().join(',')].join(' ')), 'armature armature', 'Armature: the shell hosts Armature alone, in front');
-    t.ok(await page.evaluate(() => window.__armature.reference.board === window.__armature.studio.reference.board), "Armature: the reference board is the shell's");
+    t.eq(await page.evaluate(() => [window.__armature.studio.now(), window.__armature.studio.hosted().join(',')].join(' ')), 'armature armature,sculpt,paint,present', 'Armature: the shell hosts the four, with Armature in front');
+    t.ok(await page.evaluate(() => window.__armature.reference.board === window.__armature.studio.reference.board && window.__armature.studio === window.__sculpt.studio), "Armature: the shell and the reference board are the page's");
     const armMenus = await readMenus(page);
-    checkShape(t, 'Armature page', armMenus, {
+    checkShape(t, 'Armature', armMenus, {
       names: 'File,Edit,View,Help',
-      file: 'New armature|Open…|Open recent|Rename…|Save file|Load model…|Send to Sculpt|Close',
+      file: 'New armature|Open…|Open recent|Rename…|Save file|Load model…|Remesh to a figure|Close',
       view: 'Frame all|Wireframe|Shadows|Details|Move light|References|Arrange references|Armature panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Paint|Present',
       edit: 'Undo|Redo|Paste picture|Preferences…',
     });
@@ -152,29 +153,30 @@ export const suites = {
       const w = window.__armature.studio.way();
       return Object.fromEntries(Object.entries(w.steps).map(([k, v]) => [k, 'action' in v ? 'action' : v.unavailable]));
     });
-    t.ok(
-      armWay.sculpt === 'action' && /Paint works from Sculpt/.test(armWay.paint) && /Present works from Sculpt/.test(armWay.present),
-      `Armature's path: Sculpt sends, Paint and Present give their reasons (${JSON.stringify(armWay)})`,
-    );
-    t.ok(!(await page.evaluate(() => window.__armature.studio.go('paint'))), 'a step Armature cannot take is refused, with nothing sent');
+    t.eq(JSON.stringify(armWay), JSON.stringify({ sculpt: 'action', paint: 'action', present: 'action' }), "Armature's path: a step to every other workspace, none refused");
 
-    // Its keys are its own running, and nobody's put away.
+    // Its keys are its own running, and nobody's while it is away.
     t.ok(claimed(await pressSeen(page, 'x')), "running, X is Armature's (claimed)");
     await page.keyboard.press('x'); // twice is a wash
-    await page.evaluate(() => window.__armature.suspend());
-    t.ok(await page.evaluate(() => window.__armature.studio.isAsleep()), 'suspended, the shell sleeps with it');
-    t.ok(!claimed(await pressSeen(page, 'x')), 'suspended, X is not claimed');
-    t.eq(JSON.stringify(await piecesOf(page)), JSON.stringify(arm), 'suspended, the pieces are still one of each (put away, not built again)');
-    await page.evaluate(() => window.__armature.resume());
-    t.ok(claimed(await pressSeen(page, 'x')), "resumed, X is Armature's again");
+    await page.keyboard.press('Shift+2');
+    await page.waitForFunction(() => window.__sculpt.studio.now() === 'sculpt', null, { timeout: 8000 });
+    t.ok(!claimed(await pressSeen(page, 'r', { shift: true })) && !claimed(await pressSeen(page, 'Enter', { ctrl: true })), "in Sculpt, Armature's keys (Shift+R, Ctrl+Enter) are nobody's again");
+    t.eq(JSON.stringify(await piecesOf(page)), JSON.stringify(arm), 'switching Armature away leaves the pieces one of each (put away, not built again)');
+    await page.keyboard.press('Shift+1');
+    await page.waitForFunction(() => window.__sculpt.studio.now() === 'armature' && !window.__armature.isSuspended(), null, { timeout: 8000 });
+    t.ok(claimed(await pressSeen(page, 'x')), "back in Armature, X is Armature's again");
     await page.keyboard.press('x');
-    t.eq(await page.evaluate(() => window.__armature.studio.isAsleep()), false, 'and the shell is awake');
+    // The tests' hook puts the whole shell to sleep, as step B built it.
+    await page.evaluate(() => window.__armature.suspend());
+    t.ok(await page.evaluate(() => window.__armature.studio.isAsleep()), 'suspend() puts the shell to sleep with it');
+    await page.evaluate(() => window.__armature.resume());
+    t.eq(await page.evaluate(() => window.__armature.studio.isAsleep()), false, 'and resume() wakes it');
 
-    // Disposed, nothing of the shell stays; mounted again, one of each.
+    // Armature disposed, the page's shell stays; mounted again, one of each.
     await page.evaluate(() => window.__armature.dispose());
     const none = await piecesOf(page);
-    t.ok(SHELL_PIECES.every((s) => none[s] === 0) && none['.bz-menuname'] === 0, `disposed, no piece of the shell is left (${JSON.stringify(none)})`);
-    await page.evaluate(() => window.__armatureMount(window.__bozzetto));
+    t.eq(JSON.stringify(none), JSON.stringify(arm), "Armature disposed, the page's shell is all still there");
+    await page.evaluate(() => window.__armatureMount(window.__bozzetto, window.__sculpt.armatureHost));
     await page.waitForFunction(() => !!window.__armature, null, { timeout: 60_000 });
     await page.waitForTimeout(500);
     const again = await piecesOf(page);

@@ -73,6 +73,8 @@ const EDGE_PX = 1.5;
 /** Stroke widths in CSS pixels at rest and selected or dragged. */
 const STROKE = { rest: 2, hot: 3 };
 const DASH_STROKE = { rest: 1, hot: 1.6 };
+/** The strength a handle is drawn at while it is out of range (the look-at target past the head's limits). */
+const DIMMED = 0.4;
 
 /** The interface's colours (src/app-layer/tokens.css), read once; the fallbacks are the same values. */
 /** The alpha of --bz-view-shade-line (rgba(0, 0, 0, 0.35)), read once. */
@@ -125,6 +127,8 @@ export interface HandleView {
   colour: { value: Color };
   thick: { value: number };
   dot: { value: number };
+  /** How much of its strength it is drawn at: 1, or less for a handle out of range. */
+  fade: { value: number };
   /** Arrow: the joint or head it points away from. Dash: its two ends. */
   toward: { value: Vector3 };
   from: { value: Vector3 };
@@ -211,6 +215,7 @@ export class HandleKit {
     const colour = uniform(new Color(this.colours.rest));
     const thick = uniform(STROKE.rest);
     const pin = uniform(0);
+    const fade = uniform(1);
     const toward = uniform(new Vector3());
     const from = uniform(new Vector3());
     const material = new MeshBasicNodeMaterial();
@@ -299,6 +304,7 @@ export class HandleKit {
       const px = abs(r.sub(ringAt)).div(max(fwidth(r), float(0.00001)));
       out = paint(px.sub(thick.mul(screenDPR).mul(0.5)), colour, edge.mul(screenDPR));
     }
+    out = { rgb: out.rgb, alpha: out.alpha.mul(fade) };
     material.colorNode = out.rgb;
     material.opacityNode = out.alpha;
     // Into the scene pass's colour alone: a handle is no surface, so the
@@ -320,6 +326,7 @@ export class HandleKit {
       colour: colour as unknown as { value: Color },
       thick: thick as unknown as { value: number },
       dot: pin as unknown as { value: number },
+      fade: fade as unknown as { value: number },
       toward: toward as unknown as { value: Vector3 },
       from: from as unknown as { value: Vector3 },
       state: 'rest',
@@ -329,8 +336,9 @@ export class HandleKit {
   }
 
   /** Neutral at rest, white under the pointer, orange (and thicker) when selected or dragged. */
-  paint(h: HandleView, state: HandleState, pinned = false): void {
+  paint(h: HandleView, state: HandleState, pinned = false, dim = false): void {
     h.state = state;
+    h.fade.value = dim ? DIMMED : 1;
     h.colour.value.set(state === 'hot' ? this.colours.hot : state === 'hover' ? this.colours.hover : this.colours.rest);
     const widths = h.shape === 'dash' ? DASH_STROKE : STROKE;
     h.thick.value = state === 'hot' ? widths.hot : widths.rest;
@@ -338,13 +346,14 @@ export class HandleKit {
   }
 
   /** What a handle is drawn as right now, read back from what the shaders read. */
-  look(h: HandleView): { shape: HandleShape; state: HandleState; colour: string; thick: number; dot: boolean } {
+  look(h: HandleView): { shape: HandleShape; state: HandleState; colour: string; thick: number; dot: boolean; fade: number } {
     return {
       shape: h.shape,
       state: h.state,
       colour: h.colour.value.getHexString(),
       thick: h.thick.value,
       dot: h.dot.value > 0.5,
+      fade: h.fade.value,
     };
   }
 

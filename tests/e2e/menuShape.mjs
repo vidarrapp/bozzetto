@@ -12,7 +12,7 @@ const HELP = ['Help topics', 'Hotkeys', 'About and credits'];
 export const SCULPT_FILE = 'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
 const VIEW_LOOKS = 'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools';
 const RESET_BAR = '|Reset tool bar';
-const VIEW_WORKSPACES = 'Hide interface|Armature|Sculpt|Paint|Present';
+const VIEW_WORKSPACES = 'Asset library|Hide interface|Armature|Sculpt|Paint|Present';
 export const SCULPT_VIEW = {
   sculpt: `${VIEW_LOOKS}${RESET_BAR}|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|${VIEW_WORKSPACES}`,
   paint: `${VIEW_LOOKS}${RESET_BAR}|Scene panel|Layers panel|Tool panel|Material panel|Reference panel|${VIEW_WORKSPACES}`,
@@ -23,7 +23,7 @@ export const SCULPT_VIEW = {
 const FILE_RANK = new Map([
   ['New sculpt', 0], ['New armature', 0], ['Open…', 0], ['Open recent', 0],
   ['Rename…', 1], ['Save file', 1], ['Include references', 1], ['Save to library', 1], ['Sign in to save to library', 1], ['Keep on this device', 1], ['Save', 1],
-  ['Import OBJ…', 2], ['Z-up OBJ import', 2], ['Load model…', 2], ['Export OBJ', 2], ['Send to Sculpt', 2], ['New sculpt from this', 2], ['Edit in Present', 2],
+  ['Import OBJ…', 2], ['Z-up OBJ import', 2], ['Load model…', 2], ['Export OBJ', 2], ['Remesh to a figure', 2], ['New sculpt from this', 2], ['Edit in Present', 2],
   ['Publish…', 3],
   ['Close', 4],
 ]);
@@ -31,7 +31,7 @@ const FILE_RANK = new Map([
 const viewRank = (label) => {
   if (label === 'Frame selected' || label === 'Frame all') return 0;
   if (['Wireframe', 'Shadows', 'Poly group colours', 'Details', 'Move light', 'References', 'Arrange references', 'Hotkeys on tools', 'Reset tool bar'].includes(label)) return 1;
-  if (/ panel$/.test(label) || label === 'Hide interface') return 2;
+  if (/ panel$/.test(label) || label === 'Asset library' || label === 'Hide interface') return 2;
   if (['Armature', 'Sculpt', 'Paint', 'Present'].includes(label)) return 3;
   return -1;
 };
@@ -133,12 +133,12 @@ export const suites = {
     const armature = await readMenus(page, 'Armature');
     checkShape(t, 'Armature', armature, {
       names: 'File,Edit,View,Help',
-      file: 'New armature|Open…|Open recent|Rename…|Save file|Load model…|Send to Sculpt|Close',
+      file: 'New armature|Open…|Open recent|Rename…|Save file|Load model…|Remesh to a figure|Close',
       view: 'Frame all|Wireframe|Shadows|Details|Move light|References|Arrange references|Armature panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Paint|Present',
       edit: 'Undo|Redo|Paste picture|Preferences…',
     });
     const a = armature.View.filter((r) => ['Armature', 'Sculpt', 'Paint', 'Present'].includes(r.label));
-    t.ok(a[0].disabled && !a[1].disabled && a[2].disabled && a[3].disabled && a[3].hint.length > 0, `Armature: Armature is where you are, Sculpt goes, Paint and Present are greyed out with their reason ("${a[3].hint}")`);
+    t.ok(a[0].disabled && !a[1].disabled && !a[2].disabled && !a[3].disabled, 'Armature: Armature is where you are, and Sculpt, Paint and Present each go (nothing is greyed out)');
     const key = (menus, menu, label) => menus[menu].find((r) => r.label === label)?.key;
     t.ok(/Shift/.test(key(sculpt, 'View', 'Shadows')) && key(sculpt, 'View', 'Shadows') === key(armature, 'View', 'Shadows'), 'Shadows has the same key in Sculpt and Armature');
   },

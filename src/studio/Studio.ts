@@ -10,6 +10,7 @@ import { ReferenceBoard } from '../reference/board';
 import { ReferencePanel } from '../reference/ReferencePanel';
 import { ReferenceView } from '../reference/ReferenceView';
 import { ArrangeButton } from '../reference/ArrangeButton';
+import { AssetLibrary } from '../library/AssetLibrary';
 import { installIntake } from '../reference/intake';
 import { TitleStrip, type PathStep, type Readout, type Workspace as WorkspaceId } from '../sculpt/ui/TitleStrip';
 import { TopMenu, type MenuItem } from '../sculpt/ui/TopMenu';
@@ -28,7 +29,7 @@ import { Hidden, watchAdditions } from './hidden';
  * menus (empty frames, filled from the workspace in front), the edge column
  * with Undo and Redo, the details overlay, the chrome toggle's wiring, the
  * leaving guard, the Material and Reference panels with the page's one
- * reference board, and the memory of which panels each workspace had open.
+ * reference board, the Asset library window, and the memory of which panels each workspace had open.
  *
  * A workspace is something the shell hosts (`Workspace`). The shell asks
  * the one in front for its menu items, its path, its readout, its details
@@ -109,6 +110,8 @@ export class Studio {
   readonly details: DetailsOverlay;
   readonly chrome: ChromeToggle;
   readonly material: MaterialPanel;
+  /** The Asset library: one floating window every workspace can open; a workspace gives its tabs their contents (`library.register`). */
+  readonly library: AssetLibrary;
   readonly reference: { board: ReferenceBoard; panel: ReferencePanel; view: ReferenceView; arrange: ArrangeButton };
   /** Which panels each workspace had open; built by `beginPanels`. */
   panels: WorkspacePanels | null = null;
@@ -170,6 +173,7 @@ export class Studio {
     panel.setPlacer((id, x, y) => view.placeAt(id, x, y));
     this.reference = { board, panel, view, arrange };
     this.material = new MaterialPanel(viewer, opts.material);
+    this.library = new AssetLibrary();
     this.ownDom = added();
     this.listen();
   }
@@ -260,7 +264,7 @@ export class Studio {
     this.front = next;
     this.silence(from, next);
     // Idempotent where the workspace has done it itself in its own order (Sculpt's Present).
-    this.panels?.go(to as 'sculpt' | 'paint' | 'present');
+    this.panels?.go(to);
     this.refresh();
     return true;
   }
@@ -306,6 +310,7 @@ export class Studio {
     this.strip.setWorkspace(way.current, way.steps);
     this.refreshMenus();
     ws.shown?.();
+    this.library.refresh();
     this.paint();
   }
 
@@ -356,6 +361,7 @@ export class Studio {
   sleep(): void {
     if (this.asleep) return;
     for (const m of Object.values(this.menus)) m.close();
+    this.library.close();
     this.asleep = true;
     this.unlisten();
     this.panels?.pause();
@@ -400,6 +406,7 @@ export class Studio {
     this.reference.panel.dispose();
     this.reference.board.dispose();
     this.material.dispose();
+    this.library.dispose();
     this.details.dispose();
     for (const m of Object.values(this.menus)) m.dispose();
     this.edge.history.dispose();

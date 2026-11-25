@@ -32,7 +32,7 @@ Timelapses played back as real geometry (orbit, relight, scrub) exist in the pro
 ## Operating Context
 
 - Used mainly as an installed home-screen app on iPad, fullscreen, with Apple Pencil; also on desktop with mouse and keyboard. A phone is not a target: the app runs there for a quick demo, with no layout of its own.
-- Four workspaces in a fixed order, shown as a path: Armature (pose a mannequin), Sculpt, Paint (vertex colour in layers with blend modes, on the same scene as Sculpt), Present (lighting, render settings, output, publishing).
+- Four workspaces of one page in a fixed order, shown as a path: Armature (pose a mannequin, then make a figure from it with Remesh to a figure), Sculpt, Paint (vertex colour in layers with blend modes, on the same scene as Sculpt), Present (lighting, render settings, output, publishing). A figure is made only when the person presses the button, never by changing workspace; until then the posed mannequin shows in the others too.
 - Around the workspaces sit pages: the gallery, Community, My projects, Account, Review, and the owner's tools.
 - The public viewer shows a published model or timelapse.
 - The desktop counterpart, Bozzetto Studio, is a separate product.

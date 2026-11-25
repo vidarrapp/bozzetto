@@ -8,6 +8,7 @@ i[class^=fi-ss-]:before,i[class*=" fi-ss-"]:before,span[class^=fi-ss-]:before,sp
 .fi-ss-arrows:before{content:"\f1cd"}
 .fi-ss-arrows-to-eye:before{content:"\f1cb"}
 .fi-ss-arrows-to-line:before{content:"\f1cc"}
+.fi-ss-bone:before{content:"\f270"}
 .fi-ss-broom:before{content:"\f2f4"}
 .fi-ss-camera:before{content:"\f349"}
 .fi-ss-circle-half:before{content:"\f408"}

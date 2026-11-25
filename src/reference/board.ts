@@ -130,6 +130,27 @@ function cleanItem(raw: unknown): RefItem | null {
   };
 }
 
+/**
+ * A picture read back from the device's database is a Blob that points at
+ * the database's own file. Safari deletes that file when the record is
+ * written again, which every later change to the board does, and the
+ * picture then has nothing behind it: its thumbnail went at the next
+ * redraw, and the write after that kept nothing of it, so it was gone on
+ * the next reload (owner report, 2026-11-24: removing pictures added later
+ * lost the first one). So what is read is copied into memory at once, and
+ * only pictures held in memory are ever written. One whose bytes can no
+ * longer be read is left out.
+ */
+async function inMemory(item: RefItem): Promise<RefItem | null> {
+  try {
+    const bytes = await item.blob.arrayBuffer();
+    if (!bytes.byteLength) return null;
+    return { ...item, blob: new Blob([bytes], { type: item.blob.type || 'image/jpeg' }) };
+  } catch {
+    return null;
+  }
+}
+
 export class ReferenceBoard {
   /** Newest first. */
   private items: RefItem[] = [];
@@ -337,13 +358,34 @@ export class ReferenceBoard {
     const epoch = ++this.epoch;
     const rec = await this.read('project' in from ? keyProject(from.project) : keyCurrent(this.scope));
     if (epoch !== this.epoch) return;
+    const stored = (rec?.items ?? []).map(cleanItem).filter((i): i is RefItem => !!i).slice(0, MAX_REFERENCES);
+    const items = (await Promise.all(stored.map(inMemory))).filter((i): i is RefItem => !!i);
+    if (epoch !== this.epoch) return;
     if ('project' in from) this.project = from.project;
-    const items = (rec?.items ?? []).map(cleanItem).filter((i): i is RefItem => !!i).slice(0, MAX_REFERENCES);
     this.items = items;
     this.arranging = false;
     this.emit();
     // An opened project replaces what the autosave held: written under the scene's own key at once.
     if ('project' in from) this.touch(false);
+  }
+
+  /**
+   * Pictures kept under another scope join this board, once: the old Armature board's, now that
+   * the page has one board for every workspace. They go after what is here, and the old record
+   * is let go only when they are in. Nothing happens when this device kept nothing for it.
+   */
+  async adoptKept(scope: 'armature'): Promise<void> {
+    const key = keyCurrent(scope);
+    const rec = await this.read(key);
+    if (!rec) return;
+    const have = new Set(this.items.map((i) => i.id));
+    const items = rec.items.map(cleanItem).filter((i): i is RefItem => !!i && !have.has(i.id));
+    if (items.length) {
+      this.items = [...this.items, ...items].slice(0, MAX_REFERENCES);
+      this.touch();
+      await this.flush();
+    }
+    await this.erase(key);
   }
 
   private async read(key: string): Promise<Stored | null> {

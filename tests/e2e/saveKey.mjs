@@ -11,9 +11,15 @@ import { openArmature, openSculpt } from './lib.mjs';
 const watchDefault = (page) =>
   page.evaluate(() => {
     window.__saveKeys = [];
-    window.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') window.__saveKeys.push(e.defaultPrevented);
-    });
+    // In the capture phase on the window, where the app's own key handlers listen: they were added first, so
+    // they have run by the time this one does, and their stopPropagation does not keep it from running.
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') window.__saveKeys.push(e.defaultPrevented);
+      },
+      true,
+    );
   });
 const lastPrevented = (page) => page.evaluate(() => window.__saveKeys.at(-1) ?? null);
 const notes = (page) => page.evaluate(() => [...document.querySelectorAll('.file-menu__note')].map((n) => n.textContent));

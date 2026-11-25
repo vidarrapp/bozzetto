@@ -1,40 +1,48 @@
-import type { Box3 } from 'three';
-import type { Viewer } from '../viewer/Viewer';
-import { pageChrome } from '../ui/ChromeToggle';
-import { settings } from '../ui/settings';
+import type { GroundMode, Viewer } from '../viewer/Viewer';
 
 /**
- * What Armature needs from the viewer, in one place.
+ * What Armature needs from the viewer, on top of Sculpt's working view, in
+ * one place.
  *
- * Armature does not own the viewer: it borrows it. Each thing it sets on
- * the viewer is one entry of the list below, with how to read it, how to
- * write it and what Armature wants it to be. `apply` puts the list to work
- * (the first time with the values Armature starts from, later with the
- * values it held when it was undone) and `undo` puts every entry back to
- * what the viewer had when Armature last took it over. Mount and resume
- * call `apply`; suspend and dispose call `undo`. A workspace that shares
- * the viewer with Armature reads and changes what Armature asks of it here
- * and nowhere else.
+ * Armature is a workspace of the Sculpt page and shows the view Sculpt
+ * shows: its light, its shading, the cavity pass and no ambient occlusion
+ * of its own, flat clay, the one look of the scene. So changing tab changes
+ * nothing but the tools. Three things are asked of the viewer besides:
+ *
+ *   lockFloor          the ground fixed where the mannequin stands (0 at its
+ *                      soles), as it is in a scene on real units. Sculpt's
+ *                      own is the scene's (fixed at 0 on real units, following
+ *                      the subject in one from before them) and goes back.
+ *   ground             the floor shown. Sculpt starts with no stage under the
+ *                      work; the mannequin stands on one. What a person
+ *                      sets with G in Armature is kept for the next visit.
+ *   interactionProbe   a pose drag (a handle, a gizmo) is a move for the
+ *                      frame meter and the fast frames, as a stroke is in
+ *                      Sculpt.
+ *
+ * What Sculpt sets and Armature used to set again is not here any more: the
+ * tap-to-focus off, the fast frames on, the anti-aliasing, the key-only
+ * shadows, the fill's and rim's Casts shadow, the ambient occlusion, the
+ * hiding of the boot cube (Sculpt owns the subject), the page chrome's
+ * hook (the shell's) and the Floor offset (the look's, one for the scene).
+ * The shadows' bound is Sculpt's, which takes the mannequin in while it is
+ * drawn (ArmatureSlot.shadowBox).
  *
  * Two kinds of entry:
  *   fixed   Armature always wants one value (`want`, read fresh on every
- *           apply): the tap-to-focus off, the fast frames on, and so on.
- *   held    the value belongs to what Armature is doing (the floor under
- *           this figure, the box the stage is fitted to, a light's Casts
- *           shadow box a person ticked): `undo` keeps what the viewer had
- *           and `apply` writes it back. `start` is the value the mode starts
- *           from, written by the first `apply` only.
+ *           apply).
+ *   held    the value belongs to what Armature is doing: `undo` keeps what
+ *           the viewer had and `apply` writes it back. `start` is the value
+ *           the workspace starts from, written by the first `apply` only.
  *
- * Not in the list, on purpose: the look (background, lights' colours, tone
- * and the rest), which is the armature's content and rides in its file, and
- * the figure itself, which the mode adopts and removes.
+ * `apply` puts the list to work (entering Armature) and `undo` puts every
+ * entry back to what the viewer had when Armature last took it over
+ * (leaving it).
  */
 
 export interface ViewerNeedsHooks {
   /** The interaction probe's answer: 'move' while a handle or a gizmo is being dragged, else null. */
   interaction: () => 'move' | null;
-  /** The page chrome flipped (the interface hidden or shown). */
-  chromeChanged: (hidden: boolean) => void;
 }
 
 export interface ViewerNeeds {
@@ -54,50 +62,17 @@ interface Need<T = unknown> {
 }
 
 export function viewerNeeds(viewer: Viewer, hooks: ViewerNeedsHooks): ViewerNeeds {
-  const lighting = viewer.lighting;
-  const casts = (id: 'fill' | 'rim'): boolean => lighting.state().find((l) => l.id === id)?.castShadow ?? true;
-  const chrome = pageChrome();
-
   const needs: Need[] = [
-    // The Floor offset is the look's; it goes back with the floor it belongs to.
-    { id: 'floorOffset', read: () => viewer.getFloorOffset(), write: (v) => viewer.setFloorOffset(v as number) },
-    // The ground fixed where the figure stands (the mode holds it per figure, holdFloor).
+    // The ground fixed where the mannequin stands (the mode holds it per figure, holdFloor).
     { id: 'lockFloor', read: () => viewer.lockedFloor(), write: (v) => viewer.lockFloor(v as number | null), start: () => 0 },
-    // Only the key light casts by default (owner call); the fill's and the rim's boxes may be ticked on.
-    { id: 'fillCasts', read: () => casts('fill'), write: (v) => lighting.setShadow('fill', v as boolean), start: () => false },
-    { id: 'rimCasts', read: () => casts('rim'), write: (v) => lighting.setShadow('rim', v as boolean), start: () => false },
-    { id: 'keyOnlyShadows', read: () => lighting.keyOnlyShadows, write: (v) => (lighting.keyOnlyShadows = v as boolean), want: () => true },
-    // A tap on the figure selects a part, it does not move the camera to it.
-    { id: 'tapToFocus', read: () => viewer.tapToFocus, write: (v) => (viewer.tapToFocus = v as boolean), want: () => false },
-    // The boot placeholder cube is sent away: the figure is the subject.
-    {
-      id: 'sculptVisible',
-      read: () => viewer.isSculptVisible(),
-      write: (v) => viewer.setSculptVisible(v as boolean),
-      want: () => false,
-    },
-    // Anti-aliasing as Preferences says, as in Sculpt (the viewer's own is 4x MSAA).
-    { id: 'antialias', read: () => viewer.getAntialias(), write: (v) => viewer.setAntialias(v as ReturnType<Viewer['getAntialias']>), want: () => settings.get('antialias') },
-    // Fast frames while a pose drag moves the figure (Viewer.updateFrameMode).
-    { id: 'fastFrames', read: () => viewer.fastFrames, write: (v) => (viewer.fastFrames = v as boolean), want: () => true },
+    // The floor shown: Sculpt works with no stage under the model, the mannequin stands on one.
+    { id: 'ground', read: () => viewer.getGround(), write: (v) => viewer.setGround(v as GroundMode), start: () => 'floor' },
+    // The frame meter and the fast frames: a pose drag is a move, as a stroke is in Sculpt.
     {
       id: 'interactionProbe',
       read: () => viewer.interactionProbe,
       write: (v) => (viewer.interactionProbe = v as Viewer['interactionProbe']),
       want: () => () => hooks.interaction(),
-    },
-    {
-      id: 'chromeOnChange',
-      read: () => chrome.onChange,
-      write: (v) => (chrome.onChange = v as typeof chrome.onChange),
-      want: () => (hidden: boolean) => hooks.chromeChanged(hidden),
-    },
-    // The stage (ground, shadow, lights, AO) fitted to the figure's box; the mode fits it itself (frame()).
-    {
-      id: 'subjectFit',
-      read: () => viewer.subjectBounds(),
-      // Without the camera: the view is the person's, and stays where it is.
-      write: (v) => viewer.fitSubject(v as Box3, false),
     },
   ];
 
@@ -113,7 +88,6 @@ export function viewerNeeds(viewer: Viewer, hooks: ViewerNeedsHooks): ViewerNeed
     if (applied) return;
     for (const n of needs) found.set(n.id, n.read());
     for (const n of needs) {
-      // The subject fit has no value to start from: the mode fits the stage itself the first time (frame()).
       if (n.want) n.write(n.want());
       else if (first) {
         if (n.start) n.write(n.start());

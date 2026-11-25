@@ -282,7 +282,7 @@ export const suites = {
     t.ok(await isOpen(page, 'panel--material'), 'the Material tab opens its panel');
     const mat = await sectionsOf(page, 'panel--material');
     t.eq(Object.keys(mat).join(','), 'Display', 'with the Display section alone: a figure has no Surface');
-    t.eq(mat.Display.join(','), 'Mode,Smooth shading,Wireframe,Wire opacity', 'Mode, Smooth shading, Wireframe, Wire opacity');
+    t.eq(mat.Display.join(','), 'Mode,Smooth shading,Wireframe,Wire opacity,Cavity,Strength,Radius', "Mode, Smooth shading, Wireframe, Wire opacity, and the cavity pass of Sculpt's view (no Colour: the mannequin has no paint)");
     await tab(page, 'panel--armature');
     t.ok((await isOpen(page, 'panel--armature')) && (await isOpen(page, 'panel--material')), 'Armature is on the other side: Material stays open');
     await tab(page, 'panel--reference');

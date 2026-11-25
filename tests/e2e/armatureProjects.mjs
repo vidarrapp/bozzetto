@@ -41,7 +41,7 @@ const layout = (page) =>
       renderOpen: render ? !render.classList.contains('panel--collapsed') : false,
       renderTab: tabOf(render),
       renderBody: box(render),
-      hist: [...document.querySelectorAll('.armature-hist .sculpt-histbtn')].map(box),
+      hist: [...document.querySelectorAll('.sculpt-hist .sculpt-histbtn')].map(box),
       topbar: [box(document.querySelector('.bz-strip'))].filter(Boolean),
     };
   });
@@ -115,8 +115,8 @@ export async function armatureHistory(page, base, t) {
   const st = () => page.evaluate(() => ({ ...window.__armature.history(), state: JSON.stringify(window.__armature.state()), symmetry: window.__armature.armature.symmetry, figure: window.__armature.armature.rig.id }));
   const chips = () =>
     page.evaluate(() => ({
-      undo: document.querySelector('.armature-hist [data-hist="undo"]')?.disabled ?? null,
-      redo: document.querySelector('.armature-hist [data-hist="redo"]')?.disabled ?? null,
+      undo: document.querySelector('.sculpt-hist [data-hist="undo"]')?.disabled ?? null,
+      redo: document.querySelector('.sculpt-hist [data-hist="redo"]')?.disabled ?? null,
     }));
   const s0 = await st();
   t.ok(s0.undo === 0 && s0.redo === 0 && s0.limit === 100, `a booted armature has no history, and keeps up to 100 steps (${JSON.stringify({ undo: s0.undo, limit: s0.limit })})`);
@@ -137,11 +137,11 @@ export async function armatureHistory(page, base, t) {
   // The chips do the same.
   c = await chips();
   t.ok(c.undo === false && c.redo === true, `with a step to undo, Undo is enabled and Redo not (${JSON.stringify(c)})`);
-  await page.click('.armature-hist [data-hist="undo"]');
+  await page.click('.sculpt-hist [data-hist="undo"]');
   const byChip = await st();
   c = await chips();
   t.ok(byChip.state === s0.state && c.redo === false && c.undo === true, `the Undo chip undoes it, and Redo lights (${JSON.stringify(c)})`);
-  await page.click('.armature-hist [data-hist="redo"]');
+  await page.click('.sculpt-hist [data-hist="redo"]');
   t.eq((await st()).state, s1.state, 'and the Redo chip redoes it');
 
   // A real drag of a reach ball: many frames, one step.
@@ -558,9 +558,11 @@ export async function armatureProjectFile(page, base, t) {
 }
 
 /**
- * Send to Sculpt keeps the armature on the device, and the gallery's "Your
- * armature" card shows the picture taken as it left: the card's image
- * loads and is not blank, whether a picture was taken before or not.
+ * Remesh to a figure keeps the armature on the device, and the gallery's
+ * "Your armature" card shows the picture taken as it left: the card's image
+ * loads and is not blank, whether a picture was taken before or not. The
+ * figure is made in the page (no page change, no hand-off), and leaving the
+ * page by File > Close pictures the armature as it stands.
  */
 export async function armatureSendThumb(page, base, t) {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -569,11 +571,19 @@ export async function armatureSendThumb(page, base, t) {
     window.__armature.armature.symmetry = false;
     window.__armature.turn('upperarm.L', -60, 0, 10);
   });
-  await Promise.all([
-    page.waitForURL((u) => u.searchParams.get('handoff') === '1', { timeout: 60_000 }),
-    page.evaluate(() => void window.__armature.send(window.__armature.panel.resolution)),
-  ]);
-  await page.waitForFunction(() => !!window.__sculpt || !!document.querySelector('.overlay--error'), null, { timeout: 120_000 }).catch(() => {});
+  await page.evaluate(() => {
+    window.__marker = 'same page';
+  });
+  await page.evaluate(() => (window.__sculpt.figure.settings().resolution = 64));
+  await page.evaluate(() => window.__armature.remesh(64));
+  const made = await page.evaluate(() => ({
+    marker: window.__marker,
+    url: location.search,
+    names: window.__sculpt.session.getMeshes().map((m) => window.__sculpt.session.getMeshName(m)),
+  }));
+  t.ok(made.marker === 'same page' && !/handoff/.test(made.url) && made.names.includes('Figure'), `the figure is made in the page, with no hand-off and no page change (${JSON.stringify(made)})`);
+  // The way out of the page pictures the armature, as it did on the way to Sculpt.
+  await page.evaluate(() => window.__armature.snapshot());
   await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#landing-grid .card--armature', { timeout: 30_000 });
   await page.waitForFunction(
@@ -605,7 +615,7 @@ export async function armatureSendThumb(page, base, t) {
     }
     return { has: true, w: img.naturalWidth, h: img.naturalHeight, spread };
   });
-  t.ok(card.has && card.w > 0 && card.h > 0, `after Send to Sculpt the armature card's picture loads (${JSON.stringify(card)})`);
+  t.ok(card.has && card.w > 0 && card.h > 0, `after Remesh to a figure the armature card's picture loads (${JSON.stringify(card)})`);
   t.ok(card.spread > 8, `and is not blank (tonal spread ${Math.round(card.spread ?? 0)})`);
 }
 

@@ -25,15 +25,16 @@ Your work autosaves on your device. Nothing uploads unless you sign in and save 
 
 <img width="1180" height="820" alt="Bozzetto Screenshot - Armature mode" src="docs/screenshots/armature.jpg" />
 
-A posable figure, for reference or as the start of a sculpt. Pick **Create → New Armature** in the gallery. No sign-in needed.
+A posable mannequin, for reference or as the start of a sculpt, and the first of four workspaces of one page: Armature, Sculpt, Paint and Present, one `Shift`+`1` to `4` away from each other. Pick **Create → New Armature** in the gallery, or go to Armature from any workspace. No sign-in needed. Armature loads the first time you go there, so Sculpt starts as fast as before.
 
 - **Figures.** Four mannequins, male and female in realistic and stylized proportions, plus two block figures. You can also load your own rigged `.glb`.
 - **Pose.** Tap a part to turn its joint, held within the joint's limits. Symmetry (`X`) mirrors the pose to the other side.
-- **Reach.** Drag the ring at a hand or a foot and the limb follows. Pin a ring to hold it in place while the rest of the figure moves. An arrowhead out from each knee and elbow aims the bend, and the one in front of the face makes the head, neck and a little of the back look at it.
+- **Reach.** Drag the ring at a hand or a foot and the limb follows. Pin a ring (a double-click, or hold it) to hold it in place while the rest of the figure moves. An arrowhead out from each knee and elbow aims the bend, and the one in front of the face is a point the head keeps looking at.
 - **Feet on the floor.** Feet stand flat on the floor and stay planted through a crouch or a lean.
 - **Proportions.** Change the size and length of each part.
-- **Send to Sculpt.** Turns the posed figure into one clay object and opens it in Sculpt.
-- **Files.** The figure autosaves and shows as a card in the gallery. **File → Save** writes an `.armature` file.
+- **Remesh to a figure.** Turns the posed mannequin into one clay object in the same scene, in the Armature tab or in Sculpt's Model tab, in one undo step. Pressed again it adds another. A figure is made only by pressing the button, never by changing workspace.
+- **The mannequin elsewhere.** Until you make a figure, the posed mannequin shows in Sculpt, Paint and Present too and is listed in the Scene tab; a stroke on it asks whether to remesh it. After that it shows only in Armature.
+- **Files.** The armature autosaves and shows as a card in the gallery. **File → Save** writes an `.armature` file.
 
 ## Sculpt
 
@@ -117,9 +118,12 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 | Input | Action |
 | --- | --- |
 | Tap a part | Select it and turn its joint |
-| Drag a ball | Reach with that hand, foot or head |
-| Drag a small ball | Aim that knee or elbow |
-| Drag the ball in the hips | Move the whole figure |
+| Drag a ring | Reach with that hand or foot |
+| Double-click or hold a ring | Pin it, or let it go |
+| Drag the arrowhead at a knee or elbow | Aim that knee or elbow |
+| Drag the arrowhead in front of the face | Move the point the head looks at |
+| Tap the box round the hips | Select the hips, to move and turn them |
+| Drag the box round the hips | Move the whole figure |
 | `X` | Symmetry on or off |
 | `W` / `E` / `R` | Move the pelvis / rotate the selection / scale the selected part |
 | `Shift`+`R` | Reset the pose |
@@ -175,10 +179,36 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 ### Unreleased
 
 - **Reference blend modes work on the iPad.** A reference set to Multiply, Screen, Overlay or any other mode now blends with the model in the view. Up to four pictures blend at once, the topmost ones.
+### v0.7.14
+
+- **The rings sit on the hands and feet.** Each ring is centred on its hand or foot, not off to one side.
+- **Knee and elbow targets are points you place.** Drag one anywhere on the screen and the knee or elbow turns toward it. It no longer jumps to the joint when you press it. It stays where you put it on the body, goes with the hips and the chest, and follows a joint you turn by hand.
+- **Armature in the page.** Armature is a workspace of the Sculpt page: no page change between Armature, Sculpt, Paint and Present, and no question on a switch. It shows the same working view as Sculpt with the floor on, and shares Sculpt's Material and Reference panels and the one reference board. **Remesh to a figure** makes the figure from the posed mannequin without leaving the page; until you do, the mannequin shows in every workspace, listed in the Scene tab, and a stroke on it asks once whether to remesh it.
+
+### v0.7.13
+
+- **Scenes with sculpt layers save to the library.** The site's upload check still expected the first layers format and refused a scene with sculpt layers as damaged. It takes both formats now.
+- **The head looks at a point.** The arrowhead in front of the face is now a point in the scene that you drag anywhere on the screen. The head keeps facing it however the figure moves, and it is drawn dimmer when the head cannot turn that far.
+- **Knee and elbow targets follow the pointer.** On a straight leg or arm the target no longer sticks, and the knee or elbow keeps pointing where you left it.
+- **The hips are one box.** The box round the hips is the box the hips show when selected. Tap it to select the hips and turn them with the rings, drag it to move the whole figure.
+- **Pin a hand or foot with a double-click or a long press.** On a ring, a double-click or double-tap, or holding it still for a moment, pins it or lets it go.
+
+### v0.7.12
+
+- **Poly groups and dynamic topology.** While an object has dynamic topology on, its poly groups are kept but cannot be made or edited. A notice says so.
+
+### v0.7.11
+
+- **Asset library.** A window that floats over the view and stays open while you work. Open it with the **Library** button in the Tool panel or **View**, then **Asset library**. Its Tools tab shows every tool, Sculpt and Paint, and a tap takes one in hand. Press and hold a tool there and drag it onto the tool bar to put it at that place. Materials, Lighting and HDRIs come to it in a later version.
+- **Take a tool off the tool bar.** Drag it off the bar and let go, and it is off the bar and still in the library, with an **Undo**. The bar can be emptied, and **View**, then **Reset tool bar**, brings every tool back.
+- **A tool in hand that is not on the bar** shows as one extra tile at the end of the tools, with a dashed line and no number. Drag it onto the bar to keep it.
+- **Ten tools on a bar.** A tool bar holds ten tools, one for each number key. A full bar takes no more and says so.
+- **A tool's menu.** Press and hold a tool on the bar, or in the library, and let go without moving, and a small menu opens with its settings and Add to or Remove from tool bar.
 
 ### v0.7.10
 
 - **A reference behind the model is the right way up.** A picture set to Behind the model was drawn upside down, and moved down when its frame was moved up. It now sits under its frame.
+- **References are not lost when another is removed.** On Safari, a picture kept from an earlier visit could lose its thumbnail when a later one was removed, and be gone after a reload. Pictures are now held apart from the device's storage once they are read back.
 - **One row of tools on a reference.** Opacity is in the row of icons over the picture. The blend mode moved to the picture's card in the Reference panel.
 - **Tapping a body part in Armature.** After a figure was posed or moved, taps on its hands, arms, feet, neck and head often selected nothing. They select the part again.
 - **Ctrl+S saves.** Signed in, it is Save to library, in Sculpt, Paint, Present and Armature. Signed out, it keeps the copy in this browser straight away instead of within the minute.

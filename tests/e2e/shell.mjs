@@ -85,7 +85,7 @@ export const suites = {
     const view = await openMenu(page, 'View');
     t.eq(
       view.items.join('|'),
-      'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools|Reset tool bar|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Paint|Present',
+      'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools|Reset tool bar|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Asset library|Hide interface|Armature|Sculpt|Paint|Present',
       'View: framing, the switches, the five panels, Hide interface and the three workspaces',
     );
     const keys = await page.evaluate(() =>
@@ -428,7 +428,7 @@ export const suites = {
 
   /**
    * The workspace path (Armature > Sculpt > Paint > Present) in each workspace, Present as a
-   * workspace (its bar, its Output tab, Publish only there), and the Armature step's ask.
+   * workspace (its bar, its Output tab, Publish only there), and Armature as a step like the others.
    */
   async shellWorkspaces(page, base, t) {
     const path = () =>
@@ -555,47 +555,34 @@ export const suites = {
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 });
     t.eq(await path(), 'Armature > Sculpt* > Paint > Present', 'Shift+2 leaves too');
 
-    // --- the Armature step asks ------------------------------------------------
+    // --- Armature is a step like the others: nothing asked, no page change, no figure made ------
+    const namesNow = () => page.evaluate(() => window.__sculpt.session.getMeshes().map((m) => window.__sculpt.session.getMeshName(m)).join());
+    const meshes0 = await namesNow();
+    await page.evaluate(() => {
+      window.__marker = 'same page';
+    });
     await step('armature');
-    await page.waitForSelector('.bz-ask');
-    const ask = await page.evaluate(() => ({
-      title: document.querySelector('.bz-ask h2').textContent,
-      primary: [...document.querySelectorAll('.bz-ask .btn--primary')].map((b) => b.textContent),
-      buttons: [...document.querySelectorAll('.bz-ask button')].map((b) => b.textContent),
-    }));
-    t.ok(ask.title === 'Make a new armature for this scene?' && ask.primary.join() === 'New armature' && ask.buttons.join() === 'New armature,Cancel', `Sculpt's Armature step asks "Make a new armature for this scene?", one orange choice and Cancel (${JSON.stringify(ask)})`);
-    t.ok(await page.evaluate(() => document.activeElement?.classList.contains('bz-ask-yes')), 'a safe ask is orange and has the focus on its verb, so Enter confirms');
-    await page.click('.bz-ask-cancel');
-    t.ok(!(await page.evaluate(() => !!document.querySelector('.bz-ask'))) && new URL(page.url()).searchParams.get('sculpt') === '1', 'Cancel closes it and stays in Sculpt');
+    await page.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
+    await page.waitForTimeout(300);
+    t.ok(!(await page.evaluate(() => !!document.querySelector('.bz-ask'))), "the path's Armature step asks nothing");
+    t.eq(await path(), 'Armature* > Sculpt > Paint > Present', 'Armature: the path has Armature current and no step dim');
+    t.ok((await page.evaluate(() => window.__marker)) === 'same page' && new URL(page.url()).searchParams.get('armature') === '1', 'on the same page, whose address now says armature=1');
+    t.eq(await chip(), false, 'Armature: no Publish button in the strip');
+    // Present and Paint are one press away from Armature, as from any workspace.
+    await step('present');
+    await page.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 5000 });
+    t.eq(await path(), 'Armature > Sculpt > Paint > Present*', 'Present is one press from Armature');
     await step('armature');
-    await page.waitForSelector('.bz-ask');
-    await page.keyboard.press('Escape');
-    t.ok(!(await page.evaluate(() => !!document.querySelector('.bz-ask'))), 'Esc says no too');
-    // Yes, twice: first from a scene nothing was done to (a plain send would make
-    // way for the figure there), then from one that has the figure already.
-    for (const round of [1, 2]) {
-      const before = await page.evaluate(() => window.__sculpt.session.getMeshes().length);
-      await step('armature');
-      await page.waitForSelector('.bz-ask');
-      await Promise.all([page.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 }), page.click('.bz-ask-yes')]);
-      await page.waitForTimeout(300);
-      if (round === 1) {
-        t.eq(await path(), 'Armature* > Sculpt > Paint(dim) > Present(dim)', 'Armature: the path has Armature current and Present dim');
-        const dim = await page.evaluate(() => {
-          const el = document.querySelector('.bz-ws__step[data-workspace="present"]');
-          return { color: getComputedStyle(el).color, title: el.title, disabled: el.getAttribute('aria-disabled') };
-        });
-        t.ok(dim.color === 'rgb(125, 125, 125)' && /Go to Sculpt first/.test(dim.title) && dim.disabled === 'true', `Present is dim, with a title saying to go to Sculpt first (${JSON.stringify(dim)})`);
-        await page.click('.bz-ws__step[data-workspace="present"]', { force: true });
-        t.ok((await page.evaluate(() => !!window.__armature)) && new URL(page.url()).searchParams.get('armature') === '1', 'pressing it does nothing');
-        t.eq(await page.evaluate(() => !!document.querySelector('.bz-strip .publish-window__chip')), false, 'Armature: no Publish button in the strip');
-      }
-      // Sculpt step = File > Send to Sculpt: the figure is added to the scene it came from.
-      await Promise.all([page.waitForURL(/sculpt=1/, { timeout: 60_000 }), step('sculpt')]);
-      await page.waitForFunction((n) => !!window.__sculpt && window.__sculpt.session.getMeshes().length === n + 1, before, { timeout: 180_000 });
-      const arrived = await page.evaluate(() => window.__sculpt.session.getMeshes().map((m) => window.__sculpt.session.getMeshName(m)));
-      t.ok(arrived.length === before + 1 && arrived.includes('Sphere') && arrived.filter((n) => /^Figure/.test(n)).length === round, `round ${round}: the Sculpt step sends the figure, added to the scene as a new object, replacing nothing (${arrived.join(', ')})`);
-    }
+    await page.waitForFunction(() => !document.body.classList.contains('presenting') && document.body.classList.contains('armature-ws'), null, { timeout: 5000 });
+    await step('paint');
+    await page.waitForFunction(() => document.body.classList.contains('paint-ws') && !document.body.classList.contains('armature-ws'), null, { timeout: 5000 });
+    await step('armature');
+    await page.waitForFunction(() => document.body.classList.contains('armature-ws') && !document.body.classList.contains('paint-ws'), null, { timeout: 5000 });
+    // Sculpt is a switch, not a send: the scene is as it was and no figure is made.
+    await step('sculpt');
+    await page.waitForFunction(() => !document.body.classList.contains('armature-ws'), null, { timeout: 5000 });
+    t.eq(await path(), 'Armature > Sculpt* > Paint > Present', 'the Sculpt step comes back to Sculpt');
+    t.ok((await namesNow()) === meshes0 && (await page.evaluate(() => window.__marker)) === 'same page', 'with the scene as it was, no figure made, on the same page');
   },
 
   /** One panel a side under folder tabs; the heading; remembered per mode. */

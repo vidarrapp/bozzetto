@@ -19,10 +19,12 @@ import type { Readout } from './ui/TitleStrip';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { pasteFromClipboard } from '../reference/intake';
 import type { Studio, Workspace, WorkspaceId } from '../studio/Studio';
+import type { ArmatureSlot } from '../armature/workspace';
 
 /**
  * Sculpt, Paint and Present as the three workspaces the Sculpt page hands
- * its shell (studio/Studio.ts). They share one controller, as they always
+ * its shell (studio/Studio.ts), and the facade of the fourth, Armature, which
+ * loads its code when it is first entered. They share one controller, as they always
  * have (the closures of mountSculptMode: one input shell, one session, one
  * set of panels): what a person sees is the same page, and what the shell
  * now does is the switching, the menus, the path, the panels each remembers
@@ -65,15 +67,15 @@ export interface SculptPage {
   enterPaint(): void;
   leavePaint(): void;
   leavePresent(to: 'sculpt' | 'paint'): void;
-  /** The Armature step of the path (asks, then changes page). */
-  goArmature(): Promise<void>;
+  /** Armature, the path's first step: loaded on first use, hosted like the others (armature/workspace.ts). */
+  armature: ArmatureSlot;
   /** The autosave, the picture and the look, written. False: not stored. */
   flush(): Promise<boolean>;
   /** Hide the interface (View). */
   hideInterface(): void;
 }
 
-/** The three workspaces, to register with the shell. */
+/** The workspaces, to register with the shell: Sculpt, Paint and Present, and Armature's facade. */
 export function sculptWorkspaces(p: SculptPage): Workspace[] {
   const { session, viewer, input, scenePanel } = p;
   const lighting = viewer.lighting;
@@ -207,6 +209,7 @@ export function sculptWorkspaces(p: SculptPage): Workspace[] {
       toolKeys: true,
       toolBar: id === 'present' ? undefined : { isDefault: () => toolBars.isDefault(id), reset: () => resetToolBar(id) },
       details: true,
+      assetLibrary: { get: () => p.studio.library.isOpen(), toggle: () => p.studio.library.toggle() },
       panels: panelsOf(id),
       moveLight: { get: () => input.isLightArmed(), toggle: () => input.armLight(!input.isLightArmed()) },
       hideInterface: p.hideInterface,
@@ -241,8 +244,8 @@ export function sculptWorkspaces(p: SculptPage): Workspace[] {
     id,
     keyMode,
     menus: () => ({ file: p.fileMenu.items(), edit: editItems(), view: viewItems(id) }),
-    // Armature is the one step the shell does not host: asked, then the page changes.
-    path: () => ({ armature: { action: () => void p.goArmature() } }),
+    // The shell hosts all four steps: each is a `go`.
+    path: () => ({}),
     panels,
     readout,
     history,
@@ -260,9 +263,12 @@ export function sculptWorkspaces(p: SculptPage): Workspace[] {
   // turntable stopped, a clip being saved cancelled), landing on the workspace asked for with
   // that one's panels.
   const leavePresentTo = (to: WorkspaceId): void => {
+    // Armature is entered from Sculpt's own state (it leaves Paint first, as a way through Sculpt would).
     if (to === 'sculpt' || to === 'paint') p.leavePresent(to);
+    else if (to === 'armature') p.leavePresent('sculpt');
   };
   return [
+    p.armature.workspace,
     of('sculpt', 'sculpt', {
       enter: () => p.leavePaint(),
       leave: () => undefined,

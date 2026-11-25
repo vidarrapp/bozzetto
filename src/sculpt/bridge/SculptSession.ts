@@ -716,7 +716,11 @@ export class SculptSession {
     if (listMoved && this.mesh === active) this.activeChanged();
     this.render();
     this.fireLevelChangeIfMoved(before, t0);
+    this.onHistoryStep?.();
   }
+
+  /** An undo or a redo has been taken, the history at its new place (the page's mannequin follows whether a figure stands in the scene). */
+  onHistoryStep: (() => void) | null = null;
 
   /**
    * Forget all history. Mount calls this once the boot scene is assembled:
@@ -1202,9 +1206,20 @@ export class SculptSession {
    * voxel pass (with the remesher's own hole filling) turns them into one
    * closed surface, which is the whole point of the trip.
    */
-  addVoxelised(name: string, positions: Float32Array, indices: Uint32Array, resolution: number): Multimesh {
+  addVoxelised(name: string, positions: Float32Array, indices: Uint32Array, resolution: number, replacing: SculptMesh[] = []): Multimesh {
     // Priced before the weld: a figure too large for this device at this
-    // resolution is refused (RemeshTooLarge) with nothing built.
+    // resolution is refused (RemeshTooLarge) with nothing built. The
+    // remesh resolution the scene had (the Model panel's) is the scene's
+    // again once the figure stands.
+    const before = this.remeshResolution;
+    try {
+      return this.addVoxelisedAt(name, positions, indices, resolution, replacing);
+    } finally {
+      this.remeshResolution = before;
+    }
+  }
+
+  private addVoxelisedAt(name: string, positions: Float32Array, indices: Uint32Array, resolution: number, replacing: SculptMesh[]): Multimesh {
     this.setRemeshResolution(resolution);
     const box = boxOfPositions(positions);
     checkRemesh(box, this.remeshResolution);
@@ -1235,7 +1250,22 @@ export class SculptSession {
     base.init();
     const mesh = new Multimesh(this.remeshAt([base as unknown as SculptMesh], base as unknown as SculptMesh, box));
     this.meshNames.set(mesh as unknown as SculptMesh, this.uniqueMeshName(name));
-    this.addNewMesh(mesh as unknown as SculptMesh);
+    const gone = replacing.filter((m) => this.meshes.includes(m));
+    if (!gone.length) {
+      this.addNewMesh(mesh as unknown as SculptMesh);
+      return mesh;
+    }
+    // A scene with nothing done to it makes way for the figure, in the same undo step.
+    this.sceneEpoch++;
+    this.writeSymmetryAxis(this.getSymmetryAxis(), [mesh as unknown as SculptMesh]);
+    this.stateManager.pushStateAddRemove(mesh, gone);
+    for (const m of gone) {
+      this.meshes.splice(this.meshes.indexOf(m), 1);
+      const sel = this.selectMeshes.indexOf(m);
+      if (sel >= 0) this.selectMeshes.splice(sel, 1);
+    }
+    this.meshes.push(mesh as unknown as SculptMesh);
+    this.setMesh(mesh as unknown as SculptMesh);
     return mesh;
   }
 
@@ -1453,10 +1483,11 @@ export class SculptSession {
    * Group by UV islands: the file's faces joined where they share a
    * texture edge (objSource.ts uvIslands), each level-0 face in its file
    * face's island and every face above in its ancestor's. One undo step.
-   * Returns the number of groups, 0 when the object has no UVs to read.
+   * Returns the number of groups, 0 when the object has no UVs to read or
+   * its groups are locked (dynamic topology on).
    */
   groupByUVIslands(mesh: SculptMesh | null = this.mesh): number {
-    if (!mesh || !this.hasUVIslands(mesh)) return 0;
+    if (!mesh || !this.groups.editable(mesh) || !this.hasUVIslands(mesh)) return 0;
     const src = this.sources.get(mesh)!.source;
     const islands = uvIslands(src);
     if (!islands) return 0;
