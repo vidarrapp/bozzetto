@@ -26,6 +26,14 @@ export interface MaterialPanelOptions {
   surface?: { hasObject: () => boolean; materialName: () => string };
 }
 
+/** Whose values the Surface section shows when it is not the active object's: the scene's armature (its mannequin). */
+export interface SurfaceSubject {
+  /** What the section says the material belongs to. */
+  name: string;
+  values(): { albedo: string; roughness: number; metalness: number };
+  set(patch: Partial<{ albedo: string; roughness: number; metalness: number }>): void;
+}
+
 /**
  * The Material panel (owner call): everything about how the model's
  * surface looks, on the left edge after Scene and Model. Two sections.
@@ -54,6 +62,12 @@ export class MaterialPanel extends SidePanel {
   /** Present puts the editing away, and Armature has no object to speak for: either hides the Surface section. */
   private presenting = false;
   private surfaceWanted = true;
+  /** The mannequin's material, while the section is its (set by the page; null: the active object's). */
+  private subject: (() => SurfaceSubject | null) | null = null;
+  setSubject(subject: (() => SurfaceSubject | null) | null): void {
+    this.subject = subject;
+    this.refreshSurface();
+  }
   private readonly onPresent = (e: Event): void => {
     // Sculpt's Present puts the editing away; the object's own values with it.
     this.presenting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
@@ -71,7 +85,7 @@ export class MaterialPanel extends SidePanel {
   }
 
   private paintSurface(): void {
-    if (this.surfaceSection) this.surfaceSection.hidden = this.presenting || !this.surfaceWanted;
+    if (this.surfaceSection) this.surfaceSection.hidden = this.presenting || !(this.surfaceWanted || this.subject?.());
   }
 
   constructor(
@@ -111,7 +125,11 @@ export class MaterialPanel extends SidePanel {
     sec.appendChild(rows);
     // The shared HSV picker, owned for the panel's life (the popover is
     // body-mounted; disposing mid-drag closes it under the pointer).
-    this.albedoPicker = colorPicker(state.albedo, (hex) => mats.setAlbedo(hex));
+    this.albedoPicker = colorPicker(state.albedo, (hex) => {
+      const who = this.subject?.();
+      if (who) who.set({ albedo: hex });
+      else mats.setAlbedo(hex);
+    });
     const albedoRow = document.createElement('label');
     albedoRow.className = 'label-row';
     const albedoName = document.createElement('span');
@@ -127,12 +145,20 @@ export class MaterialPanel extends SidePanel {
     this.nameEl.className = 'readout readout--name';
     nameRow.append(nameLabel, this.nameEl);
     rows.append(nameRow, albedoRow);
-    const rough = compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) => mats.setRoughness(v), {
+    const rough = compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) => {
+      const who = this.subject?.();
+      if (who) who.set({ roughness: v });
+      else mats.setRoughness(v);
+    }, {
       limits: FRACTION,
     });
     this.roughInput = rough.querySelector('input') as HTMLInputElement;
     rows.appendChild(rough);
-    const metal = compactRange('Metalness', 0, 1, 0.01, state.metalness, (v) => mats.setMetalness(v), {
+    const metal = compactRange('Metalness', 0, 1, 0.01, state.metalness, (v) => {
+      const who = this.subject?.();
+      if (who) who.set({ metalness: v });
+      else mats.setMetalness(v);
+    }, {
       limits: FRACTION,
     });
     this.metalInput = metal.querySelector('input') as HTMLInputElement;
@@ -143,12 +169,15 @@ export class MaterialPanel extends SidePanel {
   /** Follow the selection (Sculpt calls this when the active material moves). */
   refreshSurface(): void {
     if (!this.surfaceRows || !this.surfaceNone || !this.roughInput || !this.metalInput) return;
-    const has = this.hasObject ? this.hasObject() : true;
+    const who = this.subject?.() ?? null;
+    const has = who ? true : this.hasObject ? this.hasObject() : true;
     this.surfaceRows.hidden = !has;
     this.surfaceNone.hidden = has;
+    this.paintSurface();
     if (!has) this.albedoPicker?.close();
-    if (this.nameEl && this.materialName && has) this.nameEl.textContent = this.materialName();
-    const state = this.viewer.materials.getMaterialState();
+    if (this.nameEl && who) this.nameEl.textContent = who.name;
+    else if (this.nameEl && this.materialName && has) this.nameEl.textContent = this.materialName();
+    const state = who ? who.values() : this.viewer.materials.getMaterialState();
     // While the popover is up, the picker is the source of truth; echoes of
     // its own drag must not fight the thumb being held.
     if (this.albedoPicker && !this.albedoPicker.isOpen()) this.albedoPicker.set(state.albedo);

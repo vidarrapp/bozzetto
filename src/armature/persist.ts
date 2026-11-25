@@ -60,6 +60,12 @@ export interface ArmatureFile {
    * and a send consumes it.
    */
   forScene?: boolean;
+  /**
+   * The mannequin as a thing in the scene: hidden by its eye on the Scene
+   * row, and its own material (the Material tab's Surface section). Absent
+   * in a record from before: shown, with the scene's default material.
+   */
+  mannequin?: { hidden?: boolean; material?: { albedo: string; roughness: number; metalness: number } };
 }
 
 /**

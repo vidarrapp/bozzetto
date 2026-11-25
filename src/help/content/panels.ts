@@ -155,6 +155,7 @@ export const PANELS: Topic[] = [
       p('Sculpt only. The look of the active object. Each object has its own, and a change is one undo step. With no object selected, the section says so.'),
       options(
         ['Albedo', 'The base colour. Click the swatch for the colour picker.'],
+        ['Whose material', 'The Surface section is the active object\'s. It is the armature\'s mannequin\'s (the Material row says Armature) in the Armature workspace, in Sculpt and Paint when no object is selected, and after a tap on the armature\'s row in the Scene tab.'],
         ['Roughness', 'From 0 to 1. Low is glossy and high is matte.'],
         ['Metalness', 'From 0 to 1.'],
       ),

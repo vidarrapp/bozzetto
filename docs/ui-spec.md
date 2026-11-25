@@ -465,6 +465,21 @@ document itself scrolls, and there is no CSS switch to turn that off.
 - The desktop version may later let a side show both panels at once on a
   tall display. It is not part of this spec.
 
+**The armature in the scene (0.7.17).** Its Scene row is named for the
+mannequin: the label the Armature tab's Preset select shows (a model from a
+file: the file's name without its extension), never the scene's name. The row
+has the object row's eye (same icon, states and hit size) before the bone
+mark, and no lock, material select or delete. The eye hides the mannequin in
+Sculpt, Paint and Present (no shadow, no press, out of F, A and the stage
+fit); in Armature it always shows and the eye reads as on. A tap on the row
+marks it as an object's row is marked and takes the mark off the objects. The
+mannequin has its own material (Albedo, Roughness, Metalness; default the
+scene's first material). The Material tab's Surface section is the mannequin's
+in Armature, in Sculpt and Paint with no object selected, and while the row is
+the last thing tapped; the Material row then reads Armature. The eye and the
+material are kept in the armature's record on the device (`mannequin`); an old
+record has neither. Remesh to a figure assigns the figure that material.
+
 ### The Reference panel
 
 Pictures to look at while you work (`src/reference/`), on the right after

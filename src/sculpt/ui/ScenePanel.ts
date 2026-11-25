@@ -561,6 +561,7 @@ export class ScenePanel extends SidePanel {
    * row it lands on, and the gizmo and the highlights follow it alike.
    */
   private pick(mesh: SculptMesh, shift: boolean, ctrl: boolean): void {
+    this.armatureActions?.deselect();
     const list = this.session.getMeshes();
     if (shift) {
       const from = list.indexOf(this.session.getMesh() as SculptMesh);
@@ -638,10 +639,14 @@ export class ScenePanel extends SidePanel {
 
   /**
    * The scene's armature, while its mannequin stands in the scene as it is posed and no figure has
-   * been made from it: a row of its own, marked by the armature's icon, with none of an object's
-   * controls (no eye, lock, material or delete; it takes no strokes). Null: no row.
+   * been made from it: a row of its own, marked by the armature's icon, with an eye (shown as on in
+   * the Armature workspace, where the mannequin always shows) and none of an object's other controls
+   * (no lock, material or delete; it takes no strokes). `name` is the mannequin's own, never the
+   * scene's. Null: no row.
    */
-  armatureRow: (() => { name: string } | null) | null = null;
+  armatureRow: (() => { name: string; shown: boolean; selected: boolean } | null) | null = null;
+  /** What the armature's row does: the eye, and a tap on the row (it takes the selection's mark off the objects; a tap on an object gives it back). */
+  armatureActions: { toggle(): void; select(): void; deselect(): void } | null = null;
 
   /** Rebuild the object rows from the live scene (list/selection changes). */
   refresh(): void {
@@ -657,6 +662,7 @@ export class ScenePanel extends SidePanel {
     // The object under rename can vanish mid-edit (undo, delete elsewhere);
     // a stale flag would wait forever for an input that no longer exists.
     if (this.renaming && !this.session.getMeshes().includes(this.renaming)) this.renaming = null;
+    const armature = this.armatureRow?.() ?? null;
     this.listEl.replaceChildren(
       ...this.session.getMeshes().map((mesh) => {
         const row = div('outliner__row');
@@ -664,7 +670,9 @@ export class ScenePanel extends SidePanel {
         // The padlock is the user's: a quad remesh's own hold while it
         // runs (SculptSession.setQuadBusy) does not show on it.
         const locked = this.session.isPadlocked(mesh);
-        if (mesh === active) row.classList.add('outliner__row--active');
+        if (armature?.selected) {
+          // The armature's row holds the mark.
+        } else if (mesh === active) row.classList.add('outliner__row--active');
         // The Select tool's selection, beside the active object's row.
         else if (selected.has(mesh)) row.classList.add('outliner__row--selected');
         if (!visible) row.classList.add('outliner__row--hidden');
@@ -719,18 +727,22 @@ export class ScenePanel extends SidePanel {
         return row;
       }),
     );
-    const armature = this.armatureRow?.();
     if (armature) {
       const row = div('outliner__row outliner__row--armature');
       row.dataset.role = 'armature-row';
+      if (armature.selected) row.classList.add('outliner__row--active');
+      if (!armature.shown) row.classList.add('outliner__row--hidden');
       row.title = 'The armature: its posed mannequin, which cannot be sculpted. Make a figure from it in the Armature tab or the Model tab.';
+      const eye = this.iconBtn(armature.shown ? 'fi-ss-eye' : 'fi-ss-eye-crossed', armature.shown ? 'Hide' : 'Show', () => this.armatureActions?.toggle());
+      eye.dataset.role = 'armature-eye';
       const mark = document.createElement('i');
       mark.className = 'fi fi-ss-bone outliner__mark';
       mark.setAttribute('aria-hidden', 'true');
       const name = document.createElement('span');
       name.className = 'outliner__name';
       name.textContent = armature.name;
-      row.append(mark, name);
+      row.append(eye, mark, name);
+      row.addEventListener('click', () => this.armatureActions?.select());
       this.listEl.appendChild(row);
     }
     this.refreshMaterial();

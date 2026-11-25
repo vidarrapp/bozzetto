@@ -25,6 +25,7 @@ import { ARROW_TIP, HandleKit, RING_RADIUS, type HandleShape, type HandleState, 
 import { onCentimetres } from './units';
 import { UNITS } from '../viewer/units';
 import { fetchFigure, figureById, tuneRig } from './figures';
+import { RIG_PRESETS } from './rig';
 import { rigFromGLTF } from './glbRig';
 import { getGLTFLoader } from '../loaders/gltf';
 import { ArmaturePanel, prettyName } from './ArmaturePanel';
@@ -99,6 +100,14 @@ function readModel(bytes: ArrayBuffer): ReturnType<typeof rigFromGLTF> {
   return held;
 }
 
+/** A saved mannequin material, or null when the record has none (or none that reads). */
+function readSurface(v: unknown): MannequinSurface | null {
+  const m = v as Partial<MannequinSurface> | null | undefined;
+  if (!m || typeof m.albedo !== 'string' || !/^#[0-9a-f]{6}$/i.test(m.albedo)) return null;
+  const unit = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0);
+  return { albedo: m.albedo.toLowerCase(), roughness: unit(m.roughness), metalness: unit(m.metalness) };
+}
+
 /** Parse a .glb and derive its rig, before anything is built from it. */
 async function parseModel(bytes: ArrayBuffer): Promise<ReturnType<typeof rigFromGLTF>> {
   const gltf = await getGLTFLoader().parseAsync(bytes.slice(0), '');
@@ -139,6 +148,9 @@ export interface SuspendOptions {
  * nothing, shows nothing of its own and has put the viewer back as it found
  * it (viewerNeeds.ts); resumed, it has everything as it left it.
  */
+/** The values of an object's material, for the mannequin. */
+export type MannequinSurface = { albedo: string; roughness: number; metalness: number };
+
 export type ArmatureMount = (() => void) & {
   /** The workspace the page's shell hosts (registered by the lazy loader, armature/workspace.ts). */
   workspace: Workspace;
@@ -158,6 +170,14 @@ export type ArmatureMount = (() => void) & {
   showOutside(shown: boolean): void;
   /** The armature's name, as the Scene tab lists it. */
   armatureName(): string;
+  /** What the mannequin is called: the label its Preset select shows (a model from a file: the file's name without its extension). */
+  label(): string;
+  /** The Scene row's eye: false while the mannequin is hidden outside Armature (in Armature it always shows). */
+  shown(): boolean;
+  setShown(shown: boolean): void;
+  /** The mannequin's own material, as the Material tab's Surface section shows it. */
+  surface(): MannequinSurface;
+  setSurface(patch: Partial<MannequinSurface>): void;
   /** The camera onto the figure. */
   frame(): void;
   /** What the Figure section of the Armature tab says, read again. */
@@ -366,7 +386,26 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
   if (!restored) armature.pinFeet();
   if (bootSymmetry !== null) armature.symmetry = bootSymmetry;
   viewer.adoptMesh(armature.mesh);
-  viewer.setSculptAlbedo(armature.mesh, host.mannequinAlbedo());
+  // The scene row's eye, and the mannequin's own material (null: the scene's default, as it stands when the figure is built).
+  let eyeOff = saved?.mannequin?.hidden === true;
+  let ownSurface: MannequinSurface | null = readSurface(saved?.mannequin?.material);
+  const surface = (): MannequinSurface => ownSurface ?? host.mannequinSurface();
+  /** Give the figure's mesh the material's values: the albedo is the mesh's, roughness and metalness are written across its vertices. */
+  const paintSurface = (): void => {
+    const m = surface();
+    viewer.setSculptAlbedo(armature.mesh, m.albedo);
+    const attr = armature.mesh.geometry.getAttribute('materialsPBR');
+    if (attr) {
+      const a = attr.array as Float32Array;
+      for (let i = 0; i + 2 < a.length; i += 3) {
+        a[i] = m.roughness;
+        a[i + 1] = m.metalness;
+      }
+      attr.needsUpdate = true;
+    }
+    viewer.invalidate();
+  };
+  paintSurface();
   // The look is the scene's, one for the page (Sculpt's): an armature opened by itself, as a
   // project, a template or a file, brings the look it was saved under, as opening a scene does;
   // the armature left in progress on this device does not put its own over the scene's.
@@ -1652,6 +1691,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     ...(link && syncedAt === edits ? { synced: true } : {}),
     symmetry: armature.symmetry,
     units: UNITS,
+    ...(eyeOff || ownSurface ? { mannequin: { ...(eyeOff ? { hidden: true } : {}), ...(ownSurface ? { material: { ...ownSurface } } : {}) } } : {}),
   });
   /** The library project Save to library writes to (project.ts), kept in the autosave record. */
   let link: ArmatureLink | null = bootLink;
@@ -1790,13 +1830,14 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
       armature.placeLook();
     }
     viewer.adoptMesh(armature.mesh);
-    viewer.setSculptAlbedo(armature.mesh, host.mannequinAlbedo());
-    if (suspended) armature.mesh.visible = figureShown;
+    paintSurface();
+    if (suspended) armature.mesh.visible = figureShown && !eyeOff;
     measureSkinPad();
     buildHandles();
     syncHandles();
     panel.syncFigure();
     commit();
+    host.changed();
   };
   /**
    * Open a file: an .armature (file.ts), or a library project's
@@ -2422,7 +2463,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
   const suspendOwn = (opts: SuspendOptions = {}, quiet = false): void => {
     figureShown = opts.figure === 'show';
     if (suspended) {
-      armature.mesh.visible = figureShown;
+      armature.mesh.visible = figureShown && !eyeOff;
       viewer.invalidate();
       return;
     }
@@ -2454,7 +2495,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     for (const sub of subscriptions) sub.stop();
     suspended = true;
     for (const [o] of overlayShown()) o.visible = false;
-    armature.mesh.visible = figureShown;
+    armature.mesh.visible = figureShown && !eyeOff;
     hiddenDom.hide(ownedDom.filter((el) => el.isConnected));
     needs.undo();
     if (!quiet) announce('sculpt');
@@ -2493,7 +2534,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
   const showOutside = (shown: boolean): void => {
     figureShown = shown;
     if (!suspended) return;
-    armature.mesh.visible = shown;
+    armature.mesh.visible = shown && !eyeOff;
     viewer.invalidate();
   };
   /**
@@ -2810,10 +2851,31 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     isSuspended: () => suspended,
     bake: () => armature.bakeWorld(),
     mesh: () => armature.mesh,
-    outside: () => (suspended && figureShown ? armature.mesh : null),
+    outside: () => (suspended && figureShown && !eyeOff ? armature.mesh : null),
     shadowBox,
     showOutside,
     armatureName: () => link?.title ?? name,
+    label: () => {
+      // What the Preset select shows for this figure.
+      const id = armature.rig.id;
+      const listed = figureById(id) ?? RIG_PRESETS.find((p) => p.id === id);
+      if (listed) return listed.label;
+      return (id === IMPORTED && model ? model.name.replace(/\.[^./\\]*$/, '') : '') || armature.rig.label;
+    },
+    shown: () => !eyeOff,
+    setShown: (shown: boolean) => {
+      if (eyeOff === !shown) return;
+      eyeOff = !shown;
+      if (suspended) armature.mesh.visible = figureShown && !eyeOff;
+      viewer.invalidate();
+      scheduleSave();
+    },
+    surface,
+    setSurface: (patch: Partial<MannequinSurface>) => {
+      ownSurface = { ...surface(), ...readSurface({ ...surface(), ...patch }) };
+      paintSurface();
+      scheduleSave();
+    },
     frame,
     figureChanged: () => panel.setFigureMade(host.figureMade()),
   });

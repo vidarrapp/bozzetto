@@ -301,7 +301,7 @@ export const suites = {
       if (!r) return null;
       return { icon: !!r.querySelector('i.fi-ss-bone'), buttons: r.querySelectorAll('button, select, input').length, name: r.querySelector('.outliner__name')?.textContent, rows: document.querySelectorAll('.panel--scene .outliner__row').length };
     });
-    t.ok(row && row.icon && row.buttons === 0 && row.name === (await page.evaluate(() => window.__sculpt.armature.name())), `the Scene tab lists the armature: its name, its mark, and no eye, lock, material or delete (${show(row)})`);
+    t.ok(row && row.icon && row.buttons === 1 && row.name === (await page.evaluate(() => window.__sculpt.armature.label())), `the Scene tab lists the armature: the mannequin's name, its mark and an eye, and no lock, material or delete (${show(row)})`);
     await page.screenshot({ path: `${SHOTS}/sculpt-mannequin-scene-row.png` });
     await setPanel(page, 'model', true);
     await page.waitForTimeout(300);

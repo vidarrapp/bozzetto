@@ -1268,12 +1268,12 @@ body.bz-shell.armature-ws:not(.presenting) :is(.panel--scene, .panel--model, .pa
 
 /* The scene's armature in the Scene tab: its mark where an object has its eye and padlock, and none of their controls. */
 .outliner__row--armature {
-  cursor: default;
+  cursor: pointer;
 }
 
 .outliner__row--armature .outliner__mark {
   flex: none;
-  width: 54px;
+  width: 27px;
   padding-left: 7px;
   font-size: 12px;
   line-height: 1;

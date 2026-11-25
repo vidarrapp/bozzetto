@@ -281,7 +281,8 @@ export const suites = {
     await tab(page, 'panel--material');
     t.ok(await isOpen(page, 'panel--material'), 'the Material tab opens its panel');
     const mat = await sectionsOf(page, 'panel--material');
-    t.eq(Object.keys(mat).join(','), 'Display', 'with the Display section alone: a figure has no Surface');
+    t.eq(Object.keys(mat).join(','), 'Surface,Display', "with the Surface section (the mannequin's own material) and Display");
+    t.eq(mat.Surface.join(','), 'Material,Albedo,Roughness,Metalness', "Surface: the mannequin's Material, Albedo, Roughness, Metalness");
     t.eq(mat.Display.join(','), 'Mode,Smooth shading,Wireframe,Wire opacity,Cavity,Strength,Radius', "Mode, Smooth shading, Wireframe, Wire opacity, and the cavity pass of Sculpt's view (no Colour: the mannequin has no paint)");
     await tab(page, 'panel--armature');
     t.ok((await isOpen(page, 'panel--armature')) && (await isOpen(page, 'panel--material')), 'Armature is on the other side: Material stays open');
