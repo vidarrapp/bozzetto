@@ -374,3 +374,81 @@ body.chrome-hidden .lib-window {
   z-index: 41;
   min-width: 160px;
 }
+
+/* --- the picture tabs (Models, Materials, Lighting, HDRIs): tiles with a picture and a name --- */
+.lib-group__head--sub {
+  margin-top: 6px;
+  color: var(--bz-text-3);
+}
+
+.lib-group__aside {
+  margin-left: 8px;
+  color: var(--bz-text-hint);
+}
+
+/* Nothing is lifted from these tiles, so a finger that drags on one scrolls the window; only a tap uses it. */
+.lib-tile--pic {
+  min-height: 76px;
+  touch-action: pan-y;
+  justify-content: flex-start;
+  gap: 3px;
+  padding: 6px 4px 5px;
+}
+
+.lib-tile--pic img {
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* A tile with no picture (a primitive, None) is its name, centred. */
+.lib-tile--pic:not(:has(img)) {
+  justify-content: center;
+  min-height: 64px;
+}
+
+.lib-tile__note {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--bz-text-3);
+  font: 400 11px/12px var(--bz-font);
+  pointer-events: none;
+}
+
+/* What is in use, as the tool in hand is on the bar. */
+.lib-tile--pic.is-use,
+.lib-tile--pic.is-use:hover {
+  background: var(--bz-orange);
+  color: var(--bz-on-accent);
+}
+
+.lib-tile--pic.is-use .lib-tile__note {
+  color: var(--bz-on-accent);
+}
+
+/* A file coming: a quiet mark in the corner (nothing moves) and the tile dimmed. */
+.lib-tile__busy {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  font: 400 11px/1 var(--bz-font-mono);
+  color: var(--bz-text-2);
+  pointer-events: none;
+}
+
+.lib-tile--pic.is-loading {
+  opacity: 0.6;
+}
+
+.lib-tile--pic.is-loading .lib-tile__busy::before {
+  content: '\2026';
+}
+
+.lib-pics__tail {
+  margin-top: 12px;
+}

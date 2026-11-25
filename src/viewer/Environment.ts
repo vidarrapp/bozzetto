@@ -4,6 +4,7 @@ import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { getTheme, onThemeChange, THEME_BG } from '../ui/theme';
 import { loadViaBlob, type AssetSource } from './AssetSource';
 import { hexColor } from './color';
+import { ENVIRONMENT_ASSETS } from '../library/assets';
 
 export type BackgroundMode = 'theme' | 'color' | 'hdri';
 /**
@@ -69,15 +70,8 @@ export const DEFAULT_BG_BRIGHTNESS = 1;
  */
 export const ENV_STATE_VERSION = 2;
 
-/** Available HDRIs (public/assets/env). Missing files just fail to load. */
-export const ENVIRONMENTS: EnvConfig[] = [
-  { id: 'studio-neutral', label: 'Neutral studio', file: '/assets/env/studio-neutral.hdr' },
-  { id: 'studio-photo', label: 'Photo studio', file: '/assets/env/studio-photo.hdr' },
-  { id: 'overcast', label: 'Soft overcast', file: '/assets/env/overcast.hdr' },
-  { id: 'interior-warm', label: 'Warm interior', file: '/assets/env/interior-warm.hdr' },
-  { id: 'garage', label: 'Garage', file: '/assets/env/garage.hdr' },
-  { id: 'plaza', label: 'Outdoor plaza', file: '/assets/env/plaza.hdr' },
-];
+/** Available HDRIs: the Asset library's list (library/assets.ts). Missing files just fail to load. */
+export const ENVIRONMENTS: EnvConfig[] = ENVIRONMENT_ASSETS.map((e) => ({ id: e.id, label: e.label, file: e.files[0].url }));
 
 /**
  * Image-based lighting + scene background. Loads an equirectangular .hdr,
@@ -183,6 +177,42 @@ export class Environment {
     } catch (err) {
       console.error(`Environment "${id}" failed to load:`, err);
       this.scene.environment = null;
+    } finally {
+      if (myToken === this.token) this.onLoading?.(false);
+    }
+  }
+
+  /**
+   * Set the environment as the Asset library does: the file is fetched first and the one in place
+   * stays until it has arrived, so a failed fetch leaves the environment as it was ('failed').
+   * 'superseded': a newer choice took over while this one came.
+   */
+  async useEnvironment(id: string | null): Promise<'done' | 'failed' | 'superseded'> {
+    const cfg = id ? ENVIRONMENTS.find((e) => e.id === id) : undefined;
+    if (!cfg) {
+      await this.setEnvironment(null);
+      return 'done';
+    }
+    const myToken = ++this.token;
+    this.onLoading?.(true);
+    try {
+      const equirect = await loadViaBlob(this.source, cfg.file, 'image/vnd.radiance', (url) => this.loader.loadAsync(url));
+      if (myToken !== this.token) {
+        equirect.dispose();
+        return 'superseded';
+      }
+      this.disposeMaps();
+      this.currentId = cfg.id;
+      equirect.mapping = EquirectangularReflectionMapping;
+      this.equirect = equirect;
+      this.envMap = this.pmrem.fromEquirectangular(equirect).texture;
+      this.scene.environment = this.envMap;
+      this.updateBackground();
+      this.onChange?.();
+      return 'done';
+    } catch (err) {
+      console.error(`Environment "${id}" failed to load:`, err);
+      return myToken === this.token ? 'failed' : 'superseded';
     } finally {
       if (myToken === this.token) this.onLoading?.(false);
     }

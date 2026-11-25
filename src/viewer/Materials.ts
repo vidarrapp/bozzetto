@@ -4,6 +4,7 @@ import { attribute, float, materialColor, mix, uniform, userData, varying, vec3 
 import type { AssetSource } from './AssetSource';
 import { ASSET_VERSION } from './assetVersion';
 import { hexColor } from './color';
+import { MATCAP_ASSETS } from '../library/assets';
 
 export interface MaterialModeInfo {
   id: string;
@@ -47,31 +48,15 @@ export interface MaterialState {
 export type ColourSource = 'both' | 'albedo' | 'paint';
 export const isColourSource = (v: unknown): v is ColourSource => v === 'both' || v === 'albedo' || v === 'paint';
 
-interface MatcapConfig {
-  id: string;
-  label: string;
-  url: string;
-}
-
 const DEFAULT_ALBEDO = '#b9b1a8';
 
 /** Fully masked vertices drop to this brightness (sculpt mask tint, WS3;
     live-adjustable from the WS4 palette through a uniform, no recompile). */
 const MASK_DARKEN_DEFAULT = 0.45;
 
-// The project's matcaps: single-sphere PNGs loaded as-is. Each also has a
-// 64px thumbnail at /assets/matcaps/thumbs/<id>.png for the picker grid.
-const MATCAPS: MatcapConfig[] = [
-  // The VR pack (owner-supplied, Blender format) is the whole set now: the
-  // four house matcaps it replaced were retired as no longer valid. The
-  // source PNGs carry a transparent surround, flattened at import time by
-  // radial edge bleed (scratchpad matcap-flatten.py) so a grazing normal
-  // never samples white; labels keep the pack's own numbering.
-  ...Array.from({ length: 10 }, (_, i) => {
-    const n = String(i + 1).padStart(2, '0');
-    return { id: `vr${n}`, label: `VR${n}`, url: `/assets/matcaps/vr${n}.png` };
-  }),
-];
+// The project's matcaps are the Asset library's list (library/assets.ts): single-sphere PNGs loaded as-is, each with
+// a 64px thumbnail for the pickers. The source PNGs carry a transparent surround, flattened at import time by radial
+// edge bleed so a grazing normal never samples white; labels keep the pack's own numbering.
 
 /** A matcap's request URL, version-tagged so an updated PNG isn't served stale. */
 function matcapUrl(url: string): string {
@@ -99,7 +84,7 @@ export class Materials {
   constructor(source: AssetSource) {
     // A matcap arriving changes the picture after the fact, with nothing
     // else to say so: a still frame smoothed before it would hold the old one.
-    this.matcapTextures = MATCAPS.map((m) => loadMatcap(source, matcapUrl(m.url), () => this.onChange?.()));
+    this.matcapTextures = MATCAP_ASSETS.map((m) => loadMatcap(source, matcapUrl(m.url), () => this.onChange?.()));
 
     // Lit PBR — the default mode and the reason lighting exists. polygonOffset
     // pushes the surface back a touch so the wireframe overlay reads on top.
@@ -454,7 +439,7 @@ export class Materials {
   }
 
   matcaps(): MatcapInfo[] {
-    return MATCAPS.map((m) => ({ id: m.id, label: m.label }));
+    return MATCAP_ASSETS.map((m) => ({ id: m.id, label: m.label }));
   }
 
   setMatcapIndex(index: number): void {

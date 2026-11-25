@@ -12,13 +12,13 @@ import { deviceStore } from '../ui/deviceStorage';
  * last tab on this device. The Studio shell owns the one of a page, so every
  * workspace can open it.
  *
- * Four tabs, always there. What a tab shows is a view registered for it
+ * Five tabs, always there. What a tab shows is a view registered for it
  * (`register`): the window draws the frame (the tabs, where from, search,
  * the foot) and the tab's body is the view's, built on first need. A tab
  * with no view says, quietly, that it comes in a later version.
  */
 
-export type LibraryTabId = 'tools' | 'materials' | 'lighting' | 'hdris';
+export type LibraryTabId = 'tools' | 'models' | 'materials' | 'lighting' | 'hdris';
 /** Where an asset comes from. The Community comes with a later step. */
 export type LibraryWhere = 'bozzetto' | 'mine';
 
@@ -42,6 +42,7 @@ export interface LibraryView {
 
 const TABS: ReadonlyArray<{ id: LibraryTabId; label: string; later: string }> = [
   { id: 'tools', label: 'Tools', later: 'Tools come to the library in a later version.' },
+  { id: 'models', label: 'Models', later: 'Models come to the library in a later version.' },
   { id: 'materials', label: 'Materials', later: 'Materials come to the library in a later version.' },
   { id: 'lighting', label: 'Lighting', later: 'Light rigs come to the library in a later version.' },
   { id: 'hdris', label: 'HDRIs', later: 'HDRIs come to the library in a later version.' },

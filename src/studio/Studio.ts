@@ -11,6 +11,7 @@ import { ReferencePanel } from '../reference/ReferencePanel';
 import { ReferenceView } from '../reference/ReferenceView';
 import { ArrangeButton } from '../reference/ArrangeButton';
 import { AssetLibrary } from '../library/AssetLibrary';
+import { HdrisView, LightingView, MaterialsView } from '../library/TileViews';
 import { installIntake } from '../reference/intake';
 import { TitleStrip, type PathStep, type Readout, type Workspace as WorkspaceId } from '../sculpt/ui/TitleStrip';
 import { TopMenu, type MenuItem } from '../sculpt/ui/TopMenu';
@@ -174,6 +175,11 @@ export class Studio {
     this.reference = { board, panel, view, arrange };
     this.material = new MaterialPanel(viewer, opts.material);
     this.library = new AssetLibrary();
+    // The look tabs read the viewer: the matcaps, the light rigs and the environments, as the panels' pickers do.
+    const look = { viewer, workspace: (): string | null => this.now() };
+    this.library.register('materials', new MaterialsView(look));
+    this.library.register('lighting', new LightingView(look));
+    this.library.register('hdris', new HdrisView(look));
     this.ownDom = added();
     this.listen();
   }
