@@ -1076,9 +1076,8 @@ export const suites = {
     const create = await page.evaluate(() => {
       const m = document.querySelector('.outliner__menu--create');
       const out = [];
-      for (const b of m.querySelectorAll('.outliner__menu-item[data-kind], .outliner__tile')) {
-        if (b.dataset.kind) out.push({ id: b.dataset.kind, label: b.childNodes[0].textContent });
-        else out.push({ id: b.dataset.armature ?? b.dataset.id, label: b.querySelector('.outliner__tile-name').textContent });
+      for (const b of m.querySelectorAll('.outliner__tile')) {
+        out.push({ id: b.dataset.kind ?? b.dataset.armature ?? b.dataset.id, label: b.querySelector('.outliner__tile-name').textContent });
       }
       return out;
     });
@@ -1090,7 +1089,7 @@ export const suites = {
       'Primitives,Armatures,Base meshes,Figures,Heads,Parts',
       'in the same groups',
     );
-    t.ok(models.filter((m) => m.img).length === models.length - 7, 'every tile has its picture but the primitives, which are their names');
+    t.ok(models.filter((m) => m.img).length === models.length, 'every tile has its picture, the primitives too');
     t.eq(JSON.stringify(await thumbsLoad(page, 'models')), '[]', 'every Models thumbnail loads');
     await page.screenshot({ path: `${SHOTS}/models.png` });
 
@@ -1102,7 +1101,7 @@ export const suites = {
     await wait(page, 500);
     t.eq(await meshes(), n0 + 1, 'a primitive tile adds the object');
     const viaWindow = await verts();
-    await page.evaluate(() => document.querySelector('.outliner__menu-item[data-kind="cone"]').click());
+    await page.evaluate(() => document.querySelector('.outliner__tile[data-kind="cone"]').click());
     await wait(page, 500);
     t.eq(await verts(), viaWindow, 'the same object the Create choice adds');
     const n1 = await meshes();

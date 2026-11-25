@@ -158,7 +158,7 @@ export const suites = {
     const sizeLine = await page.evaluate(() => !!document.querySelector('.panel--scene .outliner__size'));
     t.ok(!sizeLine, 'the Scene panel has no size line');
     const labels = await page.evaluate(() =>
-      [...document.querySelectorAll('.outliner__menu--create .outliner__menu-grid--words .outliner__menu-item')].map((b) => `${b.dataset.kind}:${b.querySelector('.outliner__menu-size')?.textContent ?? ''}`),
+      [...document.querySelectorAll('.outliner__menu--create .outliner__tile--primitive')].map((b) => `${b.dataset.kind}:${b.querySelector('.outliner__tile-note')?.textContent ?? ''}`),
     );
     t.eq(
       labels.join(' '),

@@ -38,6 +38,11 @@ export const PRIMITIVES: ReadonlyArray<{ id: PrimitiveKind; label: string }> = [
   { id: 'plane', label: 'Plane' },
 ];
 
+/** Where a primitive tile's picture is (tools/render-armature-thumbs.mjs makes them too). */
+export function primitiveThumbUrl(id: string): string {
+  return `/assets/primitives/thumbs/${id}.png`;
+}
+
 /** Where an armature tile's picture is (tools/render-armature-thumbs.mjs makes them). */
 export function armatureThumbUrl(id: string): string {
   return `/assets/armature/thumbs/${id}.png`;
@@ -57,7 +62,7 @@ export function armatureChoices(): ArmatureChoice[] {
 /** The groups, in order: Primitives, Armatures, then the base meshes by their groups. */
 export function modelGroups(): ModelGroup[] {
   const out: ModelGroup[] = [
-    { id: 'primitives', title: 'Primitives', items: PRIMITIVES.map((p) => ({ id: p.id, label: p.label, kind: 'primitive' as const })) },
+    { id: 'primitives', title: 'Primitives', items: PRIMITIVES.map((p) => ({ id: p.id, label: p.label, kind: 'primitive' as const, thumb: primitiveThumbUrl(p.id) })) },
     {
       id: 'armatures',
       title: 'Armatures',

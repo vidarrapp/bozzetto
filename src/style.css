@@ -2011,23 +2011,8 @@ body.presenting .measure-overlay {
   display: none;
 }
 
-.outliner__menu-item {
-  text-align: left;
-  padding: 8px 12px;
-  border: none;
-  background: none;
-  color: var(--text);
-  font-family: var(--font-body);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.outliner__menu-item:hover {
-  background: var(--hover);
-}
-
-/* The Create popup: a wider menu with the primitives as a grid of words
-   and the base-mesh library as thumbnail tiles. Capped in height and
+/* The Create popup: a wider menu with the primitives, the armatures
+   and the base-mesh library as grids of thumbnail tiles. Capped in height and
    scrolling within, since twenty-odd tiles outgrow a phone. */
 .outliner__menu--create {
   width: 296px;
@@ -2066,20 +2051,6 @@ body.presenting .measure-overlay {
   grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   padding: 2px 8px 6px;
-}
-
-.outliner__menu-grid--words .outliner__menu-item {
-  padding: 7px 8px;
-  border-radius: 0;
-}
-
-/* The size a primitive comes at, under its name (scenes on real units). */
-.outliner__menu-size {
-  display: block;
-  margin-top: 1px;
-  font-family: var(--font-spec);
-  font-size: 11px;
-  color: var(--muted);
 }
 
 .outliner__menu-switch {
@@ -5640,8 +5611,7 @@ h1,
 .card__meta,
 .admin-row__meta,
 .fps-meter,
-.fps-meter__row,
-.outliner__menu-size {
+.fps-meter__row {
   font-family: var(--bz-font-mono);
   font-size: 11px;
   letter-spacing: 0;
@@ -6297,8 +6267,7 @@ h1,
   min-width: 220px;
 }
 
-.file-menu__item,
-.outliner__menu-item {
+.file-menu__item {
   display: block;
   min-height: 26px;
   padding: 5px 12px;
@@ -6313,7 +6282,6 @@ h1,
 
 .file-menu__item:hover:not(:disabled),
 .file-menu__item:focus-visible,
-.outliner__menu-item:hover:not(:disabled),
 .outliner__tile:hover:not(:disabled) {
   background: var(--bz-hover);
   color: var(--bz-text);
@@ -6321,8 +6289,7 @@ h1,
   outline: none;
 }
 
-.file-menu__item:disabled,
-.outliner__menu-item:disabled {
+.file-menu__item:disabled {
   opacity: 1;
   color: var(--bz-text-3);
 }
@@ -6419,10 +6386,6 @@ h1,
   padding: 8px 12px;
 }
 
-.outliner__menu-grid--words .outliner__menu-item {
-  padding: 5px 8px;
-}
-
 .outliner__menu-head {
   padding: 8px 12px 4px;
 }
@@ -6441,8 +6404,7 @@ h1,
 
 .outliner__menu-sub,
 .outliner__menu-switch,
-.outliner__tile-note,
-.outliner__menu-size {
+.outliner__tile-note {
   color: var(--bz-text-2);
 }
 
@@ -8090,11 +8052,11 @@ html.is-page :is(#app, #admin).page-scroll.page-scroll--bare {
   font: 400 13px/16px var(--bz-font);
 }
 
-.outliner__menu-grid--words .outliner__menu-item,
 .outliner__tile {
   min-height: 44px;
 }
 
-.outliner__tile--armature {
+.outliner__tile--armature,
+.outliner__tile--primitive {
   justify-content: flex-start;
 }

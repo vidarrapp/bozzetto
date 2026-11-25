@@ -176,6 +176,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### v0.7.21
+
+- The primitives in the Create choices and the Asset library's Models tab now have pictures, like the armatures and base meshes.
+
 ### v0.7.20
 
 - **Asset library, more tabs.** The library has a **Models** tab with what Create offers (primitives, armatures and base meshes, with their pictures), and its **Materials**, **Lighting** and **HDRIs** tabs now hold the ten matcaps, the light rigs and the six environments as tiles. A tap uses one, as picking it in its panel does, and the panel and the window stay in step. An HDRI file is fetched only when you tap its tile.
