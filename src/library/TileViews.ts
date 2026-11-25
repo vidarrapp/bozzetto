@@ -20,7 +20,18 @@ interface TileItem {
   /** A second, smaller line (a base mesh's style). */
   note?: string;
   thumb?: string;
+  /** A plain colour swatch in place of a picture (a scene's material). */
+  swatch?: string;
   title?: string;
+}
+
+/** The scene's materials, as the Scene panel's select lists them (the library's own list, read where the panel reads it). */
+export interface SceneMaterialsHost {
+  list(): { id: string; name: string; albedo: string }[];
+  /** The id the active object uses, or null with no object active. */
+  active(): string | null;
+  /** Assigns a material to the active object, as choosing it in the Scene panel does. */
+  assign(id: string): void;
 }
 
 interface TileGroup {
@@ -82,6 +93,12 @@ abstract class TileView implements LibraryView {
   }
 
   private off: (() => void) | null = null;
+  private watched = '';
+
+  /** What the Scene list is made of, as text: a change of it reads the list again (the Scene lists follow the scene). */
+  protected watch(): string {
+    return '';
+  }
 
   mount(body: HTMLElement, ctx: LibraryContext): void {
     this.ctx = ctx;
@@ -149,7 +166,12 @@ abstract class TileView implements LibraryView {
     el.className = 'lib-tile lib-tile--pic';
     el.dataset.asset = item.id;
     if (item.title) el.title = item.title;
-    if (item.thumb) {
+    if (item.swatch) {
+      const sw = document.createElement('span');
+      sw.className = 'lib-tile__swatch';
+      sw.style.background = item.swatch;
+      el.appendChild(sw);
+    } else if (item.thumb) {
       const img = document.createElement('img');
       img.src = item.thumb;
       img.alt = '';
@@ -216,6 +238,12 @@ abstract class TileView implements LibraryView {
 
   /** The marks: the one in use, and the ones coming. */
   protected paint(): void {
+    const sig = this.watch();
+    if (sig !== this.watched) {
+      this.watched = sig;
+      this.refresh();
+      return;
+    }
     if (!this.root || !this.root.isConnected || this.root.offsetParent === null) return;
     const now = this.inUse();
     const coming = this.loading();
@@ -252,8 +280,12 @@ abstract class TileView implements LibraryView {
 
 const NONE: ReadonlySet<string> = new Set();
 
-/** What the Models tab asks of the page it is on (the Scene panel's own Create choices). */
+/** What the Models tab asks of the page it is on (the Scene panel's own Create choices, and its rows). */
 export interface ModelsHost {
+  /** The Scene panel's rows, in its order: the objects, then the armature. */
+  sceneRows(): { id: string; name: string; active: boolean }[];
+  /** A tap on a row, as a tap on the row in the Scene panel does. */
+  selectRow(id: string): void;
   addPrimitive(kind: PrimitiveKind): void;
   /** Fetches the base mesh and adds it; false when it could not. */
   addBaseMesh(id: string): Promise<boolean>;
@@ -289,8 +321,21 @@ export class ModelsView extends TileView {
     return { id: m.id, label: i.label, note: i.note, thumb: m.thumb, title: `${i.label}, ${i.note} · ${faces} faces, ${size} · by ${i.by}` };
   }
 
+  protected override mine(): TileItem[] {
+    return this.host.sceneRows().map((r) => ({ id: r.id, label: r.name, title: r.name }));
+  }
+
+  protected override mineEmpty(): string {
+    return 'Nothing in this scene yet.';
+  }
+
+  protected override watch(): string {
+    return JSON.stringify(this.host.sceneRows());
+  }
+
   protected inUse(): string | null {
-    return null;
+    if (this.ctx.where() !== 'mine') return null;
+    return this.host.sceneRows().find((r) => r.active)?.id ?? null;
   }
 
   protected override loading(): ReadonlySet<string> {
@@ -298,6 +343,11 @@ export class ModelsView extends TileView {
   }
 
   protected use(item: TileItem): void {
+    if (this.ctx.where() === 'mine') {
+      this.host.selectRow(item.id);
+      this.repaint();
+      return;
+    }
     const group = modelGroups().find((g) => g.items.some((m) => m.id === item.id));
     const kind = group?.items.find((m) => m.id === item.id)?.kind;
     if (kind === 'primitive') this.host.addPrimitive(item.id as PrimitiveKind);
@@ -334,13 +384,32 @@ const refreshControls = (): void => void window.dispatchEvent(new Event(CONTROLS
 /** The Materials tab: the matcaps. */
 export class MaterialsView extends TileView {
   protected readonly tab = 'materials';
+  /** The scene's materials, while a sculpt is open (set by the sculpt mode, cleared when it closes). */
+  private scene: SceneMaterialsHost | null = null;
 
   constructor(private readonly host: LookHost) {
     super();
   }
 
+  setScene(scene: SceneMaterialsHost | null): void {
+    this.scene = scene;
+    this.refresh();
+  }
+
   protected groups(): TileGroup[] {
     return [{ id: 'matcaps', title: 'Matcaps', items: MATCAP_ASSETS.map((m) => ({ id: m.id, label: m.label, thumb: m.thumb })) }];
+  }
+
+  protected override mine(): TileItem[] {
+    return (this.scene?.list() ?? []).map((m) => ({ id: m.id, label: m.name, swatch: m.albedo, title: m.name }));
+  }
+
+  protected override mineEmpty(): string {
+    return 'Materials in the scene show here.';
+  }
+
+  protected override watch(): string {
+    return this.scene ? JSON.stringify(this.scene.list()) : '';
   }
 
   protected override tail(): string {
@@ -348,11 +417,24 @@ export class MaterialsView extends TileView {
   }
 
   protected inUse(): string | null {
+    // Scene: the material the active object uses. Library: the matcap in use.
+    if (this.ctx.where() === 'mine') return this.scene?.active() ?? null;
     const v = this.host.viewer;
     return v.getMaterial() === 'matcap' ? (MATCAP_ASSETS[v.materials.getMaterialState().matcapIndex]?.id ?? null) : null;
   }
 
   protected use(item: TileItem): void {
+    if (this.ctx.where() === 'mine') {
+      if (!this.scene) return;
+      if (this.scene.active() === null) {
+        this.ctx.say('Select an object first.');
+        return;
+      }
+      this.scene.assign(item.id);
+      refreshControls();
+      this.repaint();
+      return;
+    }
     const index = MATCAP_ASSETS.findIndex((m) => m.id === item.id);
     if (index < 0) return;
     const v = this.host.viewer;
@@ -435,11 +517,27 @@ export class HdrisView extends TileView {
     return this.host.viewer.environment.getState().id ?? '';
   }
 
+  /** Scene: the one environment this scene uses, or nothing when it has none. */
+  protected override mine(): TileItem[] {
+    const id = this.host.viewer.environment.getState().id ?? '';
+    const e = id ? ENVIRONMENT_ASSETS.find((x) => x.id === id) : undefined;
+    return e ? [{ id: e.id, label: e.label, thumb: e.thumb, title: e.label }] : [];
+  }
+
+  protected override mineEmpty(): string {
+    return 'This scene has no environment light.';
+  }
+
+  protected override watch(): string {
+    return this.host.viewer.environment.getState().id ?? '';
+  }
+
   protected override loading(): ReadonlySet<string> {
     return this.coming;
   }
 
   protected use(item: TileItem): void {
+    if (this.ctx.where() === 'mine') return; // the scene's own light shows as it is: a tap does nothing
     const env = this.host.viewer.environment;
     const id = item.id;
     if (this.coming.has(id) || (env.getState().id ?? '') === id) return;

@@ -113,6 +113,8 @@ export class Studio {
   readonly material: MaterialPanel;
   /** The Asset library: one floating window every workspace can open; a workspace gives its tabs their contents (`library.register`). */
   readonly library: AssetLibrary;
+  /** The Materials tab, which a sculpt gives the scene's materials to (its Scene list). */
+  readonly materialsTab: MaterialsView;
   readonly reference: { board: ReferenceBoard; panel: ReferencePanel; view: ReferenceView; arrange: ArrangeButton };
   /** Which panels each workspace had open; built by `beginPanels`. */
   panels: WorkspacePanels | null = null;
@@ -177,7 +179,8 @@ export class Studio {
     this.library = new AssetLibrary();
     // The look tabs read the viewer: the matcaps, the light rigs and the environments, as the panels' pickers do.
     const look = { viewer, workspace: (): string | null => this.now() };
-    this.library.register('materials', new MaterialsView(look));
+    this.materialsTab = new MaterialsView(look);
+    this.library.register('materials', this.materialsTab);
     this.library.register('lighting', new LightingView(look));
     this.library.register('hdris', new HdrisView(look));
     this.ownDom = added();

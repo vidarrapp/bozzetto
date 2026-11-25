@@ -49,7 +49,7 @@ const TABS: ReadonlyArray<{ id: LibraryTabId; label: string; later: string }> = 
 ];
 
 const WHERES: ReadonlyArray<{ id: LibraryWhere; label: string }> = [
-  { id: 'bozzetto', label: 'Bozzetto' },
+  { id: 'bozzetto', label: 'Library' },
   { id: 'mine', label: 'Mine' },
 ];
 
@@ -155,7 +155,7 @@ export class AssetLibrary {
       b.type = 'button';
       b.className = 'lib-where';
       b.dataset.where = w.id;
-      b.textContent = w.label;
+      b.textContent = this.whereLabel(w.id);
       b.addEventListener('click', () => this.setWhere(w.id));
       wheres.appendChild(b);
       this.whereBtns.set(w.id, b);
@@ -317,6 +317,11 @@ export class AssetLibrary {
     this.refreshView();
   }
 
+  /** The second button is Scene on every tab: what this scene itself holds of the tab's kind. */
+  private whereLabel(id: LibraryWhere): string {
+    return id === 'bozzetto' ? 'Library' : 'Scene';
+  }
+
   private paintTab(): void {
     for (const [id, b] of this.tabBtns) {
       const on = id === this.tab;
@@ -326,6 +331,7 @@ export class AssetLibrary {
     }
     for (const [id, body] of this.bodies) body.hidden = id !== this.tab;
     for (const [id, b] of this.whereBtns) {
+      b.textContent = this.whereLabel(id);
       b.classList.toggle('is-on', id === this.whereNow);
       b.setAttribute('aria-pressed', String(id === this.whereNow));
     }

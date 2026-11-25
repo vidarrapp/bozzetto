@@ -177,6 +177,12 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### v0.7.25
+
+- **The Scene panel's Material row shows a matcap in use.** In Matcap it reads "Matcap: VR04" and stays until you pick a material, which also returns the view to Lit.
+- **Bozzetto is now Library in the asset library.** Its first button covers your own saved presets and the tools you subscribe to.
+- **Scene on every tab of the asset library.** Where Mine was, the second button now reads Scene and lists what this scene holds: its materials as swatches, its objects (a tap selects one), the environment and the rigs in use, and the Tools kept in it.
+
 ### v0.7.24
 
 - **Hold L moves the light from where it is.** With a finger or the Pencil, the light now turns only by what you drag after you touch down, so it no longer jumps to where the last touch ended. The same in Armature and in the viewer.

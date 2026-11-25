@@ -1927,10 +1927,19 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
     container,
   );
-  scenePanel = new ScenePanel(session, library, {
-    get: () => viewer.getFloorOffset(),
-    set: (cm) => viewer.setFloorOffset(cm),
-  });
+  scenePanel = new ScenePanel(
+    session,
+    library,
+    {
+      get: () => viewer.getFloorOffset(),
+      set: (cm) => viewer.setFloorOffset(cm),
+    },
+    {
+      mode: () => viewer.getMaterial(),
+      matcapName: () => viewer.materials.matcaps()[viewer.materials.getMaterialState().matcapIndex]?.label ?? '',
+      useLit: () => viewer.setMaterial('lit'),
+    },
+  );
   // Rename, eye and padlock bypass the undo stack: sync the display side
   // (visibility, the stats corner name) and let the autosave know directly.
   scenePanel.onSceneEdit = () => {
@@ -1962,11 +1971,29 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   studio.library.register(
     'models',
     new ModelsView({
+      sceneRows: () => scenePanel?.sceneRows() ?? [],
+      selectRow: (id) => scenePanel?.selectRow(id),
       addPrimitive: (kind) => scenePanel?.createPrimitive(kind),
       addBaseMesh: async (id) => (await scenePanel?.addBaseMesh(id)) ?? false,
       setArmature: (id) => scenePanel?.onArmature?.(id),
     }),
   );
+  // The Materials tab's Scene list: this scene's materials, assigned as the Scene panel's select assigns them.
+  studio.materialsTab.setScene({
+    list: () => library.list().map((m) => ({ id: m.id, name: m.name, albedo: m.albedo })),
+    active: () => {
+      const mesh = session.getMesh();
+      return mesh ? library.materialFor(mesh).id : null;
+    },
+    assign: (id) => {
+      const mesh = session.getMesh();
+      if (!mesh) return;
+      library.assign(mesh, id);
+      if (viewer.getMaterial() === 'matcap') viewer.setMaterial('lit');
+      session.render();
+      scenePanel?.refresh();
+    },
+  });
   sculptPanel.setLibraryButton(() => studio.library.open('tools'));
   sculptPanel.onGizmoParts = (parts) => {
     try {
@@ -2726,6 +2753,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // Out of Present first, so everything it put away comes back to be disposed.
     present?.dispose();
     present = null;
+    studio.materialsTab.setScene(null);
     session.onLevelChange = null;
     levelToast.dispose();
     studio.dispose();

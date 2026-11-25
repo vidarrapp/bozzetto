@@ -258,6 +258,8 @@ export class MaterialControls {
     modeSelect.addEventListener('change', () => {
       this.viewer.setMaterial(modeSelect.value);
       this.rebuildOptions();
+      // The Scene panel's Material row shows the mode too.
+      window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
     });
     material.appendChild(labelRow('Mode', modeSelect));
 
@@ -440,7 +442,10 @@ export class MaterialControls {
           this.mcPicker = matcapPicker(
             () => this.viewer.materials.matcaps(),
             () => this.viewer.materials.getMaterialState().matcapIndex,
-            (i) => this.viewer.materials.setMatcapIndex(i),
+            (i) => {
+              this.viewer.materials.setMatcapIndex(i);
+              window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
+            },
           );
         } else {
           this.mcPicker.refresh();
