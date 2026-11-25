@@ -180,6 +180,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 - **A new scene starts empty, on Create.** A first visit, File, New sculpt and the gallery's new sculpt no longer begin with a sphere: the Scene panel opens on the choices you add things with, and a tap on one puts it in the scene, selected and in view. Old scenes open as they were.
 - **Armatures in Create.** The Create menu and the empty Scene panel have an Armatures group with a picture tile for each mannequin and block figure. A tap loads Armature with that mannequin in its rest pose. If the scene's armature has been posed, it asks before replacing it.
+- **Two small fixes.** In Armature, Tab hides the interface again when a Sculpt panel was left open. In a scene with no object, the Dynamic topology switch asks nothing and stays off.
 
 ### v0.7.18
 
