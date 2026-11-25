@@ -152,7 +152,7 @@
 - A contrast brush (2026-11-17, Vidar): strengthens or flattens the relief under it, its result kept on an ordinary sculpt layer; this is his answer to blend modes on sculpt layers. Designed in docs/plans/tool-library-and-nodes.md, section 6; it comes with the tool editor.
 - Thumbnails on layer rows (2026-11-17).
 - Larger shadow maps for the still view on the low quality tier (2026-11-17). Tried and taken out before 0.7.0: resizing the maps when the view came to rest reallocated them at every pen-down and turn, which the latency tests forbid. It needs both sizes kept allocated.
-- More than three lights, and light types other than directional (2026-11-17, Vidar): spot lights, possibly area lights, with control over the penumbra (2026-11-25). The rig format is kept open to a list of lights with a type.
+- More than three lights, and light types other than directional (2026-11-17, Vidar): spot lights, possibly area lights, with control over the penumbra (2026-11-25). Such lights have a place in the scene, so they are to be drawn in the scene itself (hidden behind the model where they are behind it), not as the flat markers the directional lights have. The rig format is kept open to a list of lights with a type.
 - Sharing light rigs through the Community (2026-11-17): rigs are saved on the device and passed on as files for now; a shared library of rigs (and later tools and materials) needs server work.
 Ideas Vidar has raised that are not being built yet.
 
