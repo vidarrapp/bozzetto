@@ -8,7 +8,7 @@
 // percent for the rest.
 //
 // presentEdges:      Present's readout and Save image; the bands; the cm/percent split.
-// presentEdgesPath:  the path in Armature and the reason on a long press.
+// presentEdgesPath:  the path in Armature (a workspace of Sculpt's page): every step goes, a long press shows no reason.
 // presentEdgesViewer: the viewer's transport with a panel open.
 // presentEdgesSplash: the loading splash with nothing over it.
 import { openArmature, openSculpt } from './lib.mjs';
@@ -107,27 +107,32 @@ export const suites = {
       [...document.querySelectorAll('.bz-ws__step')].map((b) => ({ id: b.dataset.workspace, dim: b.getAttribute('aria-disabled') === 'true', title: b.title })),
     );
     const by = Object.fromEntries(steps.map((s) => [s.id, s]));
-    t.ok(by.present?.dim && by.present.title === 'Present works from Sculpt. Go to Sculpt first.', `Armature's Present step is greyed and says what to do (${JSON.stringify(by.present)})`);
-    t.ok(by.paint?.dim && by.paint.title === 'Paint works from Sculpt. Go to Sculpt first.', `and so is Paint's (${JSON.stringify(by.paint)})`);
-    t.ok(!by.sculpt?.dim, 'Sculpt is the step that goes on');
-    // The View menu carries the same words as its hint.
-    // A long press, as a finger or the Pencil holds it: the reason in a box under the strip.
+    // Armature is a workspace of the same page as Sculpt: every step is on, and the titles say where each goes.
+    t.ok(steps.every((s) => !s.dim), `from Armature all four steps are enabled (${JSON.stringify(steps)})`);
+    t.ok(by.present?.title === 'Go to Present' && by.paint?.title === 'Go to Paint', `and Present and Paint say where they go (${JSON.stringify([by.present, by.paint])})`);
+    const at = () => page.evaluate(() => document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent ?? null);
+    // A long press, as a finger or the Pencil holds it: a step that goes shows no reason box.
     const box = await page.evaluate(() => document.querySelector('.bz-ws__step[data-workspace="present"]').getBoundingClientRect().toJSON());
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
     await page.waitForTimeout(700);
-    const why = await page.evaluate(() => {
-      const w = document.querySelector('.bz-ws__why');
-      const r = w?.getBoundingClientRect();
-      return w ? { text: w.textContent, top: Math.round(r.top), inside: r.right <= innerWidth && r.left >= 0 } : null;
-    });
-    t.ok(why && why.text === 'Present works from Sculpt. Go to Sculpt first.' && why.top >= 24 && why.inside, `a long press shows the reason under the strip (${JSON.stringify(why)})`);
+    const why = await page.evaluate(() => !!document.querySelector('.bz-ws__why'));
+    t.ok(!why, 'a long press on Present shows no reason box: the step goes');
     await page.screenshot({ path: `${SHOTS}/armature-path-tip.png` });
     await page.mouse.up();
-    await page.waitForFunction(() => !document.querySelector('.bz-ws__why'), null, { timeout: 4000 }).catch(() => {});
-    t.ok(await page.evaluate(() => !document.querySelector('.bz-ws__why')), 'it goes a moment after the lift');
-    t.ok(await page.evaluate(() => document.querySelector('.bz-ws__step[data-workspace="present"]').getAttribute('aria-current') !== 'step'), 'and the press did not go anywhere');
-    // A short tap does not show the box.
+    await page.waitForFunction(() => document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent === 'Present', null, { timeout: 10_000 }).catch(() => {});
+    t.eq(await at(), 'Present', 'and the press on it goes to Present');
+    await page.keyboard.press('Shift+1');
+    await page.waitForFunction(() => document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent === 'Armature', null, { timeout: 10_000 });
+    t.eq(await at(), 'Armature', 'Shift+1 comes back to Armature');
+    // A click on the Paint step goes to Paint; Shift+1 comes back.
+    await page.evaluate(() => [...document.querySelectorAll('.bz-ws__step')].find((b) => b.dataset.workspace === 'paint')?.click());
+    await page.waitForFunction(() => document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent === 'Paint', null, { timeout: 10_000 });
+    t.eq(await at(), 'Paint', 'a click on the Paint step goes to Paint');
+    await page.keyboard.press('Shift+1');
+    await page.waitForFunction(() => document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent === 'Armature', null, { timeout: 10_000 });
+    t.eq(await at(), 'Armature', 'and Shift+1 comes back to Armature from Paint');
+    // A short tap goes to Present and shows no box.
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     t.ok(await page.evaluate(() => !document.querySelector('.bz-ws__why')), 'a tap shows no box');
   },

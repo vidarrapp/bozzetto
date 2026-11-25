@@ -7123,38 +7123,46 @@ export const suites = {
     t.ok(s.ao.enabled && s.out === 'gtao' && s.ao.intensity === 1.5 && s.ao.radius === 0.45, `one saved on GTAO opens on it, at its own values (${s.ao.intensity}, ${s.ao.radius})`);
     await page.unroute('**/timelapses/demo/manifest.json');
 
-    // Armature mode: GTAO by default, a pick saved and restored.
+    // Armature is Sculpt's working view on the same page: it has no ambient occlusion setting of its own.
+    // The settings: enabled, strength and the radius in cm. `radius` is a share of the subject (cm over the subject's
+    // size), so it follows the mannequin in Armature and is left out.
+    const aoOf = (st) => ({ ao: { enabled: st.ao.enabled, intensity: st.ao.intensity, radiusCm: st.ao.radiusCm }, cavity: st.cavity, out: st.out });
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const armature = async () => {
       await openArmature(page, base);
       await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
     };
+    // (a) the state Armature shows is the state Sculpt shows, on the same page, and it is the same after coming back.
+    await openSculpt(page, base, '&q=low');
+    await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+    const inSculpt = aoOf(await aoState());
+    await page.keyboard.press('Shift+1');
+    await page.waitForFunction(() => document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent === 'Armature', null, { timeout: 30_000 });
+    await page.waitForTimeout(600);
+    const inArmature = aoOf(await aoState());
+    t.ok(same(inArmature, inSculpt), `Armature shows what Sculpt shows: the same ambient occlusion (Sculpt ${JSON.stringify(inSculpt)}, Armature ${JSON.stringify(inArmature)})`);
+    await page.keyboard.press('Shift+2');
+    await page.waitForFunction(() => document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent === 'Sculpt', null, { timeout: 30_000 });
+    await page.waitForTimeout(600);
+    const backInSculpt = aoOf(await aoState());
+    t.ok(same(backInSculpt, inSculpt), `and still the same after Shift+2 back to Sculpt (${JSON.stringify(backInSculpt)})`);
+    // (b) an armature saved with an old ambient occlusion choice (AO off, the cavity the panel used to force): opening it changes nothing.
     await armature();
-    s = await aoState();
-    t.ok(s.ao.enabled && s.out === 'gtao', `Armature mode renders with GTAO by default (${s.out})`);
-    // Armature has no Render tab: the choice is made on the viewer, as a loaded file would.
-    await page.evaluate(() => {
-      const v = window.__bozzetto;
-      v.setAO({ enabled: false });
-      v.setSculptAO({ strength: 0 }); // as the Render tab's Off does: a cavity left on is read as the old forced cavity
-    });
-    await page.evaluate(() => window.__armature.save());
-    await armature();
-    s = await aoState();
-    t.ok(!s.ao.enabled && s.out === 'plain', `Off chosen there comes back off (${s.out})`);
-    await page.evaluate(() => window.__bozzetto.setAO({ enabled: true }));
-    await page.evaluate(() => window.__armature.save());
-    await armature();
-    s = await aoState();
-    t.ok(s.ao.enabled && s.out === 'gtao', `and GTAO comes back on (${s.out})`);
+    const before = aoOf(await aoState());
     await page.evaluate(async () => {
       const v = window.__bozzetto;
       v.setAO({ enabled: false });
       v.setSculptAO({ strength: 0.9 });
       await window.__armature.save();
     });
+    await page.evaluate((c) => {
+      const v = window.__bozzetto;
+      v.setAO({ enabled: true });
+      v.setSculptAO({ strength: c });
+    }, before.cavity);
     await armature();
-    s = await aoState();
-    t.ok(s.ao.enabled && s.out === 'gtao', `an armature saved on the cavity the panel used to force comes back on GTAO (${s.out})`);
+    const after = aoOf(await aoState());
+    t.ok(same(after, before), `an armature saved with an old AO choice leaves the state as it was (${JSON.stringify(after)}, before ${JSON.stringify(before)})`);
 
     // Create's preview.
     await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
