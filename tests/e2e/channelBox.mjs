@@ -241,7 +241,7 @@ export const suites = {
     // A scene saved in metres opens converted, every scale folded in.
     const bytes = await page.evaluate(async () => {
       const { session, file, fileActions } = window.__sculpt;
-      await fileActions.newScene();
+      await fileActions.newScene({ sphere: true });
       const rec = await file.unpack(await file.pack());
       for (const m of rec.meshes) for (let c = 0; c < 4; c++) for (let r = 0; r < 3; r++) m.matrix[c * 4 + r] /= 100;
       rec.units = 'm';

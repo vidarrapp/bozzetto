@@ -180,6 +180,10 @@ export type ArmatureMount = (() => void) & {
   setSurface(patch: Partial<MannequinSurface>): void;
   /** The camera onto the figure. */
   frame(): void;
+  /** Whether the figure has been posed or its proportions changed (a new mannequin would lose them). */
+  altered(): boolean;
+  /** Make this mannequin or rig the figure, in its rest pose and framed, with a history of its own (the Scene panel's Create choices). */
+  choose(id: string): Promise<void>;
   /** What the Figure section of the Armature tab says, read again. */
   figureChanged(): void;
 };
@@ -2877,6 +2881,16 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
       scheduleSave();
     },
     frame,
+    altered: () => {
+      const state = armature.serialize();
+      return Object.keys(state.pose).length > 0 || Object.keys(state.proportions).length > 0;
+    },
+    choose: async (id: string) => {
+      await replaceFigure(id, undefined, true);
+      frame();
+      clearHistory();
+      scheduleSave();
+    },
     figureChanged: () => panel.setFigureMade(host.figureMade()),
   });
 }

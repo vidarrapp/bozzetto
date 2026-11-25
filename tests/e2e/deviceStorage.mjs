@@ -159,7 +159,7 @@ export const suites = {
   async deviceStorage(page, base, t) {
     // ---- a workspace: asked first, in a window over the logotype, and nothing written until answered ----
     await inContext(page, DESKTOP, t, async (p) => {
-      await p.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+      await p.goto(`${base}/?sculpt=1&start=sphere`, { waitUntil: 'domcontentloaded' });
       await waitWindow(p);
       await p.waitForTimeout(800);
       let w = await windowState(p);
@@ -256,7 +256,7 @@ export const suites = {
 
     // ---- Sculpt: asked; accepted, stored, never again, the autosave survives a reload ----
     await inContext(page, DESKTOP, t, async (p) => {
-      await p.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+      await p.goto(`${base}/?sculpt=1&start=sphere`, { waitUntil: 'domcontentloaded' });
       await waitWindow(p);
       await p.waitForTimeout(500);
       t.eq((await windowState(p)).title, 'Keep your work on this device?', 'Sculpt asks on a first visit');
@@ -288,7 +288,7 @@ export const suites = {
 
     // ---- Sculpt, declined: no writes, the note, a new context asks again ----
     await inContext(page, DESKTOP, t, async (p, ctx) => {
-      await p.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+      await p.goto(`${base}/?sculpt=1&start=sphere`, { waitUntil: 'domcontentloaded' });
       await waitWindow(p);
       await p.click('.bz-device-decline');
       await p.click('.bz-device-off');
@@ -323,7 +323,7 @@ export const suites = {
       const fresh = await ctx.browser().newContext(DESKTOP);
       try {
         const q = await fresh.newPage();
-        await q.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+        await q.goto(`${base}/?sculpt=1&start=sphere`, { waitUntil: 'domcontentloaded' });
         await waitWindow(q);
         t.eq((await windowState(q)).title, 'Keep your work on this device?', 'a new visit asks again');
       } finally {
@@ -470,7 +470,7 @@ export const suites = {
 
     // ---- the phone: the window and the note fit at 390px ----
     await inContext(page, PHONE, t, async (p) => {
-      await p.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+      await p.goto(`${base}/?sculpt=1&start=sphere`, { waitUntil: 'domcontentloaded' });
       await waitWindow(p);
       await p.waitForTimeout(500);
       let w = await windowState(p);
@@ -490,7 +490,7 @@ export const suites = {
 
     // ---- Preferences: the switch ----
     await inContext(page, DESKTOP, t, async (p) => {
-      await p.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+      await p.goto(`${base}/?sculpt=1&start=sphere`, { waitUntil: 'domcontentloaded' });
       await waitWindow(p);
       await p.click('.bz-device-keep');
       await sculptReady(p);
@@ -537,7 +537,7 @@ export const suites = {
     // ---- a device with data from before the question is still asked, and keeps it ----
     await inContext(page, DESKTOP, t, async (p) => {
       // Make the earlier data under a context that had answered, then drop only the answer.
-      await p.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+      await p.goto(`${base}/?sculpt=1&start=sphere`, { waitUntil: 'domcontentloaded' });
       await waitWindow(p);
       await p.click('.bz-device-keep');
       await sculptReady(p);
@@ -547,7 +547,7 @@ export const suites = {
       await p.evaluate(() => window.__sculpt.persist.flush());
       t.eq(await autosaveCount(p), 1, 'earlier data on the device: an autosave');
       await p.evaluate(() => localStorage.removeItem('bozzetto-device-choice'));
-      await p.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+      await p.goto(`${base}/?sculpt=1&start=sphere`, { waitUntil: 'domcontentloaded' });
       await waitWindow(p);
       t.eq(await p.evaluate(() => !!window.__sculpt), false, 'a visitor with data from before is still asked, and Sculpt waits');
       t.eq(await autosaveCount(p), 1, 'and what is there is untouched');
@@ -602,7 +602,7 @@ export const suites = {
 
     // ---- Settings changed while off are kept, and written, when saving is turned on ----
     await inContext(page, DESKTOP, t, async (p) => {
-      await p.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+      await p.goto(`${base}/?sculpt=1&start=sphere`, { waitUntil: 'domcontentloaded' });
       await waitWindow(p);
       await p.click('.bz-device-decline');
       await p.click('.bz-device-off');

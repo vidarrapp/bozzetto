@@ -198,6 +198,8 @@ async function bridgeAsks(ctx) {
 
 /** Boot sculpt mode on a fresh page and wait for its console handle. */
 export async function openSculpt(page, base, query = '') {
+  // A new scene is empty; nearly every suite starts from the default sphere, which `start=sphere` asks for.
+  if (!/[?&]start=/.test(query)) query += '&start=sphere';
   await page.goto(`${base}/?sculpt=1${query}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
   await page.waitForTimeout(250);

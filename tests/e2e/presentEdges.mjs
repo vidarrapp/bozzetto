@@ -182,7 +182,7 @@ export const suites = {
       const set = window.setTimeout.bind(window);
       window.setTimeout = (fn, ms, ...rest) => set(fn, ms === 4000 ? 60000 : ms, ...rest);
     });
-    await page.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${base}/?sculpt=1&start=sphere`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__sculpt && !!document.querySelector('.bz-strip') && !!document.querySelector('.sculpt-toolbar__brushes'), null, { timeout: 90_000 });
     await page.waitForTimeout(600);
     const over = await page.evaluate(() => {

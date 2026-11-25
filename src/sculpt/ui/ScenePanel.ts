@@ -13,6 +13,24 @@ import { statusToast } from './statusToast';
 import { withLayersFlattened } from './layerGate';
 import { deviceStore } from '../../ui/deviceStorage';
 import { askText, askWindow } from '../../ui/askWindow';
+import { FIGURES } from '../../armature/figures';
+import { RIG_PRESETS } from '../../armature/presets';
+
+/** Where an armature tile's picture is (tools/render-armature-thumbs.mjs makes them). */
+export function armatureThumbUrl(id: string): string {
+  return `/assets/armature/thumbs/${id}.png`;
+}
+
+/** One armature the Create choices offer: each mannequin and placeholder rig the Armature tab's Preset select lists. */
+export interface ArmatureChoice {
+  id: string;
+  label: string;
+}
+
+/** The armatures on offer, in the Preset select's order. */
+export function armatureChoices(): ArmatureChoice[] {
+  return [...RIG_PRESETS, ...FIGURES].map((p) => ({ id: p.id, label: p.label }));
+}
 
 /**
  * Scene outliner: the upper-left docked panel, and only the objects. Each
@@ -36,6 +54,10 @@ import { askText, askWindow } from '../../ui/askWindow';
 export class ScenePanel extends SidePanel {
   private readonly listEl: HTMLDivElement;
   private readonly addMenu: HTMLDivElement;
+  /** The Create choices as the panel's own empty state (the same choices as the menu's, built by the same code). */
+  private readonly emptyEl: HTMLDivElement;
+  /** Every "Blockouts as" pill, in the menu and in the empty state: they show one setting. */
+  private readonly partPills: HTMLButtonElement[] = [];
   private matRow?: HTMLDivElement;
   /** The Floor offset row. */
   private readonly floorRow: HTMLLabelElement;
@@ -62,6 +84,13 @@ export class ScenePanel extends SidePanel {
    * panel's Merge follows whether there is anything to merge.
    */
   onRefresh: (() => void) | null = null;
+  /**
+   * An armature tile was chosen: the page makes it the scene's armature and goes to the Armature
+   * workspace (asking first when the current one has been posed).
+   */
+  onArmature: ((id: string) => void) | null = null;
+  /** A Create choice added an object to a scene that had none: the page frames it. */
+  onCreatedFirst: (() => void) | null = null;
 
   private readonly soloChip: HTMLButtonElement;
   /** A rebind in Preferences re-titles the Solo chip at once. */
@@ -113,8 +142,15 @@ export class ScenePanel extends SidePanel {
     // Fixed positioning against the button's own rect sidesteps both.
     this.addMenu = div('outliner__menu outliner__menu--create');
     this.addMenu.hidden = true;
-    this.buildCreateMenu();
+    this.buildCreateChoices(this.addMenu);
     document.body.appendChild(this.addMenu);
+    // The same choices are what an empty scene shows in the panel itself.
+    this.emptyEl = div('outliner__empty');
+    const line = div('outliner__empty-line');
+    line.textContent = 'Add something to start.';
+    const choices = div('outliner__choices');
+    this.buildCreateChoices(choices);
+    this.emptyEl.append(line, choices);
     addBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (this.addMenu.hidden) this.openMenu(this.addMenu, addBtn);
@@ -145,6 +181,8 @@ export class ScenePanel extends SidePanel {
     this.floorInput = this.floorRow.querySelector('input') as HTMLInputElement;
     measure.append(this.floorRow);
     this.body.appendChild(measure);
+    // After the rest, so the header is still the body's first child.
+    this.body.appendChild(this.emptyEl);
     this.floorTimer = window.setInterval(() => this.refreshFloor(), 500);
 
     // A collapsing panel must not leave its popup menu armed.
@@ -156,13 +194,13 @@ export class ScenePanel extends SidePanel {
   }
 
   /**
-   * The Create popup: the procedural primitives as a row of words, then the
-   * base-mesh library as thumbnail tiles by group. A tile fetches its file
-   * when picked - the library is 8 MB and a session touches one or two
-   * entries - and says so on the tile until the objects are in the scene.
+   * The Create choices, built into the Create popup and into the panel's empty state alike, so
+   * the two cannot differ: the procedural primitives as a row of words, the base-mesh library
+   * as thumbnail tiles by group, then the armatures as tiles. A tile fetches its file when
+   * picked - the library is 8 MB and a session touches one or two entries - and says so on the
+   * tile until the objects are in the scene.
    */
-  private buildCreateMenu(): void {
-    const menu = this.addMenu;
+  private buildCreateChoices(into: HTMLElement): void {
     const head = (text: string, aside?: string): void => {
       const h = div('outliner__menu-head');
       h.textContent = text;
@@ -172,7 +210,7 @@ export class ScenePanel extends SidePanel {
         a.textContent = aside;
         h.appendChild(a);
       }
-      menu.appendChild(h);
+      into.appendChild(h);
     };
     // Each primitive says the size it comes at in a scene on real units;
     // in one from before, they come at its old sizes and say none.
@@ -201,11 +239,13 @@ export class ScenePanel extends SidePanel {
       }
       item.addEventListener('click', () => {
         this.closeMenus();
+        const first = this.isSceneEmpty();
         this.session.addPrimitive(kind);
+        if (first) this.onCreatedFirst?.();
       });
       words.appendChild(item);
     }
-    menu.appendChild(words);
+    into.appendChild(words);
     head('Base meshes', 'Blender Studio · CC0');
     // The blockouts' one choice (owner request): the remeshed shell, or
     // every lump as its own object, the way the Armature keeps them.
@@ -213,7 +253,6 @@ export class ScenePanel extends SidePanel {
     const lead = document.createElement('span');
     lead.textContent = 'Blockouts as';
     row.appendChild(lead);
-    const pills: HTMLButtonElement[] = [];
     for (const [parts, label] of [
       [false, 'one object'],
       [true, 'parts'],
@@ -221,25 +260,58 @@ export class ScenePanel extends SidePanel {
       const pill = document.createElement('button');
       pill.type = 'button';
       pill.className = 'outliner__menu-pill';
+      pill.dataset.parts = String(parts);
       pill.textContent = label;
       pill.setAttribute('aria-pressed', String(parts === this.blockoutParts));
       pill.addEventListener('click', () => {
         this.blockoutParts = parts;
         writeBlockoutParts(parts);
-        for (const p of pills) p.setAttribute('aria-pressed', String(p === pill));
+        for (const p of this.partPills) p.setAttribute('aria-pressed', String((p.dataset.parts === 'true') === parts));
       });
-      pills.push(pill);
+      this.partPills.push(pill);
       row.appendChild(pill);
     }
-    menu.appendChild(row);
+    into.appendChild(row);
     for (const { group, title } of BASE_MESH_GROUPS) {
       const sub = div('outliner__menu-sub');
       sub.textContent = title;
-      menu.appendChild(sub);
+      into.appendChild(sub);
       const grid = div('outliner__menu-grid');
       for (const info of BASE_MESHES) if (info.group === group) grid.appendChild(this.baseMeshTile(info));
-      menu.appendChild(grid);
+      into.appendChild(grid);
     }
+    // One armature a scene for now: a tile makes that mannequin the scene's armature.
+    head('Armatures', 'Posable mannequins');
+    const arms = div('outliner__menu-grid');
+    for (const choice of armatureChoices()) arms.appendChild(this.armatureTile(choice));
+    into.appendChild(arms);
+  }
+
+  private armatureTile(choice: ArmatureChoice): HTMLButtonElement {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'outliner__tile outliner__tile--armature';
+    tile.dataset.armature = choice.id;
+    tile.title = choice.label;
+    const img = document.createElement('img');
+    img.src = armatureThumbUrl(choice.id);
+    img.alt = '';
+    img.loading = 'lazy';
+    img.draggable = false;
+    const name = document.createElement('span');
+    name.className = 'outliner__tile-name';
+    name.textContent = choice.label;
+    tile.append(img, name);
+    tile.addEventListener('click', () => {
+      this.closeMenus();
+      this.onArmature?.(choice.id);
+    });
+    return tile;
+  }
+
+  /** The scene has nothing in it: no object and no armature. */
+  private isSceneEmpty(): boolean {
+    return this.session.getMeshes().length === 0 && !this.armatureRow?.();
   }
 
   private baseMeshTile(info: BaseMeshInfo): HTMLButtonElement {
@@ -283,8 +355,10 @@ export class ScenePanel extends SidePanel {
     if (note) note.textContent = 'Loading…';
     let failed = false;
     try {
+      const first = this.isSceneEmpty();
       await this.session.addBaseMesh(id, { parts: this.blockoutParts });
       this.closeMenus();
+      if (first) this.onCreatedFirst?.();
     } catch (err) {
       console.error(err);
       failed = true;
@@ -622,7 +696,11 @@ export class ScenePanel extends SidePanel {
   refreshUnits(): void {
     this.closeMenus();
     this.addMenu.replaceChildren();
-    this.buildCreateMenu();
+    const choices = this.emptyEl.querySelector('.outliner__choices') as HTMLElement;
+    choices.replaceChildren();
+    this.partPills.length = 0;
+    this.buildCreateChoices(this.addMenu);
+    this.buildCreateChoices(choices);
     this.refresh();
   }
 
@@ -663,6 +741,8 @@ export class ScenePanel extends SidePanel {
     // a stale flag would wait forever for an input that no longer exists.
     if (this.renaming && !this.session.getMeshes().includes(this.renaming)) this.renaming = null;
     const armature = this.armatureRow?.() ?? null;
+    // An empty scene shows the Create choices in the panel, where the list and its Create button go.
+    this.root.classList.toggle('panel--scene-empty', this.session.getMeshes().length === 0 && !armature);
     this.listEl.replaceChildren(
       ...this.session.getMeshes().map((mesh) => {
         const row = div('outliner__row');

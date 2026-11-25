@@ -196,11 +196,7 @@ export function lookFor(bones: BoneDef[]): LookDef | undefined {
   return { head: head.name, neck, torso };
 }
 
-/** The presets on offer; the owner's own figures join this list. */
-export const RIG_PRESETS: Array<{ id: string; label: string }> = [
-  { id: 'placeholder-male', label: 'Male (placeholder blocks)' },
-  { id: 'placeholder-female', label: 'Female (placeholder blocks)' },
-];
+export { RIG_PRESETS } from './presets';
 
 export function rigById(id: string): RigDefinition {
   return id === 'placeholder-female' ? placeholderHuman('female') : placeholderHuman('male');

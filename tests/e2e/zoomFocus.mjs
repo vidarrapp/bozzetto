@@ -416,7 +416,7 @@ export const suites = {
       viewer.camera.updateMatrixWorld();
     });
     await frames(page);
-    await page.evaluate(() => window.__sculpt.fileActions.newScene());
+    await page.evaluate(() => window.__sculpt.fileActions.newScene({ sphere: true }));
     await frames(page);
     await settle(page);
     const s = await sphere(page);

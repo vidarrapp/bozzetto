@@ -1022,7 +1022,7 @@ export const suites = {
     p2.on('pageerror', (e) => errors.push(String(e)));
     try {
       // Declined, as a visitor says no (the question is the device suite's own).
-      await p2.goto(`${base}/?sculpt=1&q=low`, { waitUntil: 'domcontentloaded' });
+      await p2.goto(`${base}/?sculpt=1&q=low&start=sphere`, { waitUntil: 'domcontentloaded' });
       await p2.waitForSelector('.bz-device', { timeout: 60_000 });
       await p2.click('.bz-device-decline');
       await p2.click('.bz-device-off');

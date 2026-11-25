@@ -62,7 +62,7 @@ const smoothState = (page) =>
 function prepare({ fresh = false, round = false, res = 0, noise = 0 }) {
   const { session } = window.__sculpt;
   // A fresh scene: the default sphere again, where the view still looks.
-  if (fresh) session.newScene();
+  if (fresh) session.newScene({ sphere: true });
   let mesh = session.getMesh();
   const centreOf = (m) => {
     const v = m.getVertices();
@@ -518,7 +518,7 @@ export const suites = {
     t.ok(sym.finite && sym.sides[0] > 100 && sym.sides[1] > 100, `with mirror symmetry both sides are smoothed (${sym.sides.join(' and ')} vertices moved)`);
     const dyn = await page.evaluate(() => {
       const { session } = window.__sculpt;
-      session.newScene(); // the default sphere: dynamic topology on a smaller mesh
+      session.newScene({ sphere: true }); // the default sphere: dynamic topology on a smaller mesh
       return session.toggleDynamicTopology();
     });
     const dynRun = await page.evaluate(smoothStrokes, { mode: 'surface', radius: 0.15, passes: 2 });

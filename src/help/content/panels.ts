@@ -110,11 +110,13 @@ export const PANELS: Topic[] = [
     blocks: [
       p('The **Scene** panel, on the left, lists the objects in the scene and adds new ones.'),
       h('Create'),
-      p('The **Create** button opens a menu of new objects.'),
+      p('A new scene is empty, and the Scene panel opens on the choices for adding something: the line "Add something to start." and the same tiles the **Create** button\'s menu has. Choosing one adds it, selects it and brings it into view, and the panel goes back to its list. If you delete the last object the choices come back. If you close the panel it stays closed until you open it, but a scene that is empty when the page loads opens it.'),
+      p('Once the scene has objects, the **Create** button opens the same choices as a menu.'),
       options(
         ['Primitives', 'Sphere, Cube, Cylinder, Torus, Cone, Capsule and Plane. In a scene on real units each one comes at a real size, which the menu shows beside it.'],
         ['Base meshes', 'Blender Studio\'s Human Base Meshes, as picture tiles in the groups Figures, Heads and Parts. A tile downloads its file when you pick it.'],
         ['Blockouts as', '**one object** gives a base mesh\'s blockout as one remeshed shell. **parts** gives every lump as its own object, the way Armature keeps them.'],
+        ['Armatures', 'A picture tile for each mannequin and block figure the **Preset** menu in the Armature panel offers. Choosing one makes it the scene\'s armature, in its rest pose, and goes to the Armature workspace (loading it first if need be). A scene has one armature for now: if the current one has been posed or had its proportions changed, it asks "Replace the armature?" first.'],
       ),
       h('The object list'),
       options(

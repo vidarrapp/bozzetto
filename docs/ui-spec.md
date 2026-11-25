@@ -288,7 +288,7 @@ place, each only where the place has it.
 - Arrange references (a switch, Alt+R in Sculpt: unlocks the pictures in the
   view so they can be moved, scaled and set up; locks them again)
 
-- Scene panel
+- Scene panel (an empty scene shows the Create choices in the panel itself: see "New scene")
 - Model panel
 - Layers panel
 - Material panel
@@ -1135,3 +1135,26 @@ path's Sculpt step and View, Sculpt come out. The page's address has `paint=1` w
 - The Lighting tab's Rig names the lights as they are: Three-point (all
   three on), Key only (Sculpt's opening look), another built-in rig, one of
   My rigs, or Custom.
+
+## New scene (0.7.19)
+
+A new scene has no object (owner, 2026-11-25: the default sphere felt like Blender's default cube). A first visit with
+nothing kept, File, New sculpt and the gallery's new sculpt all give an empty scene; a kept or opened scene opens as it
+was. The address option `?start=sphere` begins a new scene with the default sphere (the tests use it; it does nothing to a
+kept or opened scene).
+
+- **The Scene panel opens on Create** in a scene that is empty when the page loads. Its empty state replaces the list, the
+  Create button, the Material row and the Floor offset: a line, "Add something to start.", then the Create menu's own
+  choices as tiles, built by the same code as the menu so the two cannot differ. Each choice is at least 44 px; the
+  choices scroll inside the panel. Choosing one adds it, selects it and frames it, and the panel returns to its list.
+  Deleting the last object, or undoing the first add, brings the empty state back. A panel the person closed does not
+  reopen by itself during a visit.
+- **Create choices, in order:** Primitives, Base meshes (Figures, Heads, Parts, with the "Blockouts as" switch), then
+  **Armatures**: one tile for each mannequin and block figure the Armature tab's Preset select offers, picture and label.
+  Pictures are `public/assets/armature/thumbs/<id>.png`, 96 x 96, made by `tools/render-armature-thumbs.mjs`.
+- **An armature tile** makes that mannequin the scene's armature in its rest pose and goes to the Armature workspace,
+  loading Armature first (the "Loading Armature…" notice). One armature a scene for now: when the current one has been posed
+  or had its proportions changed, the tile asks first, "Replace the armature?", text "Its pose and proportions will be
+  lost.", buttons Replace (danger) and Cancel.
+- An empty scene is not written to the autosave (ScenePersist), and File, New sculpt clears the kept record so a reload stays
+  empty.

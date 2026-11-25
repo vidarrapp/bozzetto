@@ -158,7 +158,7 @@ export const suites = {
     const sizeLine = await page.evaluate(() => !!document.querySelector('.panel--scene .outliner__size'));
     t.ok(!sizeLine, 'the Scene panel has no size line');
     const labels = await page.evaluate(() =>
-      [...document.querySelectorAll('.outliner__menu-grid--words .outliner__menu-item')].map((b) => `${b.dataset.kind}:${b.querySelector('.outliner__menu-size')?.textContent ?? ''}`),
+      [...document.querySelectorAll('.outliner__menu--create .outliner__menu-grid--words .outliner__menu-item')].map((b) => `${b.dataset.kind}:${b.querySelector('.outliner__menu-size')?.textContent ?? ''}`),
     );
     t.eq(
       labels.join(' '),
@@ -267,7 +267,7 @@ export const suites = {
     t.ok(/one is 1\.7 mm,/.test(voxel.caption), `and so does the remesh overlay (${voxel.caption})`);
 
     // --- a legacy autosave: as it was, then Set scale --------------------------
-    await page.evaluate(() => window.__sculpt.fileActions.newScene());
+    await page.evaluate(() => window.__sculpt.fileActions.newScene({ sphere: true }));
     await plantLegacyAutosave(page, 2);
     await openSculpt(page, base);
     const legacy = await page.evaluate(() => ({
@@ -342,12 +342,12 @@ export const suites = {
     // --- a legacy .bozz: opened as it was, Set scale from there ----------------
     const bytes = await page.evaluate(async () => {
       const { session, file } = window.__sculpt;
-      await window.__sculpt.fileActions.newScene();
+      await window.__sculpt.fileActions.newScene({ sphere: true });
       session.addPrimitive('cube');
       session.setUnits(null); // written as a scene from before real units writes itself
       return Array.from(new Uint8Array(await file.pack()));
     });
-    await page.evaluate(() => window.__sculpt.fileActions.newScene());
+    await page.evaluate(() => window.__sculpt.fileActions.newScene({ sphere: true }));
     const opened = await page.evaluate(async (b) => {
       const { session, file } = window.__sculpt;
       await file.open(new Uint8Array(b).buffer);
@@ -377,7 +377,7 @@ export const suites = {
     await page.evaluate(METRES);
     const before = await page.evaluate(async () => {
       const { session, file, viewer, fileActions } = window.__sculpt;
-      await fileActions.newScene();
+      await fileActions.newScene({ sphere: true });
       const cube = session.addPrimitive('cube');
       cube.getMatrix()[12] = 40;
       // A per-axis scale, as the gizmo leaves one: folded in too.
@@ -390,7 +390,7 @@ export const suites = {
     const was = await sceneFacts(page);
     await page.evaluate(async (b) => {
       const { file, fileActions, viewer } = window.__sculpt;
-      await fileActions.newScene();
+      await fileActions.newScene({ sphere: true });
       viewer.setFloorOffset(0);
       await file.open(new Uint8Array(b).buffer);
     }, before);
