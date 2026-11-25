@@ -503,12 +503,26 @@ Tool, with Material before it.
 - **Blend modes.** Each card in the Reference panel has a select beside its
   thumbnail (owner, 2026-11-18: not in the view), in Photoshop's order and
   groups (`src/ui/blendModes.ts`, shared with the Paint workspace's layers):
-  **Behind** first (drawn behind the model by the viewer), then the modes the
-  browser can blend live over the 3D view, as an element with
-  `mix-blend-mode` over the canvas: Normal | Darken, Multiply, Color Burn |
+  **Behind** first (drawn behind the model by the viewer), then the modes
+  that CSS has a match for (`CSS_BLEND_MODES`): Normal | Darken, Multiply, Color Burn |
   Lighten, Screen, Color Dodge, Linear Dodge (Add) | Overlay, Soft Light, Hard
   Light | Difference, Exclusion | Hue, Saturation, Color, Luminosity (the
-  first is labelled **Behind the model** there). Opacity applies to every mode. Only the topmost Behind picture is drawn behind the
+  first is labelled **Behind the model** there). Opacity applies to every mode.
+  The pictures over the model are drawn by the viewer, not by the page (a
+  browser does not blend a page element with the accelerated canvas under it
+  in Safari): `src/viewer/refBlend.ts` composites them in the view's own
+  output, after tone mapping, in display space, with the W3C compositing
+  formulas, so a picture shows its own colours at Normal 100% and each mode
+  matches what CSS gives. There are four slots; with more pictures in the view
+  the topmost four blend (lowest first, the later above). Place, size,
+  opacity, mode, flip and greyscale are uniforms and texture contents: no
+  shader is built when they change or when the number of pictures does (the
+  composite joins the output the first time a picture is shown, and slots in
+  no use are skipped by one uniform test). Never in a thumbnail, a saved
+  image, a turntable or a publish render (as the backdrop), and none in
+  Present. The frames and the row of tools are page elements as before; the
+  picture layer is empty and pass-through (suites `refBlend`,
+  `refBlendEdges`). Only the topmost Behind picture is drawn behind the
   model, the right way up and under its frame: `Viewer.setBackdrop` takes the
   frame's place from the top of the view down, which is how `screenUV` runs
   on both backends (suite `refBehindUp`).

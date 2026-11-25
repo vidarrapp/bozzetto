@@ -2303,8 +2303,7 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
   color: var(--bz-red-text);
 }
 
-/* The pictures in the view. The picture layer never takes a pointer. It makes no stacking context of its
-   own (no z-index, no opacity), so each picture's mix-blend-mode blends with the view's canvas under it. */
+/* The picture layer is empty: it measures the view. The pictures themselves are drawn by the viewer, in its own frame. */
 .ref-layer {
   position: absolute;
   inset: 0;
@@ -2312,19 +2311,6 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
   pointer-events: none;
   -webkit-user-select: none;
   user-select: none;
-}
-
-.ref-pic {
-  position: absolute;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.ref-pic__canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
 }
 
 body.presenting .ref-layer,

@@ -203,7 +203,7 @@ export const PANELS: Topic[] = [
         ['In view', 'The eye puts the picture in the view or takes it out. It is orange while the picture is in the view.'],
         ['Match view', 'The camera icon puts the camera back as it was when the picture was locked, so a photo you lined up with the model lines up again. It is grey until the picture was locked in the view; hold it to read why.'],
         ['Flip and Greyscale', 'The same icons as over the picture: Flip mirrors it and Greyscale takes the colour out, wherever it is shown. They are orange while on.'],
-        ['Blend mode', 'The select beside the thumbnail says how the picture is laid over the view. **Behind the model** draws it behind the model. **Normal** lays it on top. The others work like Photoshop layer modes, for example Multiply to see the model through a drawing. Opacity applies to every one.'],
+        ['Blend mode', 'The select beside the thumbnail says how the picture is laid over the view. **Behind the model** draws it behind the model. **Normal** lays it on top. The others work like Photoshop layer modes, for example Multiply to see the model through a drawing. Opacity applies to every one. Up to four pictures blend at once; with more in the view, the four on top are drawn.'],
         ['Delete', 'The trash icon removes the picture from this device after asking. It cannot be undone.'],
       ),
       p('Every icon names itself when you hover over it with the mouse, and when you hold it a moment with a finger or the Pencil.'),

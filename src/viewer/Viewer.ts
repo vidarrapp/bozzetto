@@ -19,7 +19,8 @@ import {
   Vector2,
   Vector3, Vector4, Color, CanvasTexture, SRGBColorSpace, LinearFilter, BackSide, FrontSide, HalfFloatType, RedFormat, Quaternion, Group, MaterialBlending, UnsignedByteType } from 'three';
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node, MeshBasicNodeMaterial, LineBasicNodeMaterial, BlendMode } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal, rtt, materialColor, materialOpacity, texture as tslTexture, screenUV, select, min, mix } from 'three/tsl';
+import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal, rtt, materialColor, materialOpacity, texture as tslTexture, screenUV, select, min, mix, renderOutput } from 'three/tsl';
+import { RefOverlay, type OverlayPicture } from './refBlend';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import { softAo, type SoftGTAONode } from './gtao';
@@ -2433,6 +2434,7 @@ export class Viewer {
    */
   private syncBackdropNode(): void {
     const want = this.backdropNode && !this.capturing && !this.leavingView ? this.backdropNode : null;
+    if (this.overlay.setGate(!this.capturing && !this.leavingView)) this.invalidate();
     if (this.scene.backgroundNode === want) return;
     this.scene.backgroundNode = want;
     this.invalidate();
@@ -2440,6 +2442,33 @@ export class Viewer {
 
   /** True while a picture that leaves the view is being drawn (captureThumbnail). */
   private leavingView = false;
+
+  /**
+   * Reference pictures blended over the model, in the view's own frame
+   * (viewer/refBlend.ts): after tone mapping, up to OVERLAY_SLOTS of them
+   * (the topmost), lowest first. Moving, sizing, a new mode or opacity are
+   * uniform changes. The composite joins the output the first time a picture
+   * is asked for and stays (its slots are then skipped by one uniform test);
+   * a session that never shows one has no part of it in the output. Like the
+   * backdrop it is for the screen only (syncBackdropNode).
+   */
+  private readonly overlay = new RefOverlay();
+  private overlayWanted = false;
+  private readonly overlayBase = new WeakMap<object, Node>();
+
+  setOverlays(pictures: readonly OverlayPicture[]): void {
+    this.overlay.set(pictures);
+    if (pictures.length && !this.overlayWanted) {
+      this.overlayWanted = true;
+      this.rebuildOutput(true);
+    }
+    this.invalidate();
+  }
+
+  /** How many pictures the view blends now (what the tests read). */
+  overlayCount(): number {
+    return this.overlay.count();
+  }
   private backdropNode: Node | null = null;
 
   /** The colour around a backdrop is the background's, which a theme or colour change moves. */
@@ -3397,6 +3426,16 @@ export class Viewer {
         out = this.accumulateOut;
       } else {
         out = picture;
+      }
+      if (this.overlayWanted) {
+        // Tone mapped and encoded here (the pipeline's own transform off), so the pictures blend in display space.
+        let shown = this.overlayBase.get(out);
+        if (!shown) {
+          shown = renderOutput(out as never) as unknown as Node;
+          this.overlayBase.set(out, shown);
+        }
+        out = this.overlay.compose(shown);
+        this.pipeline.outputColorTransform = false;
       }
     }
     if (this.pipeline.outputNode === out && !force) return;

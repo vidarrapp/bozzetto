@@ -18,6 +18,7 @@
 //   file brings its own pictures, and one without them an empty board.
 // refNoUpload: Save to library sends the scene alone (the network is watched: no reference
 //   bytes, no references block), and a thumbnail has no backdrop in it.
+// refBlend, refBlendEdges: the pictures are drawn in the viewer's own frame; see each below.
 // refPhone: at 390 wide the page loads and a picture can be put in the view without errors.
 // Each gets (page, base, t).
 import { mkdirSync } from 'node:fs';
@@ -173,16 +174,20 @@ const visible = (page, sel) =>
 /** The names of the pictures in the view, lowest first. */
 const inViewNames = (page) => page.evaluate(() => window.__sculpt.reference.board.inView().map((i) => i.name).join(','));
 
-/** A pixel of the first picture element in the view (its own canvas), at a fraction of its width and height. */
+/** A pixel of the first picture in the view, read from the viewer's own frame, at a fraction of its width and height. */
 const picPixel = (page, fx, fy) =>
-  page.evaluate(
-    ([fx, fy]) => {
-      const c = document.querySelector('.ref-pic canvas');
-      if (!c) return null;
-      return [...c.getContext('2d').getImageData(Math.floor(c.width * fx), Math.floor(c.height * fy), 1, 1).data].slice(0, 3);
-    },
-    [fx, fy],
-  );
+  page
+    .evaluate(
+      ([fx, fy]) => {
+        const p = window.__sculpt.reference.view.picturesInView()[0];
+        return p ? window.__sculpt.viewer.samplePixel(p.left + p.width * fx, p.top + p.height * fy) : null;
+      },
+      [fx, fy],
+    )
+    .then((h) => (h ? rgb(h) : null));
+
+/** How many pictures the viewer draws over the model now (no page element is one). */
+const drawnOver = (page) => page.evaluate(() => window.__sculpt.reference.view.describe().pictures.filter((p) => p.drawn === 'over').length);
 
 /** Drag the nth tile to a page point, as a mouse, the Pencil, or a finger that holds first. */
 async function dragTile(page, n, to, kind = 'mouse') {
@@ -654,7 +659,7 @@ export const suites = {
     t.ok(isBlue(normalPx) || isRed(normalPx), `Normal at full strength shows the picture (${normalPx})`);
     await unlock(page);
     await setLookBlend(page, 'multiply');
-    t.eq(await page.evaluate(() => document.querySelector('.ref-pic').style.mixBlendMode), 'multiply', 'Multiply sets the picture’s mix-blend-mode');
+    t.eq(await page.evaluate(() => window.__sculpt.reference.view.describe().pictures[0].blend), 'multiply', 'Multiply is the blend the view draws the picture with');
     await lock(page);
     const mulPx = await shotPixel(page, ...spot);
     t.ok(Math.abs(mulPx[0] - normalPx[0]) + Math.abs(mulPx[2] - normalPx[2]) > 60, `Multiply changes the pixels of the view compared with Normal (${normalPx} to ${mulPx})`);
@@ -677,7 +682,7 @@ export const suites = {
       s.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await page.waitForTimeout(300);
-    t.near(Number(await page.evaluate(() => getComputedStyle(document.querySelector('.ref-pic')).opacity)), 0.3, 0.02, 'Opacity sets how strongly it shows');
+    t.near(await page.evaluate(() => window.__sculpt.reference.view.describe().pictures[0].opacity), 0.3, 0.02, 'Opacity sets how strongly it shows');
     // Greyscale: a toggle in the row over the picture, orange while on.
     await frameButton(page, 'grey');
     t.ok(isGrey(await picPixel(page, 0.2, 0.2)) && isGrey(await picPixel(page, 0.8, 0.2)), 'Greyscale takes the colour out');
@@ -687,7 +692,7 @@ export const suites = {
     // Behind: under the model, no overlay element; Opacity applies to it too.
     await setLookBlend(page, 'behind');
     const dBehind = await page.evaluate(() => window.__sculpt.reference.view.describe());
-    t.ok(dBehind.behind && !dBehind.pictures[0].element && !(await visible(page, '.ref-pic')), `Behind draws under the model, as no overlay (${JSON.stringify(dBehind)})`);
+    t.ok(dBehind.behind && dBehind.pictures[0].drawn === 'behind' && (await drawnOver(page)) === 0, `Behind draws under the model, as no overlay (${JSON.stringify(dBehind)})`);
     t.near(dBehind.pictures[0].opacity, 0.3, 0.02, 'with the same opacity');
     await lock(page);
     await page.waitForTimeout(400);
@@ -722,12 +727,11 @@ export const suites = {
     e = await edge();
     t.ok(e.shown && e.pressed === 'false' && !e.orange, `the edge button is neutral while locked (${JSON.stringify(e)})`);
     const pass = await page.evaluate(() => {
-      const pics = [...document.querySelectorAll('.ref-pic')];
-      const r = pics[0].getBoundingClientRect();
-      const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      return { pe: pics.map((p) => getComputedStyle(p).pointerEvents), layer: getComputedStyle(document.querySelector('.ref-layer')).pointerEvents, tag: e?.tagName, inPic: !!e?.closest('.ref-layer') };
+      const p = window.__sculpt.reference.view.picturesInView()[0];
+      const e = document.elementFromPoint(p.left + p.width / 2, p.top + p.height / 2);
+      return { els: document.querySelectorAll('.ref-pic').length, layer: getComputedStyle(document.querySelector('.ref-layer')).pointerEvents, tag: e?.tagName, inPic: !!e?.closest('.ref-layer') };
     });
-    t.ok(pass.pe.every((p) => p === 'none') && pass.layer === 'none' && pass.tag === 'CANVAS' && !pass.inPic, `locked pictures are pass-through: the element under them is the view's canvas (${JSON.stringify(pass)})`);
+    t.ok(pass.els === 0 && pass.layer === 'none' && pass.tag === 'CANVAS' && !pass.inPic, `locked pictures are pass-through: no page element is a picture, and the element under them is the view's canvas (${JSON.stringify(pass)})`);
     await shot(page, 'locked');
 
     // The edge button unlocks again and the panel's button locks.
@@ -751,11 +755,11 @@ export const suites = {
     await page.keyboard.press('Escape');
     await pickView(page, 'References');
     await page.waitForTimeout(300);
-    t.ok(!(await visible(page, '.ref-pic')), 'View > References off hides all the pictures');
+    t.eq(await drawnOver(page), 0, 'View > References off hides all the pictures');
     await page.keyboard.press('Escape');
     await pickView(page, 'References');
     await page.waitForTimeout(400);
-    t.ok(await visible(page, '.ref-pic'), 'and on brings them back');
+    t.ok((await drawnOver(page)) > 0, 'and on brings them back');
     await page.keyboard.press('Escape');
 
     // The picture and the pixel under a point: what a projection tool asks.
@@ -902,7 +906,7 @@ export const suites = {
       .waitForFunction(() => { const c = document.querySelector('.ref-chrome'); return !c || getComputedStyle(c).visibility === 'hidden'; }, null, { timeout: 5000 })
       .catch(() => {});
     t.ok(!(await visible(page, '.ref-frame')), `the outlines and icons go with it ${await page.evaluate(() => { const c = document.querySelector('.ref-chrome'); const f = document.querySelector('.ref-frame'); return JSON.stringify({ c: c && [getComputedStyle(c).visibility, getComputedStyle(c).opacity, c.parentElement.tagName], f: f && getComputedStyle(f).visibility }); })}`);
-    t.ok(await visible(page, '.ref-pic'), 'the pictures stay');
+    t.ok((await drawnOver(page)) > 0, 'the pictures stay');
     await shot(page, 'chrome-hidden');
     await page.keyboard.press('Tab');
     await page.waitForTimeout(500);
@@ -942,7 +946,7 @@ export const suites = {
     t.eq(JSON.stringify(kept.camera), JSON.stringify(camKept), 'and the camera kept when it was locked');
     t.eq(await arrangingNow(page), false, 'a scene opens locked');
     t.ok(!(await visible(page, '.ref-frame')), 'with no outlines');
-    t.ok(await visible(page, '.ref-pic'), 'and the picture drawn');
+    t.ok((await drawnOver(page)) > 0, 'and the picture drawn');
 
     // Pictures kept from an earlier visit outlive ones added and removed after them (owner report, 2026-11-24, on
     // Safari: removing the later ones lost the first, whose bytes still pointed at the database's file, which the
@@ -1401,8 +1405,7 @@ export const suites = {
       t.ok(
         await p.evaluate(() => {
           const chrome = document.querySelector('.ref-chrome');
-          const pic = document.querySelector('.ref-pic');
-          return (!chrome || chrome.hidden) && !document.querySelector('.ref-frame') && !document.querySelector('.ref-frame__opacity') && getComputedStyle(pic).pointerEvents === 'none';
+          return (!chrome || chrome.hidden) && !document.querySelector('.ref-frame') && !document.querySelector('.ref-frame__opacity') && !document.querySelector('.ref-pic');
         }),
         'locked, neither row shows and the picture lets everything through',
       );
@@ -1590,6 +1593,333 @@ export const suites = {
     await page.waitForTimeout(500);
     q = await quarters();
     t.ok(isRed(q.top) && isBlue(q.bottom), `moved across, still under its frame (top ${q.top}, bottom ${q.bottom})`);
+    t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
+  // refBlend: the pictures in the view are drawn inside the viewer's own frame (viewer/refBlend.ts), so
+  // they blend with the model in every browser. Read with viewer.samplePixel, the view's own pixels:
+  // Normal shows the picture's colours; every mode the panel offers matches what CSS gives for the same
+  // pair of colours (a page element blended by the browser is the reference); opacity mixes; pictures
+  // stack in order; a picture lines up with its frame at device scale 1 and 2 and at a lowered render
+  // scale; flip and greyscale show; a thumbnail and Present have none of it; five pictures blend the
+  // topmost four; a mode, an opacity or a place builds no shader; no page element is a picture.
+  async refBlend(page, base, t) {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await openForInput(page, base);
+    await openPanel(page);
+    const two = (a, b) =>
+      page.evaluate(([a, b]) => {
+        const c = document.createElement('canvas');
+        c.width = 400;
+        c.height = 300;
+        const x = c.getContext('2d');
+        x.fillStyle = a;
+        x.fillRect(0, 0, 200, 300);
+        x.fillStyle = b;
+        x.fillRect(200, 0, 200, 300);
+        return c.toDataURL('image/png').split(',')[1];
+      }, [a, b]).then((s) => Buffer.from(s, 'base64'));
+    // A still view: straight multisampling and no ambient occlusion, so a read of the model does not drift between frames.
+    await page.evaluate(() => {
+      window.__sculpt.viewer.setAntialias('always');
+      window.__sculpt.viewer.setAO({ enabled: false });
+    });
+    await page.waitForTimeout(500);
+    await addFiles(page, [{ name: 'tone.png', mimeType: 'image/png', buffer: await two('#d03828', '#2848d0') }]);
+    await openPanel(page, false);
+    const id0 = await page.evaluate(() => {
+      const { board, view } = window.__sculpt.reference;
+      const id = board.list()[0].id;
+      board.putInView(id, view.fitPlace(board.get(id)));
+      board.setArranging(false);
+      return id;
+    });
+    await page.waitForTimeout(600);
+    const mm = await meshCentre(page);
+    const view = await page.evaluate(() => {
+      const r = window.__sculpt.viewer.captureCanvas.getBoundingClientRect();
+      return { l: r.left, t: r.top, w: r.width, h: r.height };
+    });
+    // Over the model (both halves) and over the bare background (both halves).
+    const pts = [
+      [mm[0] - 50, mm[1]],
+      [mm[0] + 50, mm[1]],
+      [view.l + 100, view.t + view.h / 2],
+      [view.l + view.w - 100, view.t + view.h / 2],
+    ];
+    const look = (opts) => page.evaluate(([id, o]) => window.__sculpt.reference.board.setLook(id, o), [id0, opts]).then(() => page.waitForTimeout(200));
+    const px = (p) => sample(page, p[0], p[1]);
+    const readAll = async () => {
+      const out = [];
+      for (const p of pts) out.push(await px(p));
+      return out;
+    };
+    const counters = () => page.evaluate(() => { const c = window.__bozzetto.counters; return c.nodeBuilds + c.programs + c.pipelines; });
+    const frames = (n = 3) => page.evaluate(async (n) => { for (let i = 0; i < n; i++) await new Promise((r) => requestAnimationFrame(r)); }, n);
+
+    // What the page itself would give for a pair of colours: a page element blended by the browser.
+    const cssBlend = async (mode, cb, cs, opacity) => {
+      await page.evaluate(([mode, cb, cs, op]) => {
+        const d = document.createElement('div');
+        d.id = 'refblend-css';
+        d.style.cssText = `position:fixed;left:0;top:0;width:8px;height:8px;z-index:2147483647;isolation:isolate;background:rgb(${cb.join(',')})`;
+        const e = document.createElement('div');
+        e.style.cssText = `width:100%;height:100%;background:rgb(${cs.join(',')});mix-blend-mode:${mode};opacity:${op}`;
+        d.append(e);
+        document.body.append(d);
+      }, [mode, cb, cs, opacity]);
+      const out = await shotPixel(page, 3, 3);
+      await page.evaluate(() => document.getElementById('refblend-css').remove());
+      return out;
+    };
+    const near = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
+
+    // Without the picture, then at Normal: the picture's own colours, and no element for it.
+    await page.evaluate(() => window.__sculpt.reference.view.setShown(false));
+    await page.waitForTimeout(300);
+    t.eq(await page.evaluate(() => window.__sculpt.viewer.overlayCount()), 0, 'with References off the view blends no picture');
+    // The view settles for a while after it opens (lighting, shadows): read it until two reads in a row agree.
+    let cbs = await readAll();
+    for (let i = 0; i < 12; i++) {
+      await page.waitForTimeout(1000);
+      const again = await readAll();
+      const same = again.every((c, k) => near(c, cbs[k], 0));
+      cbs = again;
+      if (same) break;
+    }
+    await page.evaluate(() => window.__sculpt.reference.view.setShown(true));
+    await page.waitForTimeout(400);
+    await look({ blend: 'normal', opacity: 1 });
+    const css0 = await counters();
+    const cs = await readAll();
+    t.ok(isRed(cs[0]) && isBlue(cs[1]) && isRed(cs[2]) && isBlue(cs[3]), `Normal at 100% shows the picture's colours over the model and the background (${JSON.stringify(cs)})`);
+    t.ok(cs.every((c, i) => !near(c, cbs[i], 20)), 'and not the view under it');
+    t.eq(await page.evaluate(() => document.querySelectorAll('.ref-pic').length), 0, 'no page element is a picture');
+    const d0 = await page.evaluate(() => window.__sculpt.reference.view.describe());
+    t.ok(d0.pictures[0].drawn === 'over' && (await page.evaluate(() => window.__sculpt.viewer.overlayCount())) === 1, `describe says it is drawn over, in the view's frame (${JSON.stringify(d0.pictures[0])})`);
+    await shot(page, 'normal');
+
+    // Every mode, against the browser's own blend of the same colours.
+    const modes = await page.evaluate(() => [...document.querySelectorAll('.ref-card .ref-card__blend option')].map((o) => o.value).filter((v) => v && v !== '-' && v !== 'behind' && v !== 'normal'));
+    t.ok(modes.length >= 16, `the panel offers ${modes.length} modes besides Behind and Normal`);
+    const misses = [];
+    for (const mode of modes) {
+      await look({ blend: mode });
+      const got = await readAll();
+      for (let i = 0; i < pts.length; i++) {
+        // Linear Dodge is a sum clamped at white; the browser's plus-lighter is the same sum, but a page element cannot be set up to show it against an opaque backdrop here.
+        const want = mode === 'linear-dodge' ? cbs[i].map((v, k) => Math.min(255, v + cs[i][k])) : await cssBlend(mode, cbs[i], cs[i], 1);
+        if (!near(got[i], want, 6)) misses.push(`${mode}@${i}: got ${got[i]} want ${want} (backdrop ${cbs[i]}, picture ${cs[i]})`);
+      }
+      if (mode === 'multiply') await shot(page, 'multiply');
+      if (mode === 'screen') await shot(page, 'screen');
+      if (mode === 'luminosity') await shot(page, 'luminosity');
+    }
+    t.eq(misses.join('\n'), '', 'every mode gives what the browser gives for the same colours (within 6 levels)');
+
+    // Known pairs, by hand.
+    await look({ blend: 'multiply' });
+    const mul = await px(pts[2]);
+    t.ok(near(mul, cbs[2].map((v, k) => Math.round((v * cs[2][k]) / 255)), 6), `Multiply darkens the view by the picture's colour (${cbs[2]} x ${cs[2]} = ${mul})`);
+    await look({ blend: 'screen' });
+    const scr = await px(pts[2]);
+    t.ok(scr.every((v, k) => v >= cbs[2][k] - 2) && scr.some((v, k) => v > cbs[2][k] + 10), `Screen lightens it (${cbs[2]} to ${scr})`);
+    await look({ blend: 'difference' });
+    t.ok(near(await px(pts[2]), cbs[2].map((v, k) => Math.abs(v - cs[2][k])), 6), 'Difference is the distance between the two');
+
+    // Opacity: 30% of the way from the view to the picture.
+    await look({ blend: 'normal', opacity: 0.3 });
+    const o30 = await px(pts[2]);
+    t.ok(near(o30, cbs[2].map((v, k) => Math.round(v * 0.7 + cs[2][k] * 0.3)), 6), `30% Normal mixes the picture with the view (${cbs[2]}, ${cs[2]}, ${o30})`);
+    await look({ blend: 'multiply', opacity: 0.3 });
+    t.ok(near(await px(pts[2]), await cssBlend('multiply', cbs[2], cs[2], 0.3), 6), '30% Multiply matches the browser too');
+    await look({ blend: 'normal', opacity: 1 });
+
+    // Moving, sizing, a mode, an opacity, flip and greyscale build no shader.
+    const before = await counters();
+    for (const [x, y, w] of [[0.1, 0.05, 0.9], [-0.2, 0.1, 0.7], [0, 0, 1.1]]) {
+      await page.evaluate(([id, x, y, w]) => window.__sculpt.reference.board.setPlace(id, { x, y, w }), [id0, x, y, w]);
+      await frames();
+    }
+    for (const b of ['overlay', 'hue', 'color-dodge', 'soft-light', 'normal']) await look({ blend: b, opacity: 0.6 });
+    await look({ mirror: true });
+    await look({ grey: true });
+    await look({ mirror: false, grey: false, opacity: 1 });
+    await frames(4);
+    t.eq((await counters()) - before, 0, `a move, a size, a mode, an opacity, flip and greyscale build nothing (counters ${before} to ${await counters()}; ${css0} before the first reads)`);
+    await page.evaluate(([id, p]) => window.__sculpt.reference.board.setPlace(id, p), [id0, await page.evaluate((id) => window.__sculpt.reference.view.fitPlace(window.__sculpt.reference.board.get(id)), id0)]);
+    await frames();
+
+    // Flip and greyscale, in the view's own pixels.
+    await look({ mirror: true });
+    const fl = await readAll();
+    t.ok(isBlue(fl[0]) && isRed(fl[1]), `Flip swaps the halves (${JSON.stringify(fl)})`);
+    await look({ mirror: false, grey: true });
+    const gr = await readAll();
+    t.ok(gr.every(isGrey), `Greyscale takes the colour out (${JSON.stringify(gr)})`);
+    await look({ grey: false });
+
+    // A thumbnail has none of it, nor has Present.
+    const thumbPx = async () =>
+      page.evaluate(async () => {
+        const blob = await window.__sculpt.viewer.captureThumbnail(200, false);
+        const bmp = await createImageBitmap(blob);
+        const c = document.createElement('canvas');
+        c.width = bmp.width;
+        c.height = bmp.height;
+        const x = c.getContext('2d');
+        x.drawImage(bmp, 0, 0);
+        const d = x.getImageData(Math.floor(c.width * 0.5), Math.floor(c.height * 0.1), 1, 1).data;
+        return { px: [d[0], d[1], d[2]], count: window.__sculpt.viewer.overlayCount() };
+      });
+    const th = await thumbPx();
+    t.ok(!isRed(th.px) && !isBlue(th.px), `a thumbnail has no picture in it (${th.px})`);
+    t.eq((await page.evaluate(() => window.__sculpt.viewer.overlayCount())), 1, 'and the picture is back on screen afterwards');
+    t.ok((await px(pts[2])).every((v, k) => Math.abs(v - cs[2][k]) <= 8), 'and the view still shows it');
+    await page.evaluate(() => {
+      const w = window.__sculpt;
+      if (w.present?.enter) w.present.enter();
+      else window.dispatchEvent(new CustomEvent('bozzetto:present', { detail: { active: true } }));
+    });
+    await page.waitForTimeout(700);
+    const pres = await page.evaluate(() => ({ n: window.__sculpt.viewer.overlayCount(), body: document.body.classList.contains('presenting') }));
+    t.eq(pres.n, 0, `Present shows none (presenting ${pres.body})`);
+    await page.evaluate(() => {
+      const w = window.__sculpt;
+      if (w.present?.leave) w.present.leave();
+      else window.dispatchEvent(new CustomEvent('bozzetto:present', { detail: { active: false } }));
+    });
+    await page.waitForTimeout(700);
+    t.eq(await page.evaluate(() => window.__sculpt.viewer.overlayCount()), 1, 'and leaving Present brings it back');
+
+    // Two overlapping pictures stack in order: the later is above, and blends with what is below.
+    await page.evaluate(() => window.__sculpt.reference.board.takeOut(window.__sculpt.reference.board.list()[0].id));
+    await openPanel(page);
+    await addFiles(page, [{ name: 'a.png', mimeType: 'image/png', buffer: await two('#c83228', '#c83228') }]);
+    await addFiles(page, [{ name: 'b.png', mimeType: 'image/png', buffer: await two('#28a03c', '#28a03c') }]);
+    await openPanel(page, false);
+    const ids = await page.evaluate(() => {
+      const { board } = window.__sculpt.reference;
+      const byName = (n) => board.list().find((i) => i.name === n || i.name === n.replace('.png', '')).id;
+      const a = byName('a.png');
+      const b = byName('b.png');
+      board.putInView(a, { x: -0.35, y: -0.3, w: 0.4 });
+      board.putInView(b, { x: -0.2, y: -0.3, w: 0.4 });
+      board.setArranging(false);
+      return { a, b };
+    });
+    await page.waitForTimeout(600);
+    const geo = await page.evaluate(() => window.__sculpt.reference.view.picturesInView().map((p) => ({ l: p.left, t: p.top, w: p.width, h: p.height })));
+    const onlyA = [geo[0].l + 8, geo[0].t + geo[0].h / 2];
+    const both = [geo[1].l + 8, geo[1].t + geo[1].h / 2];
+    const onlyB = [geo[1].l + geo[1].w - 8, geo[1].t + geo[1].h / 2];
+    const cbA = await sample(page, ...onlyA); // A alone
+    t.ok(isRed(cbA), `the lower picture shows where the upper does not reach (${cbA})`);
+    const cbB = await sample(page, ...onlyB);
+    const upper = await sample(page, ...both);
+    t.ok(near(upper, cbB, 8) && !isRed(upper), `where they overlap the later picture is on top (${upper})`);
+    await shot(page, 'two-pictures');
+    await page.evaluate((b) => window.__sculpt.reference.board.setLook(b, { blend: 'multiply' }), ids.b);
+    await page.waitForTimeout(300);
+    const stacked = await sample(page, ...both);
+    t.ok(near(stacked, cbA.map((v, k) => Math.round((v * cbB[k]) / 255)), 6), `a Multiply picture blends with the one below it (${cbA} x ${cbB} = ${stacked})`);
+
+    // Five pictures: the topmost four are blended.
+    await page.evaluate(() => window.__sculpt.reference.board.clear());
+    await openPanel(page);
+    const cols = ['#d02020', '#20a020', '#2030d0', '#d0c020', '#c020c0'];
+    for (let i = 0; i < 5; i++) await addFiles(page, [{ name: `f${i}.png`, mimeType: 'image/png', buffer: await two(cols[i], cols[i]) }]);
+    await openPanel(page, false);
+    await page.evaluate(() => {
+      const { board } = window.__sculpt.reference;
+      for (let i = 0; i < 5; i++) board.putInView(board.list().find((x) => x.name === `f${i}.png` || x.name === `f${i}`).id, { x: -0.4 + i * 0.2, y: -0.33, w: 0.17 });
+      board.setArranging(false);
+    });
+    await page.waitForTimeout(700);
+    const five = await page.evaluate(() => ({ drawn: window.__sculpt.reference.view.describe().pictures.map((p) => p.drawn).join(','), n: window.__sculpt.viewer.overlayCount() }));
+    t.eq(five.drawn, 'none,over,over,over,over', 'with five pictures in the view the topmost four are blended');
+    t.eq(five.n, 4, 'and the viewer blends four');
+    const g5 = await page.evaluate(() => window.__sculpt.reference.view.picturesInView().map((p) => [p.left + p.width / 2, p.top + p.height / 2]));
+    const got5 = [];
+    for (const g of g5) got5.push(await sample(page, g[0], g[1]));
+    t.ok(!isRed(got5[0]) && isRed(got5[1]) === false && got5[1][1] > 120 && isBlue(got5[2]), `the lowest is not drawn, the other four are (${JSON.stringify(got5)})`);
+    await page.evaluate(() => window.__sculpt.reference.board.clear());
+    await page.waitForTimeout(400);
+    t.eq(await page.evaluate(() => window.__sculpt.viewer.overlayCount()), 0, 'with none in the view no slot is in use');
+
+    t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
+
+  // refBlendEdges: a picture lines up with its frame at device scale 1 and 2, and with the render
+  // scale lowered (what adaptive quality does while drawing): just inside each edge is the picture,
+  // just outside is not.
+  async refBlendEdges(page, base, t) {
+    const errors = [];
+    for (const scale of [1, 2]) {
+      const ctx = await page.context().browser().newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: scale });
+      try {
+        const p = await ctx.newPage();
+        p.on('pageerror', (e) => errors.push(String(e)));
+        await openSculpt(p, base, '&q=low');
+        await p.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+        await openPanel(p);
+        const green = Buffer.from(
+          await p.evaluate(() => {
+            const c = document.createElement('canvas');
+            c.width = 300;
+            c.height = 200;
+            const x = c.getContext('2d');
+            x.fillStyle = '#00c800';
+            x.fillRect(0, 0, 300, 200);
+            return c.toDataURL('image/png').split(',')[1];
+          }),
+          'base64',
+        );
+        await addFiles(p, [{ name: 'edge.png', mimeType: 'image/png', buffer: green }]);
+        await openPanel(p, false);
+        await p.evaluate(() => {
+          const { board } = window.__sculpt.reference;
+          board.putInView(board.list()[0].id, { x: -0.42, y: -0.2, w: 0.23 });
+          board.setArranging(true);
+        });
+        await p.waitForTimeout(700);
+        const isGreen = ([r, g, b]) => g > 150 && r < 60 && b < 60;
+        const check = async (label) => {
+          const f = await p.evaluate(() => {
+            const r = document.querySelector('.ref-frame').getBoundingClientRect();
+            return { l: r.left, t: r.top, r: r.right, b: r.bottom };
+          });
+          const mx = (f.l + f.r) / 2;
+          const my = (f.t + f.b) / 2;
+          const at = (x, y) => sample(p, x, y);
+          const m = 1.5;
+          const inside = [await at(f.l + m, my), await at(f.r - m, my), await at(mx, f.t + m), await at(mx, f.b - m)];
+          const outside = [await at(f.l - m, my), await at(f.r + m, my), await at(mx, f.t - m), await at(mx, f.b + m)];
+          t.ok(inside.every(isGreen), `${label}: just inside each edge of the frame is the picture (${JSON.stringify(inside)})`);
+          t.ok(outside.every((c) => !isGreen(c)), `${label}: just outside each edge it is not (${JSON.stringify(outside)})`);
+        };
+        await check(`device scale ${scale}`);
+        await p.evaluate(() => window.__sculpt.reference.board.setArranging(false));
+        if (scale === 2) {
+          // The render scale lowered, as adaptive quality does while drawing.
+          const ratios = await p.evaluate(async () => {
+            const v = window.__bozzetto;
+            const c = v.renderer.domElement;
+            const full = c.width / c.clientWidth;
+            v.adaptive.apply(6);
+            await new Promise((r) => setTimeout(r, 500));
+            return { full, low: c.width / c.clientWidth };
+          });
+          t.ok(ratios.low < ratios.full, `adaptive quality lowers the render scale (${ratios.full} to ${ratios.low})`);
+          await p.evaluate(() => window.__sculpt.reference.board.setArranging(true));
+          await p.waitForTimeout(400);
+          await check(`render scale ${ratios.low}`);
+        }
+      } finally {
+        await ctx.close();
+      }
+    }
     t.ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   },
 };
