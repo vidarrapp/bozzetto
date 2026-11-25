@@ -1158,4 +1158,138 @@ export const suites = {
     await page.evaluate(install);
     t.ok(await L(`lt.layers().some((l) => l.name === 'Masked')`), 'a .bozz round trip keeps the layers');
   },
+
+  /**
+   * The Weight slider shows its effect while it is dragged (owner, 2026-11-25): on the highest level on every
+   * move, at most once a drawn frame; from a lower level when the slider has been still for 120 ms (an update
+   * costs a second at a million triangles). The release is one undo step; a drag back to the start adds none;
+   * a group's slider is the same.
+   */
+  async sculptLayersLive(page, base, t) {
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await openForInput(page, base);
+    await page.evaluate(install);
+    t.ok(await openPanel(page, 'Layers'), 'the Layers panel opens');
+    const lv = await page.evaluate(() => window.__lt.levels());
+    const top = lv.n - 1;
+    await page.evaluate((k) => window.__lt.go(k), top);
+    await page.evaluate(() => window.__lt.snap('base'));
+    const tol = await tolOf(page);
+    await page.click('.panel--layers .layer-bar [data-action=layer]');
+    await page.evaluate(() => window.__lt.stroke());
+    await page.evaluate(() => window.__lt.snap('s1'));
+    t.ok((await page.evaluate(() => window.__lt.diff('base'))) > tol * 50, 'a stroke on a layer');
+    // Counters: updates sent to the layers while live, and frames drawn.
+    await page.evaluate(() => {
+      const c = (window.__cnt = { live: 0, frames: 0 });
+      const layers = window.__sculpt.session.layers;
+      const orig = layers.setWeight.bind(layers);
+      layers.setWeight = (m, l, w, ph) => {
+        if (ph === 'live') c.live++;
+        return orig(m, l, w, ph);
+      };
+      const tick = () => {
+        c.frames++;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    const box = async () => {
+      const b = await page.evaluate(() => {
+        const r = document.querySelector('.panel--layers .layer-controls input[type=range]').getBoundingClientRect();
+        return { x: r.x, y: r.y + r.height / 2, w: r.width };
+      });
+      return b;
+    };
+    // The undo position (the list keeps the undone steps, so its length is not the depth).
+    const depth = () => page.evaluate(() => window.__sculpt.session.getStateManager()._curUndoIndex);
+    const wait = (cond, arg) => page.waitForFunction(cond, arg, { timeout: 60_000 });
+    /** Press at the right end (100%), move to a share of the travel and stay there. */
+    const press = async (frac, steps = 12) => {
+      const b = await box();
+      await page.mouse.move(b.x + b.w - 1, b.y);
+      await page.mouse.down();
+      await page.mouse.move(b.x + b.w * frac, b.y, { steps });
+      return b;
+    };
+    const dragged = (name) => wait(([n, k]) => window.__lt.diff(n) > k, [name, tol * 20]);
+
+    // --- the highest level --------------------------------------------------
+    let d0 = await depth();
+    await press(0.4);
+    await dragged('s1');
+    t.ok(true, 'at the highest level the surface has moved before the release');
+    t.eq(await depth(), d0, 'and no undo step is made while the pointer is held');
+    // A fast drag: many moves, never more updates than frames drawn.
+    const c0 = await page.evaluate(() => ({ ...window.__cnt }));
+    const b = await box();
+    for (let r = 0; r < 4; r++) {
+      await page.mouse.move(b.x + b.w * 0.8, b.y, { steps: 40 });
+      await page.mouse.move(b.x + b.w * 0.2, b.y, { steps: 40 });
+    }
+    const c1 = await page.evaluate(() => ({ ...window.__cnt }));
+    const live = c1.live - c0.live;
+    const frames = c1.frames - c0.frames;
+    t.ok(live >= 1 && live <= frames, `a fast drag sends at most one update a frame (${live} updates, ${frames} frames)`);
+    await page.mouse.move(b.x + b.w * 0.4, b.y, { steps: 5 });
+    await page.mouse.up();
+    t.eq(await depth(), d0 + 1, 'the release is one undo step for the whole drag');
+    const w = await page.evaluate(() => window.__lt.layers()[0].weight);
+    await page.evaluate(() => window.__lt.snap('dragged'));
+    await page.evaluate(() => window.__lt.undo());
+    t.ok((await page.evaluate(() => window.__lt.diff('s1'))) < tol * 2, 'undo puts the surface back exactly');
+    await page.evaluate((w) => window.__lt.weight(window.__lt.layers()[0], w), w);
+    t.ok((await page.evaluate(() => window.__lt.diff('dragged'))) < tol * 2, 'and the release is what one change to that weight gives');
+    await page.evaluate(() => window.__lt.undo());
+    t.eq(await depth(), d0, 'back at the start');
+
+    // A drag that ends where it began.
+    await press(0.3);
+    await dragged('s1');
+    const b2 = await box();
+    await page.mouse.move(b2.x + b2.w + 20, b2.y, { steps: 12 });
+    await page.mouse.up();
+    t.eq(await depth(), d0, 'a drag back to where it began adds no undo step');
+    t.ok((await page.evaluate(() => window.__lt.diff('s1'))) < tol * 2, 'and the surface is as it was');
+
+    // --- a group's slider -----------------------------------------------------
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const m = session.getMesh();
+      const g = session.layers.group(m, window.__lt.layers()[0]);
+      session.layers.setActive(m, g);
+    });
+    await wait(() => document.querySelector('.panel--layers .layer-row--group.layer-row--active'));
+    d0 = await depth();
+    await press(0.4);
+    await dragged('s1');
+    t.ok(true, "a group's slider moves the surface before the release");
+    await page.mouse.up();
+    t.eq(await depth(), d0 + 1, "and its release is one undo step");
+    await page.evaluate(() => window.__lt.undo());
+    t.ok((await page.evaluate(() => window.__lt.diff('s1'))) < tol * 2, 'undo puts it back');
+    await page.evaluate(() => window.__lt.undo());
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const m = session.getMesh();
+      session.layers.setActive(m, window.__lt.layers().find((l) => l.kind === 'layer'));
+    });
+
+    // --- a lower level ----------------------------------------------------
+    await page.evaluate((k) => window.__lt.go(k), top - 1);
+    await page.evaluate(() => window.__lt.snap('l1'));
+    await wait(() => document.querySelector('.panel--layers .layer-row--active'));
+    d0 = await depth();
+    const c2 = await page.evaluate(() => ({ ...window.__cnt }));
+    await press(0.4);
+    await dragged('l1');
+    t.ok(true, 'from a lower level the surface moves before the release, once the slider is still');
+    t.eq(await depth(), d0, 'with no undo step yet');
+    await page.mouse.up();
+    t.eq(await depth(), d0 + 1, 'the release is one undo step');
+    await page.evaluate(() => window.__lt.undo());
+    t.ok((await page.evaluate(() => window.__lt.diff('l1'))) < tol * 8, 'and undo puts the level back');
+    const c3 = await page.evaluate(() => ({ ...window.__cnt }));
+    t.ok(c3.live - c2.live <= c3.frames - c2.frames, 'updates never exceeded frames there either');
+  },
 };

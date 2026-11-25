@@ -192,10 +192,22 @@ interface Snap {
   eff: Map<SculptLayer, Eff>;
 }
 
+interface Drag {
+  mesh: SculptMesh;
+  layer: SculptLayer;
+  before: Snap;
+  shown: Map<SculptLayer, Eff>;
+}
+
+/** How long a weight slider is still before a lower level shows it. */
+const STILL_MS = 120;
+
 export class SculptLayers {
   private readonly per = new WeakMap<SculptMesh, PerMesh>();
   /** A weight drag in progress: where it began, so the release is one undo step. */
-  private drag: { mesh: SculptMesh; layer: SculptLayer; before: Snap; shown: Map<SculptLayer, Eff> } | null = null;
+  /** The timer of a weight update from a lower level, waiting for the slider to be still. */
+  private still = 0;
+  private drag: Drag | null = null;
 
   /** Anything about the layers changed (list, active, weight, an undo): the panel and the autosave follow. */
   onChange: (() => void) | null = null;
@@ -673,8 +685,9 @@ export class SculptLayers {
 
   /**
    * Set a layer's or a group's weight (1 is 100%). `live` while a slider is
-   * dragged: shown at once where the highest level is on screen, else on the
-   * release. The release (`commit`) is one undo step for the whole drag. A
+   * dragged: shown at once where the highest level is on screen; from a lower
+   * level (an update costs a second or more at a million triangles) when the
+   * slider has been still for STILL_MS, and on the release. The release (`commit`) is one undo step for the whole drag. A
    * group's weight multiplies its layers'.
    */
   setWeight(mesh: SculptMesh, layer: SculptLayer, weight: number, phase: 'live' | 'commit'): void {
@@ -688,12 +701,18 @@ export class SculptLayers {
       this.drag = { mesh, layer, before, shown: before.eff };
     }
     layer.weight = w;
+    if (this.still) clearTimeout(this.still);
+    this.still = 0;
     const st = stackOf(mesh);
-    if (phase === 'live' && st && st._sel !== st._meshes.length - 1) return;
-    const now = this.effs(p);
-    this.transition(mesh, this.drag.shown, now);
-    this.drag.shown = now;
-    this.settle(p);
+    if (phase === 'live' && st && st._sel !== st._meshes.length - 1) {
+      const d = this.drag;
+      this.still = window.setTimeout(() => {
+        this.still = 0;
+        if (this.drag === d) this.show(mesh, p, d);
+      }, STILL_MS);
+      return;
+    }
+    this.show(mesh, p, this.drag);
     if (phase === 'live') return;
     const from = this.drag.before;
     this.drag = null;
@@ -701,6 +720,14 @@ export class SculptLayers {
     if (was && was.weight === w) return;
     this.pushPair(mesh, p, from, this.snapshot(p));
     this.changed();
+  }
+
+  /** Put the surface at what the layers do now, from what the drag last showed. */
+  private show(mesh: SculptMesh, p: PerMesh, d: Drag): void {
+    const now = this.effs(p);
+    this.transition(mesh, d.shown, now);
+    d.shown = now;
+    this.settle(p);
   }
 
   /** Show or hide a layer or a group: its weight is kept, its effect leaves the surface or comes back. */
