@@ -1260,11 +1260,12 @@ export const suites = {
     await page.screenshot({ path: `${SHOTS}/hdris.png` });
 
     // A slow file: the tile reads loading, then in use; only that file is fetched.
-    let release = () => {};
-    const gate = new Promise((r) => (release = r));
-    await page.route('**/studio-photo.hdr*', async (route) => {
-      await gate;
-      await route.continue();
+    // Held in the page itself (a service worker answers a routed request): the file waits until the picture is taken.
+    await page.evaluate(() => {
+      const real = window.fetch.bind(window);
+      window.__realFetch = window.fetch;
+      const gate = new Promise((r) => (window.__release = r));
+      window.fetch = (input, init) => (/studio-photo\.hdr/.test(String(input?.url ?? input)) ? gate.then(() => real(input, init)) : real(input, init));
     });
     await tapAsset(page, 'hdris', 'studio-photo');
     await waitMark(page, 'hdris', 'studio-photo', 'loading');
@@ -1272,7 +1273,10 @@ export const suites = {
     const rect = (id) => page.evaluate((i) => { const r = document.querySelector(`.lib-body[data-tab="hdris"] .lib-tile[data-asset="${i}"]`).getBoundingClientRect(); return [r.width, r.height]; }, id);
     const loadingBox = await rect('studio-photo');
     await page.screenshot({ path: `${SHOTS}/hdri-loading.png` });
-    release();
+    await page.evaluate(() => {
+      window.__release();
+      window.fetch = window.__realFetch;
+    });
     await waitMark(page, 'hdris', 'studio-photo', 'use');
     t.eq(JSON.stringify(await rect('studio-photo')), JSON.stringify(loadingBox), 'with no change of size');
     t.eq(hdrs.join(), 'studio-photo.hdr', 'only the tapped file was fetched');
