@@ -977,13 +977,13 @@ body.bz-shell .sculpt-toolbar__btn:focus-visible .bz-tip {
 /* --- the edge controls ------------------------------------------------------
    Bottom left, 16px in, no box behind any of them. Top down: the brush
    Size and Strength fields (while the Tool panel is closed), Solo, Redo,
-   Undo and Negative. */
+   Undo, Negative (Carve), Smooth and Mask. */
 body.bz-shell {
   --bz-edge-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   /* What the column holds besides the two upright fields' lines: their
      18px of room for the value above each, the 4px between them, the
-     solo/redo/undo/negative buttons (4 x 40px) and 8px under the fields. */
-  --bz-edge-fixed: 208px;
+     solo/redo/undo/carve/smooth/mask buttons (6 x 40px) and 8px under the fields. */
+  --bz-edge-fixed: 288px;
 }
 
 body.bz-shell .bz-edge {
@@ -1255,6 +1255,7 @@ body.armature-ws .sculpt-toolbar__brushes,
 body.armature-ws .bz-edge__fields,
 body.armature-ws .sculpt-solo,
 body.armature-ws .sculpt-toolbar__neg,
+body.armature-ws .sculpt-toolbar__mode,
 body.armature-ws .sculpt-leveltoast,
 body.armature-ws .sculpt-cursor {
   visibility: hidden !important;
@@ -2779,7 +2780,8 @@ body.bz-shell .panel--layers {
 }
 
 .sculpt-toolbar__btn[hidden],
-.sculpt-toolbar__neg[hidden] {
+.sculpt-toolbar__neg[hidden],
+body.bz-shell .bz-edge .sculpt-toolbar__mode[hidden] {
   display: none;
 }
 

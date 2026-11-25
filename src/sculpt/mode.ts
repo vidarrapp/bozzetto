@@ -1478,7 +1478,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     isSolo: () => session.isSolo(),
     canSolo: () => !!session.getMesh(),
     toggle: () => setSolo(!session.isSolo()),
-  }, toolbar.negativeEl);
+  }, toolbar.edgeEls);
   // How the file actions reach the viewer's look, so .bozz files carry it.
   const lookBridge: LookBridge = {
     // A save is of one view: Present's turntable stops for it.

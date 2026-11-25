@@ -732,8 +732,13 @@ Tool, with Material before it.
 
 ### Edge controls
 
-- Left edge, bottom up: Negative, Undo, Redo, Solo, then the brush
-  strength and size sliders. No box behind them; each is black or white
+- Left edge, bottom up: Negative (Carve), Smooth, Mask, Undo, Redo, Solo, then the brush
+  strength and size sliders. Smooth ("Smooth (hold Shift)") and Mask ("Mask (hold Ctrl)")
+  press as Carve does: a tap arms the next stroke only (orange icon), a long press latches
+  (the same orange) until a tap. A stroke then goes as if the key were held when it began;
+  Mask with Carve on unmasks. They let go of each other, a held key wins, nothing is saved.
+  In Paint, Smooth is named Blur and shows with the Paint tool only; Mask stays; Carve is
+  away. In Present and Armature none shows. No box behind them; each is black or white
   from the brightness of the picture behind it.
 - Size and strength show only while the Tool panel is closed, and for a
   moment when changed by a hotkey while it is open.
@@ -789,7 +794,7 @@ states" board. This section adds behaviour.
 - Holding a button with the free hand to smooth, mask or carve while the
   pen draws cannot be done reliably in a web page on iPad (looked into
   before; it needs a native app). Touch keeps what it has today: the
-  Negative button, and Smooth and Mask reached as they are now. The
+  Negative, Smooth and Mask buttons. The
   desktop and any native iPad version can revisit it.
 
 ### Armature handles

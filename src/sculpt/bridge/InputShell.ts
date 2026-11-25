@@ -405,6 +405,17 @@ export class InputShell {
   /** Tool index swapped out for a ctrl-mask stroke, if any. */
   private maskPrevTool = -1;
   /**
+   * The Smooth and Mask buttons: each latched (a long press) or armed for the
+   * next stroke (a tap), as Carve is. A held Shift or Ctrl wins over both.
+   * One of the two at a time.
+   */
+  private readonly strokeKeys = {
+    smooth: { base: false, armed: false },
+    mask: { base: false, armed: false },
+  };
+  /** Which button's arm the stroke under way took; its end spends it. */
+  private armedKeyStroke: 'smooth' | 'mask' | null = null;
+  /**
    * The Select tool (q): a mode of the shell rather than a vendor tool.
    * Presses pick and marquee-select objects instead of stroking; the
    * brushes and the gizmo are one key away.
@@ -665,7 +676,7 @@ export class InputShell {
     this.cursor.setBrush(tool._radius, typeof tool._intensity === 'number' ? tool._intensity : null);
     this.syncCursorStrength();
     const idx = this.session.getSculptManager().getToolIndex();
-    this.cursor.setSmoothing(idx === Enums.Tools.SMOOTH || idx === Enums.Tools.PAINT_BLUR || this.shiftHeld);
+    this.cursor.setSmoothing(idx === Enums.Tools.SMOOTH || idx === Enums.Tools.PAINT_BLUR || this.shiftHeld || this.keyOn('smooth'));
     this.onBrushChange?.();
   }
 
@@ -1463,7 +1474,10 @@ export class InputShell {
         const stateBefore = this.undoStateAtStroke;
         // A young stroke was the gesture's start, not sculpting: its dab is
         // undone below, and the Negative arm stays for the stroke to come.
-        if (young) this.armedStroke = false;
+        if (young) {
+          this.armedStroke = false;
+          this.armedKeyStroke = null;
+        }
         this.abandonStroke();
         // Identity, not stack depth: once the undo stack is full, pushState
         // shifts the oldest entry and leaves _curUndoIndex unchanged, so a
@@ -1486,6 +1500,7 @@ export class InputShell {
       // The Negative arm is the pen's: the touch that got in first was a
       // resting hand, not the stroke the arm was waiting for.
       this.armedStroke = false;
+      this.armedKeyStroke = null;
       this.abandonStroke();
     }
     // A touch landing while other touches are already down (mid-gesture
@@ -1600,13 +1615,19 @@ export class InputShell {
 
     // Temporary tool swaps for the stroke: ctrl = mask, shift = smooth
     // (ZBrush muscle memory). Restored on release.
+    // The Smooth and Mask buttons stand in for the key, unless a key is held.
     const tools = Enums.Tools;
-    if (e.ctrlKey && !e.metaKey) {
+    const keyHeld = e.ctrlKey || e.shiftKey || e.metaKey;
+    const btnMask = !keyHeld && this.keyOn('mask');
+    const btnSmooth = !keyHeld && this.keyOn('smooth');
+    const ctrl = (e.ctrlKey || btnMask) && !e.metaKey;
+    const shift = e.shiftKey || btnSmooth;
+    if (ctrl) {
       this.maskPrevTool = s.getSculptManager().getToolIndex();
       s.getSculptManager().setToolIndex(tools.MASKING);
-    } else if (e.shiftKey && this.paintMode && s.getSculptManager().getToolIndex() !== tools.PAINT) {
+    } else if (shift && this.paintMode && s.getSculptManager().getToolIndex() !== tools.PAINT) {
       // The Paint workspace keeps Shift for the paint brush alone: smoothing would move the surface.
-    } else if (e.shiftKey) {
+    } else if (shift) {
       // Over the paint brush, shift blurs the paint instead of smoothing
       // the surface (owner call); the blur takes the paint brush's size,
       // strength and profile so the ring under the pen means what it says.
@@ -1626,6 +1647,7 @@ export class InputShell {
     }
     // The ring reflects the tool actually stroking (radius and the blue
     // smoothing tint for shift strokes); restored on release.
+    const keyArm = this.maskPrevTool >= 0 ? (btnMask ? 'mask' : btnSmooth ? 'smooth' : null) : null;
     if (this.maskPrevTool >= 0) this.syncCursorBrush();
 
     // Paint reads alt as the eyedropper (upstream's _pickColor), not as an
@@ -1648,9 +1670,12 @@ export class InputShell {
     let usesArm = false;
     if ('_negative' in tool) {
       const prev = !!tool._negative;
-      usesArm = this.negativeArmed && !e.ctrlKey;
+      // The Mask button with Carve on as well unmasks, as Ctrl + Alt does
+      // (Carve is not on the edge in Paint, so it counts for nothing there).
+      const carve = btnMask && !this.paintMode && this.negativeBase !== this.negativeArmed;
+      usesArm = this.negativeArmed && (!ctrl || (btnMask && !this.paintMode));
       const base = this.negativeBase !== usesArm ? !prev : prev;
-      tool._negative = e.ctrlKey ? !e.altKey : e.altKey ? !base : base;
+      tool._negative = ctrl ? e.altKey === carve : e.altKey ? !base : base;
       this.negativeOverride = { tool, prev };
     }
 
@@ -1772,6 +1797,7 @@ export class InputShell {
     // Only now is the arm committed: a press that missed the mesh, or hit
     // a locked object, has orbited instead and left it set.
     this.armedStroke = usesArm;
+    this.armedKeyStroke = keyArm;
     this.pointerId = e.pointerId;
     this.strokePointerType = e.pointerType;
     this.strokeStartedAt = performance.now();
@@ -2483,9 +2509,14 @@ export class InputShell {
 
   /** The stroke the arm inverted has ended: the arm is spent. */
   private spendArm(): void {
-    if (!this.armedStroke) return;
+    const key = this.armedKeyStroke;
+    const carve = this.armedStroke;
+    if (!key && !carve) return;
+    this.armedKeyStroke = null;
     this.armedStroke = false;
-    this.negativeArmed = false;
+    if (key) this.strokeKeys[key].armed = false;
+    if (carve) this.negativeArmed = false;
+    if (key) this.syncSmoothTint();
     this.onNegativeChange?.();
   }
 
@@ -2925,6 +2956,38 @@ export class InputShell {
 
   getNegativeArmed(): boolean {
     return this.negativeArmed;
+  }
+
+  /** Whether the Smooth or Mask button is on (latched or armed). */
+  private keyOn(which: 'smooth' | 'mask'): boolean {
+    const k = this.strokeKeys[which];
+    return k.base || k.armed;
+  }
+
+  /**
+   * The Smooth and Mask buttons' state: `base` is the latch, `armed` the one
+   * stroke. Turning one on lets go of the other. A change mid-stroke is for
+   * the next stroke, as it is for Carve.
+   */
+  setStrokeKey(which: 'smooth' | 'mask', part: 'base' | 'armed', on: boolean): void {
+    if (on) {
+      const other = this.strokeKeys[which === 'smooth' ? 'mask' : 'smooth'];
+      other.base = false;
+      other.armed = false;
+    }
+    this.strokeKeys[which][part] = on;
+    this.armedKeyStroke = null;
+    this.syncSmoothTint();
+  }
+
+  getStrokeKey(which: 'smooth' | 'mask', part: 'base' | 'armed'): boolean {
+    return this.strokeKeys[which][part];
+  }
+
+  /** The ring's smoothing tint, for the Smooth button as for the held key. */
+  private syncSmoothTint(): void {
+    const idx = this.session.getSculptManager().getToolIndex();
+    this.cursor.setSmoothing(idx === Enums.Tools.SMOOTH || idx === Enums.Tools.PAINT_BLUR || this.shiftHeld || this.keyOn('smooth'));
   }
 
   /** The masking tool carries the whole-mask operations (clear/invert). */

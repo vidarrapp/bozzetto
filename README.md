@@ -176,6 +176,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **Smooth and Mask buttons beside Carve.** On the left edge, a tap on Smooth or Mask applies it to the next stroke, and a long press keeps it on until you tap again, so an iPad without a keyboard can smooth and mask. Holding Shift or Ctrl still works, and Mask with Carve on unmasks. In Paint, Smooth is Blur and shows with the Paint tool.
+
 ### v0.7.17
 
 - **The armature's row is named for the mannequin.** In the Scene tab it says, for instance, "Male mannequin, realistic" (or the model file's name), not the scene's name, and follows a change of preset.
