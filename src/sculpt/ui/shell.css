@@ -1090,20 +1090,20 @@ body.bz-shell .bz-edge .sculpt-solo {
   display: block;
 }
 
-/* The upright fields: a 1px line 160px tall, the amount in orange 3px wide
+/* The upright fields: a 1px line 120px tall, the amount in orange 3px wide
    from its foot, the value above in mono, no handle; the finger drags in a
    44px-wide zone. The nub is not drawn, but stays where the value is, for
    the number field a double press opens beside it. */
 body.bz-shell .bz-edge .sculpt-slider {
   position: relative;
   width: 44px;
-  /* 160px, less where the screen is short: the column must not reach up
+  /* 120px (160 before Smooth and Mask joined the column: the top stays clear of the Details overlay), less where the screen is short: the column must not reach up
      under the tab row (the value above the top field was half hidden). The
      visible height (dvh) is the one that counts on a phone's browser. */
   --bz-field-h: clamp(
     40px,
     calc((100vh - var(--bz-edge-bottom) - var(--bz-panel-top) - var(--bz-edge-fixed) - 16px) / 2),
-    160px
+    120px
   );
   height: var(--bz-field-h);
   margin: 18px 0 0 -2px;
@@ -1235,7 +1235,7 @@ body.bz-shell .bz-edge button:focus-visible > .bz-tip {
     --bz-field-h: clamp(
       40px,
       calc((100dvh - var(--bz-edge-bottom) - var(--bz-panel-top) - var(--bz-edge-fixed) - 16px) / 2),
-      160px
+      120px
     );
   }
 }

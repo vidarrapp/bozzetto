@@ -768,7 +768,7 @@ export const suites = {
     t.eq(edge.neg.b, edge.vh - 16, 'and the column stands 16px up from the bottom');
     t.ok([edge.neg, edge.undo].every((b) => /0, 0, 0, 0/.test(b.bg) || b.bg === 'transparent'), 'with no box behind them');
     t.ok(/125, 125, 125/.test(edge.undo.color) && /125, 125, 125/.test(edge.redo.color), `Undo and Redo with nothing to do are dim (${edge.undo.color})`);
-    t.ok(edge.size.w === 44 && edge.size.h === 160 && edge.strength.h === 160, 'the fields are 44px wide zones, 160px tall');
+    t.ok(edge.size.w === 44 && edge.size.h === 120 && edge.strength.h === 120, 'the fields are 44px wide zones, 120px tall');
     const field = await page.evaluate(() => {
       const el = document.querySelector('.sculpt-slider[data-kind="size"]');
       const track = getComputedStyle(el.querySelector('.sculpt-slider__track'));
