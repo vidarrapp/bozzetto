@@ -1445,8 +1445,8 @@ export const suites = {
     t.eq((await names(page))[0], 'Sphere', 'and it is the sphere');
     const faces = await page.evaluate(() => window.__sculpt.session.getMesh().getNbFaces());
     t.ok(faces >= 20000, `the sphere is subdivided (${faces} faces)`);
-    const tiles = await page.evaluate(() => document.querySelectorAll('.outliner__menu--create .outliner__tile:not(.outliner__tile--armature)').length);
-    const words = await page.evaluate(() => document.querySelectorAll('.outliner__menu--create .outliner__menu-grid--words .outliner__menu-item').length);
+    const tiles = await page.evaluate(() => document.querySelectorAll('.outliner__menu--create .outliner__tile:not(.outliner__tile--armature):not(.outliner__tile--primitive)').length);
+    const words = await page.evaluate(() => document.querySelectorAll('.outliner__menu--create .outliner__tile--primitive').length);
     t.eq(tiles, 23, 'the Create menu lists every base mesh');
     t.eq(words, 7, 'and every primitive');
   },

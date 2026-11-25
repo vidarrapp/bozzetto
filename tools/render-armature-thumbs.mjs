@@ -1,12 +1,13 @@
-// Renders the Create choices' armature thumbnails from the app itself.
+// Renders the Create choices' armature and primitive thumbnails from the app itself.
 //
-//   npm run build:test && node tools/render-armature-thumbs.mjs [--dist dist] [--out public/assets/armature/thumbs]
+//   npm run build:test && node tools/render-armature-thumbs.mjs [--dist dist] [--out public/assets/armature/thumbs] [--primitives public/assets/primitives/thumbs]
 //
 // Each mannequin and placeholder rig the Armature tab's Preset select offers is loaded in Armature in its
 // rest pose and drawn three-quarter front (Armature's own view), under the app's own neutral lighting, with
 // the floor, the handles and the interface away. The page's flat background is keyed out to transparency,
 // the picture is cropped to the figure and set in a square with a small margin, as the base meshes'
-// thumbnails are, and written as a 96 x 96 PNG.
+// thumbnails are, and written as a 96 x 96 PNG. The seven primitives follow the same way: each is added to
+// an empty Sculpt scene, framed and drawn in the app's default view (the plane is turned to show its face).
 //
 // It uses the browser plumbing of the end-to-end tests (tests/e2e/lib.mjs), so it runs where they do.
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -19,6 +20,7 @@ const arg = (name, fallback) => {
 };
 const dist = resolve(arg('dist', 'dist'));
 const out = resolve(arg('out', 'public/assets/armature/thumbs'));
+const primOut = resolve(arg('primitives', 'public/assets/primitives/thumbs'));
 const SIZE = 96;
 const SHOT = 480;
 /** The same ids and order as the Preset select (src/armature/presets.ts, figures.ts). */
@@ -31,7 +33,11 @@ const IDS = [
   'mannequin-female-stylized',
 ];
 
+/** The primitives, as src/library/modelAssets.ts lists them. */
+const PRIMITIVE_IDS = ['sphere', 'cube', 'cylinder', 'torus', 'cone', 'capsule', 'plane'];
+
 mkdirSync(out, { recursive: true });
+mkdirSync(primOut, { recursive: true });
 const { base, close } = await serve(dist);
 const browser = await launch();
 try {
@@ -64,18 +70,13 @@ try {
     }
   });
 
-  for (const id of IDS) {
-    await page.evaluate((i) => window.__armature.figure(i), id);
-    // Armature's own view is three-quarter front: framed, the floor and the IK handles off.
-    await page.evaluate(() => {
-      window.__sculpt.viewer.setGround('off');
-      window.__armature.frame();
-    });
+  /** The page as it stands: keyed out, cropped to the shape, set in a square. */
+  const thumb = async () => {
     await page.waitForTimeout(1500);
     await page.evaluate(() => window.__sculpt.viewer.invalidate());
     await page.waitForTimeout(1500);
     const shot = (await page.screenshot()).toString('base64');
-    const png = await work.evaluate(
+    return work.evaluate(
       async ({ data, size, margin }) => {
         const im = await new Promise((ok) => {
           const i = new Image();
@@ -119,8 +120,37 @@ try {
       },
       { data: shot, size: SIZE, margin: 0.04 },
     );
+  };
+
+  for (const id of IDS) {
+    await page.evaluate((i) => window.__armature.figure(i), id);
+    // Armature's own view is three-quarter front: framed, the floor and the IK handles off.
+    await page.evaluate(() => {
+      window.__sculpt.viewer.setGround('off');
+      window.__armature.frame();
+    });
+    const png = await thumb();
     writeFileSync(`${out}/${id}.png`, Buffer.from(png.data, 'base64'));
     console.log(`${id}: figure at ${png.box.join(',')} -> ${out}/${id}.png`);
+  }
+
+  // The primitives, in an empty Sculpt scene, each framed in the view's own angle.
+  await page.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
+  for (const id of PRIMITIVE_IDS) {
+    await page.evaluate((kind) => {
+      const { session, viewer } = window.__sculpt;
+      session.newScene();
+      session.addPrimitive(kind);
+      viewer.setGround('off');
+      const { min, max } = window.__sculpt.worldBox(session.getMesh());
+      const Box3 = viewer.subjectBox.constructor;
+      const V3 = viewer.subjectBox.min.constructor;
+      viewer.frameBounds(new Box3(new V3(...min), new V3(...max)));
+    }, id);
+    const png = await thumb();
+    writeFileSync(`${primOut}/${id}.png`, Buffer.from(png.data, 'base64'));
+    console.log(`${id}: shape at ${png.box.join(',')} -> ${primOut}/${id}.png`);
   }
 } finally {
   await browser.close();

@@ -656,7 +656,7 @@ export const suites = {
     const meshes = await page.evaluate(() => window.__sculpt.session.getMeshes().length);
     await page.click('.panel--scene .outliner__btn--wide');
     const onCreate = await focus();
-    await page.click('.outliner__menu--create .outliner__menu-item[data-kind="cube"]');
+    await page.click('.outliner__menu--create .outliner__tile[data-kind="cube"]');
     await page.waitForFunction((n) => window.__sculpt.session.getMeshes().length === n + 1, meshes, { timeout: 10_000 });
     await page.waitForTimeout(300);
     const afterCreate = await focus();

@@ -6,7 +6,7 @@ import { chordLabel, keymap } from '../../ui/keymap';
 import { SidePanel } from './SidePanel';
 import { PRIMITIVE_SIZES, type PrimitiveKind, type SculptSession } from '../bridge/SculptSession';
 import { baseMeshThumbUrl, type BaseMeshInfo } from '../bridge/basemeshes';
-import { PRIMITIVES, armatureThumbUrl, modelGroups, type ArmatureChoice } from '../../library/modelAssets';
+import { armatureThumbUrl, modelGroups, type ArmatureChoice, type ModelAsset } from '../../library/modelAssets';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { MaterialLibrary } from '../bridge/materials';
 import { RemeshTooLarge } from '../bridge/remeshBudget';
@@ -178,8 +178,8 @@ export class ScenePanel extends SidePanel {
 
   /**
    * The Create choices, built into the Create popup and into the panel's empty state alike, so
-   * the two cannot differ: the procedural primitives as a row of words, the base-mesh library
-   * as thumbnail tiles by group, then the armatures as tiles. A tile fetches its file when
+   * the two cannot differ: the procedural primitives and the armatures as picture tiles, then the base-mesh
+   * library as thumbnail tiles by group. A tile fetches its file when
    * picked - the library is 8 MB and a session touches one or two entries - and says so on the
    * tile until the objects are in the scene.
    */
@@ -198,23 +198,9 @@ export class ScenePanel extends SidePanel {
     // Each primitive says the size it comes at in a scene on real units;
     // in one from before, they come at its old sizes and say none.
     head('Primitives', this.session.getUnits() ? 'real size' : undefined);
-    const words = div('outliner__menu-grid outliner__menu-grid--words');
-    for (const { id: kind, label } of PRIMITIVES) {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = 'outliner__menu-item';
-      item.dataset.kind = kind;
-      item.textContent = label;
-      if (this.session.getUnits()) {
-        const size = document.createElement('span');
-        size.className = 'outliner__menu-size';
-        size.textContent = formatLength(PRIMITIVE_SIZES[kind].size);
-        item.appendChild(size);
-      }
-      item.addEventListener('click', () => this.createPrimitive(kind));
-      words.appendChild(item);
-    }
-    into.appendChild(words);
+    const prims = div('outliner__menu-grid');
+    for (const choice of modelGroups().find((g) => g.id === 'primitives')?.items ?? []) prims.appendChild(this.primitiveTile(choice));
+    into.appendChild(prims);
     // Second, before the long list of base meshes, so they are in reach without a scroll (they sat last).
     // One armature a scene for now: a tile makes that mannequin the scene's armature.
     head('Armatures', 'Posable mannequins');
@@ -256,6 +242,35 @@ export class ScenePanel extends SidePanel {
       for (const item of group.items) if (item.info) grid.appendChild(this.baseMeshTile(item.info));
       into.appendChild(grid);
     }
+  }
+
+  private primitiveTile(choice: ModelAsset): HTMLButtonElement {
+    const kind = choice.id as PrimitiveKind;
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'outliner__tile outliner__tile--primitive';
+    tile.dataset.kind = kind;
+    tile.title = choice.label;
+    const img = document.createElement('img');
+    img.src = choice.thumb ?? '';
+    img.alt = '';
+    img.loading = 'lazy';
+    img.draggable = false;
+    const name = document.createElement('span');
+    name.className = 'outliner__tile-name';
+    name.textContent = choice.label;
+    tile.append(img, name);
+    // Each primitive says the size it comes at in a scene on real units; in one from before, they come at its old sizes and say none.
+    if (this.session.getUnits()) {
+      const size = formatLength(PRIMITIVE_SIZES[kind].size);
+      tile.title = `${choice.label}, ${size}`;
+      const note = document.createElement('span');
+      note.className = 'outliner__tile-note';
+      note.textContent = size;
+      tile.append(note);
+    }
+    tile.addEventListener('click', () => this.createPrimitive(kind));
+    return tile;
   }
 
   private armatureTile(choice: ArmatureChoice): HTMLButtonElement {

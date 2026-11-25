@@ -89,7 +89,7 @@ export const suites = {
     const armTiles = await page.evaluate(() => [...document.querySelectorAll('.panel--scene .outliner__empty [data-armature]')].map((b) => b.dataset.armature));
     t.eq(armTiles.join(','), ARMS.join(','), 'the Armatures group has a tile for each mannequin and rig the Preset select offers');
     const small = await page.evaluate(() =>
-      [...document.querySelectorAll('.panel--scene .outliner__empty .outliner__tile, .panel--scene .outliner__empty .outliner__menu-item')].filter((b) => b.getBoundingClientRect().height < 43.5).length,
+      [...document.querySelectorAll('.panel--scene .outliner__empty .outliner__tile')].filter((b) => b.getBoundingClientRect().height < 43.5).length,
     );
     t.eq(small, 0, 'every choice is at least 44 px tall');
     const scrolls = await page.evaluate(() => {
@@ -119,7 +119,14 @@ export const suites = {
       );
       return { n: urls.length, bad };
     });
-    t.ok(pics.n >= 6 && pics.bad.length === 0, `every tile has a thumbnail that loads (${pics.n} pictures, bad: ${pics.bad.join(', ') || 'none'})`);
+    const primPics = await page.evaluate(() =>
+      [...document.querySelectorAll('.panel--scene .outliner__empty .outliner__tile--primitive')].map((b) => {
+        const i = b.querySelector('img');
+        return `${b.dataset.kind}:${!!i && i.src.includes('/assets/primitives/thumbs/') && i.alt === '' && i.loading === 'lazy' && !i.draggable}`;
+      }),
+    );
+    t.eq(primPics.join(' '), 'sphere:true cube:true cylinder:true torus:true cone:true capsule:true plane:true', 'the seven primitives are picture tiles, their pictures lazy and not draggable');
+    t.ok(pics.n >= 13 && pics.bad.length === 0, `every tile has a thumbnail that loads (${pics.n} pictures, bad: ${pics.bad.join(', ') || 'none'})`);
 
     // --- choosing: a primitive, then a base mesh ------------------------------------------------------
     await page.evaluate(() => document.querySelector('.panel--scene .outliner__empty [data-kind="cube"]').click());

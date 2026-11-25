@@ -689,7 +689,7 @@ Tool, with Material before it.
   it scrolls and only a tap uses it. The one in use is orange, as the tool
   in hand is, and read again every half second while the tab shows (the
   panels, the hotkeys and a restored look change it). **Models**: the
-  Create choices in their groups (Primitives as words, Armatures, Base
+  Create choices in their groups (Primitives, Armatures, Base
   meshes: Figures, Heads, Parts); a tap does what the Create choice does.
   **Materials**: the group Matcaps, ten tiles with the matcap's own
   picture, a tap sets the mode to Matcap and the matcap, and the line "Lit
@@ -1175,7 +1175,7 @@ kept or opened scene).
   choices scroll inside the panel. Choosing one adds it, selects it and frames it, and the panel returns to its list.
   Deleting the last object, or undoing the first add, brings the empty state back. A panel the person closed does not
   reopen by itself during a visit.
-- **Create choices, in order:** Primitives, Base meshes (Figures, Heads, Parts, with the "Blockouts as" switch), then
+- **Create choices, in order:** Primitives (seven picture tiles, picture above the name, with the real size as a second line in a scene on real units), Base meshes (Figures, Heads, Parts, with the "Blockouts as" switch), then
   **Armatures**: one tile for each mannequin and block figure the Armature tab's Preset select offers, picture and label.
   Pictures are `public/assets/armature/thumbs/<id>.png`, 96 x 96, made by `tools/render-armature-thumbs.mjs`.
 - **An armature tile** makes that mannequin the scene's armature in its rest pose and goes to the Armature workspace,
