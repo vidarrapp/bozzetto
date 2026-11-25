@@ -1,10 +1,10 @@
 import { div, labelRow, selectEl } from '../../ui/dom';
 import { compactRange } from '../../ui/Panel';
 import { setSliderValue, sliderValue } from '../../ui/sliderEntry';
-import { FLOOR_OFFSET_LIMIT, formatLength } from '../../viewer/units';
+import { FLOOR_OFFSET_LIMIT } from '../../viewer/units';
 import { chordLabel, keymap } from '../../ui/keymap';
 import { SidePanel } from './SidePanel';
-import { PRIMITIVE_SIZES, type PrimitiveKind, type SculptSession } from '../bridge/SculptSession';
+import { type PrimitiveKind, type SculptSession } from '../bridge/SculptSession';
 import { baseMeshThumbUrl, type BaseMeshInfo } from '../bridge/basemeshes';
 import { armatureThumbUrl, modelGroups, type ArmatureChoice, type ModelAsset } from '../../library/modelAssets';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
@@ -195,15 +195,13 @@ export class ScenePanel extends SidePanel {
       }
       into.appendChild(h);
     };
-    // Each primitive says the size it comes at in a scene on real units;
-    // in one from before, they come at its old sizes and say none.
-    head('Primitives', this.session.getUnits() ? 'real size' : undefined);
+    head('Primitives');
     const prims = div('outliner__menu-grid');
     for (const choice of modelGroups().find((g) => g.id === 'primitives')?.items ?? []) prims.appendChild(this.primitiveTile(choice));
     into.appendChild(prims);
     // Second, before the long list of base meshes, so they are in reach without a scroll (they sat last).
     // One armature a scene for now: a tile makes that mannequin the scene's armature.
-    head('Armatures', 'Posable mannequins');
+    head('Armatures');
     const arms = div('outliner__menu-grid');
     for (const choice of modelGroups().find((g) => g.id === 'armatures')?.items ?? []) arms.appendChild(this.armatureTile(choice));
     into.appendChild(arms);
@@ -260,15 +258,7 @@ export class ScenePanel extends SidePanel {
     name.className = 'outliner__tile-name';
     name.textContent = choice.label;
     tile.append(img, name);
-    // Each primitive says the size it comes at in a scene on real units; in one from before, they come at its old sizes and say none.
-    if (this.session.getUnits()) {
-      const size = formatLength(PRIMITIVE_SIZES[kind].size);
-      tile.title = `${choice.label}, ${size}`;
-      const note = document.createElement('span');
-      note.className = 'outliner__tile-note';
-      note.textContent = size;
-      tile.append(note);
-    }
+    tile.title = choice.label;
     tile.addEventListener('click', () => this.createPrimitive(kind));
     return tile;
   }
@@ -879,7 +869,7 @@ export class ScenePanel extends SidePanel {
   }
 }
 
-const BLOCKOUT_PARTS_KEY = 'bozzetto:blockout-parts';
+const BLOCKOUT_PARTS_KEY = 'bozzetto:blockout-parts.2';
 
 /** The switch's last setting, per browser; storage may be unavailable. */
 function readBlockoutParts(): boolean {

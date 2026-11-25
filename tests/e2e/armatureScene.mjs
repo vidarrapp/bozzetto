@@ -181,7 +181,7 @@ export const suites = {
     await page.waitForTimeout(500);
     await goKey(page, 'Sculpt');
     r = await row(page);
-    t.eq(r?.name, 'Female mannequin, realistic', 'and follows a change of preset');
+    t.eq(r?.name, 'Female, realistic', 'and follows a change of preset');
     t.eq(r?.name, await presetText(), 'as the Preset select reads');
     t.ok(r.bone && r.eye === 'on' && r.size[0] >= 26 && r.size[1] >= 26, `the row has the bone mark and an eye as an object's (${show(r.size)})`);
     t.eq(await page.evaluate(() => document.querySelectorAll('.panel--scene [data-role="armature-row"] button').length), 1, 'with no lock, material or delete beside it');

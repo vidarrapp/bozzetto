@@ -453,7 +453,7 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
 
   return {
     id: sex === 'male' ? 'placeholder-male' : 'placeholder-female',
-    label: sex === 'male' ? 'Male (placeholder blocks)' : 'Female (placeholder blocks)',
+    label: sex === 'male' ? 'Male, blocks' : 'Female, blocks',
     height: b.height,
     bones,
     ik,

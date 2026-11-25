@@ -118,7 +118,7 @@ export const MODES: Topic[] = [
       ),
       h('Mannequin'),
       options(
-        ['Preset', 'Male or Female (placeholder blocks), or a Male or Female mannequin, realistic or stylized. A model you load joins the list.'],
+        ['Preset', 'Male, blocks or Female, blocks, or Male, realistic, Female, realistic, Male, stylized or Female, stylized. A model you load joins the list.'],
         ['Height', 'How tall the figure stands.'],
         ['Floor offset', 'Raises or lowers the floor it stands on, in centimetres.'],
         ['Symmetry', 'Mirrors pose edits to the other side. The label shows its hotkey, **X** by default.'],

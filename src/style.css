@@ -8060,3 +8060,9 @@ html.is-page :is(#app, #admin).page-scroll.page-scroll--bare {
 .outliner__tile--primitive {
   justify-content: flex-start;
 }
+
+/* Two lines for every name in these tiles, so a one-line primitive is as tall as a two-line armature. */
+.outliner__tile--armature .outliner__tile-name,
+.outliner__tile--primitive .outliner__tile-name {
+  min-height: calc(2 * 1.2em);
+}
