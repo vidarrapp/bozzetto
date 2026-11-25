@@ -3683,14 +3683,14 @@ export const suites = {
     const ALT = 1;
     const SHIFT = 8;
     const button = await page.evaluate(() => {
-      const r = document.querySelector('.bz-edge .sculpt-toolbar__btn').getBoundingClientRect();
+      const r = document.querySelector('.bz-edge .sculpt-toolbar__neg').getBoundingClientRect();
       return [r.left + r.width / 2, r.top + r.height / 2];
     });
     // What the shell will do with the next stroke, and what the button shows.
     const state = () =>
       page.evaluate(() => {
         const { input } = window.__sculpt;
-        const b = document.querySelector('.bz-edge .sculpt-toolbar__btn');
+        const b = document.querySelector('.bz-edge .sculpt-toolbar__neg');
         const look = b.classList.contains('sculpt-toolbar__btn--active')
           ? 'latched'
           : b.classList.contains('sculpt-toolbar__btn--armed')
@@ -3879,7 +3879,7 @@ export const suites = {
     t.ok(!/sculpt-toolbar/.test(focusLeft), `the press leaves no focus on the button (${focusLeft || 'body'})`);
     await click(50);
     t.ok(isOff(await state()), 'a mouse click lets go of the latch');
-    await page.evaluate(() => document.querySelector('.bz-edge .sculpt-toolbar__btn').focus());
+    await page.evaluate(() => document.querySelector('.bz-edge .sculpt-toolbar__neg').focus());
     await page.keyboard.press('Enter');
     s = await state();
     t.ok(isArmed(s), `Enter on the focused button arms it, as a tap does (${show(s)})`);
@@ -3908,7 +3908,7 @@ export const suites = {
     t.ok(isOff(blurred) && isOff(s), `a press the window loses focus during is neither a long press nor a tap (${show(blurred)}, then ${show(s)})`);
     t.ok(
       await page.evaluate(
-        () => !document.querySelector('.bz-edge .sculpt-toolbar__btn').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
+        () => !document.querySelector('.bz-edge .sculpt-toolbar__neg').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
       ),
       'and the button still refuses the context menu',
     );

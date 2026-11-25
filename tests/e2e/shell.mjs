@@ -754,7 +754,7 @@ export const suites = {
         return { l: r.left, t: r.top, w: r.width, h: r.height, b: r.bottom, bg: getComputedStyle(e).backgroundColor, color: getComputedStyle(e).color, box: getComputedStyle(e).boxShadow + getComputedStyle(e).borderTopWidth };
       };
       return {
-        neg: q('.bz-edge .sculpt-toolbar__btn'),
+        neg: q('.bz-edge .sculpt-toolbar__neg'),
         undo: q('.bz-edge [data-hist="undo"]'),
         redo: q('.bz-edge [data-hist="redo"]'),
         solo: q('.bz-edge .sculpt-solobtn'),
@@ -795,11 +795,11 @@ export const suites = {
     await tab(page, 'panel--sculpt');
     await page.waitForFunction(() => document.querySelector('.bz-edge__fields').hidden, null, { timeout: 4000 });
     t.ok(true, 'and go while it is open');
-    t.ok((await shown(page, '.bz-edge .sculpt-solobtn')) && (await shown(page, '.bz-edge [data-hist="undo"]')) && (await shown(page, '.bz-edge .sculpt-toolbar__btn')), 'Undo, Redo, Solo and Negative always show');
+    t.ok((await shown(page, '.bz-edge .sculpt-solobtn')) && (await shown(page, '.bz-edge [data-hist="undo"]')) && (await shown(page, '.bz-edge .sculpt-toolbar__neg')), 'Undo, Redo, Solo and Negative always show');
     // No square behind them in any state: Solo on, Negative latched or a hover show in the icon's colour alone.
     const edgeLook = () =>
       page.evaluate(() =>
-        ['.bz-edge .sculpt-solobtn', '.bz-edge [data-hist="undo"]', '.bz-edge .sculpt-toolbar__btn'].map((sel) => {
+        ['.bz-edge .sculpt-solobtn', '.bz-edge [data-hist="undo"]', '.bz-edge .sculpt-toolbar__neg'].map((sel) => {
           const b = document.querySelector(sel);
           const cs = getComputedStyle(b);
           return { bg: cs.backgroundColor, icon: getComputedStyle(b.querySelector('i, svg') ?? b).color };
@@ -812,7 +812,7 @@ export const suites = {
     t.ok(clear(looks), `the edge buttons have no square behind them, hovered or not (${JSON.stringify(looks)})`);
     await page.evaluate(() => {
       document.querySelector('.bz-edge .sculpt-solobtn').click();
-      document.querySelector('.bz-edge .sculpt-toolbar__btn').click();
+      document.querySelector('.bz-edge .sculpt-toolbar__neg').click();
     });
     await page.waitForTimeout(150);
     looks = await edgeLook();
@@ -822,7 +822,7 @@ export const suites = {
       `Negative on (and Solo, when on) turn their icons orange, still with no square (solo ${soloOn}, ${JSON.stringify(looks)})`);
     await page.evaluate(() => {
       document.querySelector('.bz-edge .sculpt-solobtn').click();
-      document.querySelector('.bz-edge .sculpt-toolbar__btn').click();
+      document.querySelector('.bz-edge .sculpt-toolbar__neg').click();
     });
     await page.mouse.move(600, 400);
     await page.keyboard.press(']');

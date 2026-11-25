@@ -273,6 +273,7 @@ export const TOOLS: Topic[] = [
   {
     id: 'tool-smooth',
     title: 'Smooth (Shift)',
+    tools: ['Smooth (hold Shift)', 'Blur (hold Shift)'],
     group: G,
     blocks: [
       p('Smooth has no number key. Hold **Shift** while you drag with any brush to smooth instead, or use the Smooth button on the left edge, above Carve: **tap** it to smooth the next stroke only, **long-press** it to keep smoothing until you tap again. In the Paint workspace, **Shift** with the Paint tool blurs the paint, and the button is called Blur and shows only with the Paint tool.'),
@@ -287,6 +288,7 @@ export const TOOLS: Topic[] = [
   {
     id: 'tool-mask',
     title: 'Mask (Ctrl)',
+    tools: ['Mask (hold Ctrl)'],
     group: G,
     blocks: [
       p('Mask protects part of the surface from every brush. Masked areas are tinted. Hold **Ctrl** and drag with any brush to paint the mask, and add **Alt** to unmask. The Mask button on the left edge, above Smooth, does the same without a key: **tap** it to mask the next stroke only, **long-press** it to keep masking until you tap again. With Carve on as well, the stroke unmasks. Mask and Smooth let go of each other.'),
