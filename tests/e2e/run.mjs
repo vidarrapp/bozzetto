@@ -54,6 +54,7 @@ import { suites as polyGroups } from './polyGroups.mjs';
 import { suites as present } from './present.mjs';
 import { suites as presentEdges } from './presentEdges.mjs';
 import { suites as presentLights } from './presentLights.mjs';
+import { suites as guidePerWorkspace } from './guidePerWorkspace.mjs';
 import { suites as profileCurves } from './profileCurves.mjs';
 import { suites as quadRemesh } from './quadRemesh.mjs';
 import { suites as sculptLayers } from './sculptLayers.mjs';
@@ -108,6 +109,7 @@ const suites = {
   ...present,
   ...presentEdges,
   ...presentLights,
+  ...guidePerWorkspace,
   ...objNumbering,
   ...brushCaps,
   ...clayTabPen,

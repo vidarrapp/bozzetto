@@ -181,6 +181,18 @@ no separate touch density. An earlier draft of this spec had one, with
   (`--bz-orange`), the others `--bz-text-hint`. Sculpt and Paint show no markers.
   **Cavity**, Sculpt's form shading, is a switch on the Material tab's Display
   section with Strength and Radius under it.
+- **Hotkey guide per workspace.** The guide (H) is drawn from the keymap for the
+  workspace the page is in: Armature, Sculpt, Paint and Present each have a
+  title ("Present hotkeys") and a table, and it redraws when the workspace
+  changes while it is open. Present's table is its own whichever workspace it
+  was entered from. The keymap knows which actions work in Present (`present:
+  true` on the action, or `mode: 'present'` for one that means something only
+  there, with `presentLabel` where the words differ); Present's key handling
+  (InputShell) and its guide are both built from that, so a new Present key is
+  one keymap entry. A key that means different things in two workspaces (1, 2,
+  3; L) is listed in each with what it does there; a clash is only a clash
+  within one workspace. Preferences has a Present tab beside Sculpt, Paint and
+  Viewer.
 - **Keyboard.** A web page cannot tell whether an iPad has a keyboard
   attached, and the iPad runs the web app. So the hotkey digits on the
   tools and the key hints above the tool bar are two View toggles

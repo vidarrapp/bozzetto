@@ -181,6 +181,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 - **Hold L moves the light from where it is.** With a finger or the Pencil, the light now turns only by what you drag after you touch down, so it no longer jumps to where the last touch ended. The same in Armature and in the viewer.
 - **In Present, 1, 2 and 3 pick which light L moves.** Key, Fill or Rim, in the order the Lighting tab lists them; Key is the pick when you enter Present, and the status line names the light. While L is held, and for a moment after a pick, a marker for each light that is on shows around the model: orange for the one you will move, grey for the others. The markers are never in a saved image, turntable or thumbnail.
+- **Present has a hotkey guide of its own.** Press **H** in Present and it says "Present hotkeys" and lists only the keys that work there, whichever workspace you came from. Armature, Sculpt, Paint and Present each show their own guide, and it changes with the workspace while it is open. Preferences has a Present tab for its keys.
 
 ### v0.7.23
 

@@ -33,12 +33,16 @@ export function showPreferences(mode: KeyMode = currentMode()): void {
 
 /** Sculpt mode announces itself on the window; the editor opens on that tab. */
 let announced: KeyMode = 'view';
+let presenting = false;
 window.addEventListener('bozzetto:sculptmode', (e) => {
   const detail = (e as CustomEvent<{ active?: boolean; mode?: KeyMode }>).detail;
   announced = detail?.mode ?? (detail?.active ? 'sculpt' : 'view');
 });
+window.addEventListener('bozzetto:present', (e) => {
+  presenting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
+});
 function currentMode(): KeyMode {
-  return announced;
+  return presenting ? 'present' : announced;
 }
 
 function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
@@ -169,6 +173,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
   for (const [m, label] of [
     ['sculpt', 'Sculpt'],
     ['paint', 'Paint'],
+    ['present', 'Present'],
     ['view', 'Viewer'],
   ] as const) {
     const b = document.createElement('button');

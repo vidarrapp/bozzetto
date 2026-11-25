@@ -38,7 +38,7 @@ export const SETTINGS: Topic[] = [
         ['Passkey check…', 'Whether this device can sign in with a passkey, in the browser and from the Home Screen, and whether the bot check loads. It opens in place of this page.'],
       ),
       h('Hotkeys'),
-      p('Every keyed action, in a **Sculpt** tab and a **Viewer** tab. Click a key, then press the new one; **Esc** cancels. If the key is taken, you are asked whether to take it. The arrow beside a key puts it back to its default, and **Reset all** puts every key back.'),
+      p('Every keyed action, in a **Sculpt**, **Paint**, **Present** and **Viewer** tab; it opens on the workspace you are in. Click a key, then press the new one; **Esc** cancels. If the key is taken, you are asked whether to take it. The arrow beside a key puts it back to its default, and **Reset all** puts every key back.'),
     ],
   },
   {
@@ -46,7 +46,7 @@ export const SETTINGS: Topic[] = [
     title: 'Hotkeys',
     group: 'Settings and reference',
     blocks: [
-      p('Press **H** (or the **?** button in the top right) to open the hotkey guide. It lists every key and gesture for the mode you are in, and it is drawn from the live keymap, so it always shows the keys you have set. That is why the table is not repeated here.'),
+      p('Press **H** (or the **?** button in the top right) to open the hotkey guide. It lists every key and gesture for the mode you are in, and it is drawn from the live keymap, so it always shows the keys you have set. That is why the table is not repeated here. Armature, Sculpt, Paint and Present each have their own guide, with its own title, and it changes when you change workspace while it is open. **Present hotkeys** lists only what works in Present, whichever workspace you came from. A key that does different things in two workspaces, such as **1**, **2**, **3** and **L**, is listed in each with what it does there.'),
       p('Every default key named in this help can be changed under **Edit**, then **Preferences…**. The keys named here are the defaults.'),
       p('In the guide, **Customise hotkeys…** opens Preferences, and at its foot it names the version running, with **Check for updates** when the installed app can update itself.'),
     ],
