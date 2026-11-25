@@ -379,7 +379,12 @@ export class ReferenceBoard {
     const rec = await this.read(key);
     if (!rec) return;
     const have = new Set(this.items.map((i) => i.id));
-    const items = rec.items.map(cleanItem).filter((i): i is RefItem => !!i && !have.has(i.id));
+    const stored = rec.items.map(cleanItem).filter((i): i is RefItem => !!i && !have.has(i.id));
+    // Copied into memory first, as restore() does and for the same reason (inMemory): these pictures point at
+    // the old record's file, and the old record is deleted three lines down. Without the copy Safari left them
+    // with nothing behind them, and a reference kept in Armature was gone after the first visit to the new
+    // page (owner report, 2026-11-25).
+    const items = (await Promise.all(stored.map(inMemory))).filter((i): i is RefItem => !!i && !this.items.some((x) => x.id === i.id));
     if (items.length) {
       this.items = [...this.items, ...items].slice(0, MAX_REFERENCES);
       this.touch();

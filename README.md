@@ -176,6 +176,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### v0.7.16
+
+- **A reference kept in Armature is not lost.** On Safari, a picture added in Armature before 0.7.14 could vanish after the first switch between Armature and Sculpt. Pictures brought over from the old Armature page are now copied before the old record is removed.
+
 ### v0.7.15
 
 - **Reference blend modes are drawn by the app.** A reference set to Multiply, Screen, Overlay or any other mode is now blended with the model inside the 3D view. It used to be left to the browser, and did nothing in Safari on the iPad. Up to four pictures blend at once, the topmost ones.
