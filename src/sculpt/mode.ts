@@ -48,6 +48,8 @@ import { SculptToolbar } from './ui/SculptToolbar';
 import { ToolsView } from '../library/ToolsView';
 import { ModelsView } from '../library/TileViews';
 import { MeasureOverlay } from './ui/MeasureOverlay';
+import { LightMarkers } from './ui/LightMarkers';
+import type { LightId } from '../viewer/Lighting';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
 import { ScaleBanner, sceneSubjects } from './ui/SetScale';
@@ -931,6 +933,21 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The calipers' lines and labels re-project with the camera and with
   // any object that moves under them (MeasureOverlay.tick compares).
   let measureOverlay: MeasureOverlay | null = null;
+  // Present's light markers (LightMarkers): while L moves a light, and for a moment after 1, 2 or 3 picks one.
+  let lightMarkers: LightMarkers | null = null;
+  // Which light Present's L moves: Key when Present is entered, 1, 2 and 3 pick (Present only).
+  const LIGHT_ORDER: LightId[] = ['key', 'fill', 'rim'];
+  const LIGHT_NAMES: Record<LightId, string> = { key: 'Key', fill: 'Fill', rim: 'Rim' };
+  let presentLight: LightId = 'key';
+  /** The light an off-light note was made for, so a drag says it once. */
+  let offNoted: LightId | null = null;
+  let lightNote: { clear(): void } | null = null;
+  const sayLight = (text: string): void => {
+    lightNote?.clear();
+    const note = statusToast('');
+    note.done(text);
+    lightNote = note;
+  };
   const followTick = (): void => {
     input.flushHover();
     measureOverlay?.tick();
@@ -956,6 +973,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   viewer.onPostControls = () => {
     applyPivotOrbit();
     followTick();
+    // After the rig has followed the camera: the markers draw from where the lights are now.
+    lightMarkers?.tick();
   };
 
   /**
@@ -1258,7 +1277,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // Sideways swings the key light around the model, up/down raises it
     // (Lighting.nudgeKey, which Armature mode's hold-L drag shares).
     moveKeyLight: (deltaAzimuth, deltaElevation) => {
-      lighting.nudgeKey(deltaAzimuth, deltaElevation);
+      const id: LightId = presenting ? presentLight : 'key';
+      // A light that is off still turns (the Lighting tab shows its angles); the note says why the view does not change.
+      if (presenting && offNoted !== id && !lighting.state().find((l) => l.id === id)?.enabled) {
+        offNoted = id;
+        sayLight(`${LIGHT_NAMES[id]} is off`);
+      }
+      lighting.nudge(id, deltaAzimuth, deltaElevation);
       // The Render panel's azimuth/elevation rows read their values once,
       // when built; without this the sliders kept showing wherever the
       // light was before the drag. One rebuild after the drag settles.
@@ -1267,6 +1292,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         () => window.dispatchEvent(new CustomEvent('bozzetto:look-restored')),
         350,
       );
+    },
+    pickLight: (index) => {
+      const id = LIGHT_ORDER[index];
+      if (!id || !presenting) return;
+      presentLight = id;
+      const on = !!lighting.state().find((l) => l.id === id)?.enabled;
+      offNoted = on ? null : id;
+      sayLight(on ? `${LIGHT_NAMES[id]} light` : `${LIGHT_NAMES[id]} is off`);
+      lightMarkers?.flash();
     },
     orbitY: (deltaDeg) => turntable(deltaDeg),
     dolly: (factor, at) => viewer.dolly(factor, at),
@@ -1414,6 +1448,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     exitTransform();
     input.presenting = true;
     presenting = true;
+    presentLight = 'key';
+    offNoted = null;
     cursor.hide();
     syncHighlights();
     document.body.classList.add('presenting');
@@ -1478,6 +1514,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   session.measure.onPersist = () => persist.markDirty();
   measureOverlay = new MeasureOverlay(viewer, session, input.measureTool, () => input.isMeasuring());
+  lightMarkers = new LightMarkers(viewer, { presenting: () => presenting, moving: () => input.isMovingLight(), picked: () => presentLight });
   chrome.onChange = studio.chromeChanged;
   sliders = new BrushSliders(input, studio.edge, {
     isSolo: () => session.isSolo(),
@@ -2741,6 +2778,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     input.exitMeasure();
     measureOverlay?.dispose();
     measureOverlay = null;
+    lightMarkers?.dispose();
+    lightMarkers = null;
     session.measure.onPersist = null;
     input.onMeasureModeChange = null;
     viewer.tapToFocus = true;

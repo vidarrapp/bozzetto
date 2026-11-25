@@ -19,7 +19,7 @@ function guideHtml(mode: KeyMode, updates: boolean): string {
   const esc = (t: string): string =>
     t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const closeKey = keymap.chordFor('ui.help');
-  const head = mode === 'sculpt' ? 'Sculpt hotkeys' : mode === 'paint' ? 'Paint hotkeys' : mode === 'armature' ? 'Armature hotkeys' : 'Hotkeys &amp; navigation';
+  const head = mode === 'sculpt' ? 'Sculpt hotkeys' : mode === 'paint' ? 'Paint hotkeys' : mode === 'armature' ? 'Armature hotkeys' : mode === 'present' ? 'Present hotkeys' : 'Hotkeys &amp; navigation';
   const closer = closeKey ? `${esc(chordLabel(closeKey))} or Esc to close` : 'Esc or tap to close';
   let html = `<div class="help-guide__head">${head} <span class="help-guide__close">${closer}</span></div>`;
   let group = '';
@@ -71,7 +71,12 @@ export class Help {
   private readonly guide: HTMLDivElement;
   private readonly button: HTMLButtonElement | null;
   private hintTimer: number | undefined;
-  private mode: KeyMode = 'view';
+  /** The workspace the page is in, and whether Present is up over it: Present has a guide of its own, whichever it began in. */
+  private base: KeyMode = 'view';
+  private presenting = false;
+  private get mode(): KeyMode {
+    return this.presenting ? 'present' : this.base;
+  }
   private readonly offKeymap: () => void;
   private readonly offUpdates: () => void;
   /** Whether Check for updates is offered: the worker registers after load. */
@@ -81,7 +86,11 @@ export class Help {
   private checking = false;
   private readonly onSculptMode = (e: Event): void => {
     const detail = (e as CustomEvent<{ active?: boolean; mode?: KeyMode }>).detail;
-    this.mode = detail?.mode ?? (detail?.active ? 'sculpt' : 'view');
+    this.base = detail?.mode ?? (detail?.active ? 'sculpt' : 'view');
+    this.render();
+  };
+  private readonly onPresent = (e: Event): void => {
+    this.presenting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
     this.render();
   };
 
@@ -188,6 +197,7 @@ export class Help {
     // Sculpt mode swaps the guide content while active (and back on exit),
     // and a rebind redraws it.
     window.addEventListener('bozzetto:sculptmode', this.onSculptMode);
+    window.addEventListener('bozzetto:present', this.onPresent);
     // The Help menu's Hotkeys item asks for the guide this way.
     window.addEventListener(HOTKEY_GUIDE_EVENT, this.onGuideEvent);
     window.addEventListener('keydown', this.onEsc, true);
@@ -211,6 +221,7 @@ export class Help {
   dispose(): void {
     if (this.hintTimer !== undefined) clearTimeout(this.hintTimer);
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
+    window.removeEventListener('bozzetto:present', this.onPresent);
     window.removeEventListener(HOTKEY_GUIDE_EVENT, this.onGuideEvent);
     window.removeEventListener('keydown', this.onEsc, true);
     this.offKeymap();

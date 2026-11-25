@@ -61,9 +61,17 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
     }
   };
   const onLightPress = (e: PointerEvent): void => {
+    // The drag starts at the press: a finger has no hover to have brought the last position along.
+    if (lightHeld) {
+      last.x = e.clientX;
+      last.y = e.clientY;
+    }
     if (!lightHeld || !onView(e)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
+  };
+  const onLightLift = (e: PointerEvent): void => {
+    if (e.pointerType !== 'mouse') last.x = NaN; // the next touch or pen move only sets the reference
   };
   const onKeyUp = (e: KeyboardEvent): void => {
     // A held key ends on its own key, whatever the modifiers are doing now.
@@ -130,6 +138,7 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
         return;
       case 'view.light':
         e.preventDefault();
+        if (!lightHeld) last.x = NaN; // from where the pointer is when L goes down
         lightHeld = true; // until its keyup, or the window losing focus
         return;
       case 'ui.help':
@@ -169,6 +178,7 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
   window.addEventListener('blur', endLight);
   window.addEventListener('pointermove', onLightMove, true);
   window.addEventListener('pointerdown', onLightPress, true);
+  window.addEventListener('pointerup', onLightLift, true);
   return () => {
     clearTimeout(refreshTimer);
     window.removeEventListener('keydown', onKey);
@@ -176,5 +186,6 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
     window.removeEventListener('blur', endLight);
     window.removeEventListener('pointermove', onLightMove, true);
     window.removeEventListener('pointerdown', onLightPress, true);
+    window.removeEventListener('pointerup', onLightLift, true);
   };
 }

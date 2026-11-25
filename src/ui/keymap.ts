@@ -18,7 +18,7 @@ import { deviceStore, onDeviceChoice } from './deviceStorage';
 import { legacyKeyMoves, PLACE_COUNT, placeOfAction, slotAction, toolBars } from '../sculpt/tools/bars';
 import { toolById } from '../sculpt/tools/registry';
 
-export type KeyMode = 'sculpt' | 'view' | 'armature' | 'paint';
+export type KeyMode = 'sculpt' | 'view' | 'armature' | 'paint' | 'present';
 
 /**
  * What the Paint workspace leaves out of Sculpt's keys: Calipers and the
@@ -35,6 +35,14 @@ export interface ActionDef {
   group: string;
   /** Which mode's handler answers to it; 'both' is shared. */
   mode: KeyMode | 'both';
+  /**
+   * Answers in Present too (a mode's keys that still work there). Present's key handling and its hotkey
+   * guide are both drawn from this flag, so a new Present key is one entry here, with `present: true`
+   * (or `mode: 'present'` when it means something only there).
+   */
+  present?: boolean;
+  /** What the row says in Present's guide and in Preferences' Present tab, where it means something else there. */
+  presentLabel?: string;
   /** The default chord, or null: unbound until the user binds it (or a gesture). */
   chord: string | null;
   /** A gesture row (drag, scroll, double-click): the guide shows its note; it has no key to edit. */
@@ -95,10 +103,14 @@ export const ACTIONS: ActionDef[] = [
   { id: 'gesture.pan', label: 'Pan (two fingers always navigate, even on the model)', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Cmd / Shift + drag' },
   { id: 'gesture.zoomDrag', label: 'Zoom', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + drag off mesh' },
   { id: 'gesture.zoom', label: 'Zoom', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Scroll / pinch' },
-  { id: 'view.frame', label: 'Frame the model', group: 'Navigation', mode: 'both', chord: 'f' },
-  { id: 'view.frameAll', label: 'Frame the whole scene', group: 'Navigation', mode: 'both', chord: 'a' },
-  { id: 'view.turnLeft', label: 'Turntable left (accelerates with the wheel)', group: 'Navigation', mode: 'sculpt', chord: 'arrowleft', repeat: true },
-  { id: 'view.turnRight', label: 'Turntable right', group: 'Navigation', mode: 'sculpt', chord: 'arrowright', repeat: true },
+  { id: 'view.frame', present: true, label: 'Frame the model', group: 'Navigation', mode: 'both', chord: 'f' },
+  { id: 'view.frameAll', present: true, label: 'Frame the whole scene', group: 'Navigation', mode: 'both', chord: 'a' },
+  { id: 'view.turnLeft', present: true, label: 'Turntable left (accelerates with the wheel)', group: 'Navigation', mode: 'sculpt', chord: 'arrowleft', repeat: true },
+  { id: 'view.turnRight', present: true, label: 'Turntable right', group: 'Navigation', mode: 'sculpt', chord: 'arrowright', repeat: true },
+  // Present's navigation, with no stroke to be had: a finger orbits anywhere.
+  { id: 'gesture.presentOrbit', label: 'Orbit (one finger, the Pencil or the mouse)', group: 'Navigation', mode: 'present', chord: null, gesture: true, note: 'Drag' },
+  { id: 'gesture.presentPan', label: 'Pan (two fingers on touch)', group: 'Navigation', mode: 'present', chord: null, gesture: true, note: 'Cmd / Shift + drag' },
+  { id: 'gesture.presentZoom', label: 'Zoom', group: 'Navigation', mode: 'present', chord: null, gesture: true, note: 'Scroll / pinch' },
   // --- sculpt: brushes ---
   { id: 'tool.select', label: 'Select tool (click; Shift adds, Ctrl+drag removes, Ctrl+Shift+drag adds; drag a marquee)', group: 'Brushes', mode: 'sculpt', chord: 'q' },
   { id: 'tool.calipers', label: 'Calipers (tap the model twice to measure; drag an end to move it)', group: 'Brushes', mode: 'sculpt', chord: 'c' },
@@ -123,17 +135,21 @@ export const ACTIONS: ActionDef[] = [
   { id: 'scene.prevExtend', label: 'Extend the selection to the previous object', group: 'Scene', mode: 'sculpt', chord: 'shift+arrowup', repeat: true },
   { id: 'scene.nextExtend', label: 'Extend the selection to the next object', group: 'Scene', mode: 'sculpt', chord: 'shift+arrowdown', repeat: true },
   // --- lighting / display (both) ---
-  { id: 'view.shadows', label: 'Shadows on / off', group: 'Lighting', mode: 'both', chord: 'shift+s' },
-  { id: 'view.wireframe', label: 'Wireframe overlay', group: 'Lighting', mode: 'both', chord: 'shift+w' },
+  { id: 'view.shadows', present: true, label: 'Shadows on / off', group: 'Lighting', mode: 'both', chord: 'shift+s' },
+  { id: 'view.wireframe', present: true, label: 'Wireframe overlay', group: 'Lighting', mode: 'both', chord: 'shift+w' },
   { id: 'view.details', label: 'Details overlay on / off', group: 'Lighting', mode: 'both', chord: 'shift+i' },
   { id: 'view.arrange', label: 'Arrange the reference pictures (unlock / lock)', group: 'Lighting', mode: 'sculpt', chord: 'alt+r' },
-  { id: 'light.move', label: 'Move the key light (hold + drag: across / up; View > Move light does it with one drag)', group: 'Lighting', mode: 'sculpt', chord: 'l', hold: true },
+  { id: 'light.move', present: true, presentLabel: 'Move the picked light (hold + drag: across / up; View > Move light does it with one drag)', label: 'Move the key light (hold + drag: across / up; View > Move light does it with one drag)', group: 'Lighting', mode: 'sculpt', chord: 'l', hold: true },
+  // Present: 1, 2 and 3 pick which light L moves (Key, Fill, Rim), where they pick tools in Sculpt.
+  { id: 'present.light1', label: 'Pick the key light for L', group: 'Lighting', mode: 'present', chord: '1' },
+  { id: 'present.light2', label: 'Pick the fill light for L', group: 'Lighting', mode: 'present', chord: '2' },
+  { id: 'present.light3', label: 'Pick the rim light for L', group: 'Lighting', mode: 'present', chord: '3' },
   // The same key in the viewer and the editors' preview: one Preferences
   // change moves it in all three, as Armature's undo follows Sculpt's.
   { id: 'view.light', label: 'Move the key light (hold + drag: across / up)', group: 'Lighting', mode: 'view', chord: 'l', hold: true, sameKeyAs: 'light.move' },
   // --- viewer: playback ---
   // One key for both: the viewer's playback, and Present's turntable in Sculpt.
-  { id: 'play.toggle', label: 'Play / pause (in Present, the turntable)', group: 'Playback', mode: 'both', chord: 'space' },
+  { id: 'play.toggle', present: true, presentLabel: 'Turntable: start and stop', label: 'Play / pause (in Present, the turntable)', group: 'Playback', mode: 'both', chord: 'space' },
   { id: 'play.back', label: 'Step back', group: 'Playback', mode: 'view', chord: 'arrowleft', repeat: true },
   { id: 'play.forward', label: 'Step forward', group: 'Playback', mode: 'view', chord: 'arrowright', repeat: true },
   // --- viewer: view gestures ---
@@ -178,19 +194,19 @@ export const ACTIONS: ActionDef[] = [
   // found first there; it shows a hidden interface as well (armature/mode).
   // Tab and Esc are the same in every mode (owner decision): one rebind
   // moves them everywhere.
-  { id: 'ui.chrome', label: 'Close panels, then hide the interface', group: 'Interface', mode: 'both', chord: 'tab' },
-  { id: 'ui.show', label: 'Show the interface', group: 'Interface', mode: 'both', chord: 'escape' },
+  { id: 'ui.chrome', present: true, label: 'Close panels, then hide the interface', group: 'Interface', mode: 'both', chord: 'tab' },
+  { id: 'ui.show', present: true, label: 'Show the interface', group: 'Interface', mode: 'both', chord: 'escape' },
   // The workspaces by number, from any of them (the only workspace keys; Esc does not leave Present): Shift and the digit's physical key (keyNameOf), so a Swedish and a US keyboard agree.
-  { id: 'ws.armature', label: 'Go to Armature', group: 'Interface', mode: 'sculpt', chord: 'shift+1' },
-  { id: 'ws.sculpt', label: 'Go to Sculpt', group: 'Interface', mode: 'sculpt', chord: 'shift+2' },
-  { id: 'ws.paint', label: 'Go to Paint', group: 'Interface', mode: 'sculpt', chord: 'shift+3' },
-  { id: 'ws.present', label: 'Go to Present', group: 'Interface', mode: 'sculpt', chord: 'shift+4' },
+  { id: 'ws.armature', present: true, label: 'Go to Armature', group: 'Interface', mode: 'sculpt', chord: 'shift+1' },
+  { id: 'ws.sculpt', present: true, label: 'Go to Sculpt', group: 'Interface', mode: 'sculpt', chord: 'shift+2' },
+  { id: 'ws.paint', present: true, label: 'Go to Paint', group: 'Interface', mode: 'sculpt', chord: 'shift+3' },
+  { id: 'ws.present', present: true, label: 'Go to Present', group: 'Interface', mode: 'sculpt', chord: 'shift+4' },
   // Save: to the library for whoever saves to one, else the copy on this device at once (owner request, 2026-11-18).
-  { id: 'file.save', label: 'Save', group: 'Interface', mode: 'sculpt', chord: 'ctrl+s' },
+  { id: 'file.save', present: true, label: 'Save', group: 'Interface', mode: 'sculpt', chord: 'ctrl+s' },
   { id: 'arm.save', label: 'Save', group: 'Interface', mode: 'armature', chord: 'ctrl+s', sameKeyAs: 'file.save' },
-  { id: 'ui.help', label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
-  { id: 'ui.fps', label: 'Frame meter', group: 'Interface', mode: 'both', chord: 'p' },
-  { id: 'ui.preferences', label: 'Preferences (fingers, hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },
+  { id: 'ui.help', present: true, label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
+  { id: 'ui.fps', present: true, label: 'Frame meter', group: 'Interface', mode: 'both', chord: 'p' },
+  { id: 'ui.preferences', present: true, label: 'Preferences (fingers, hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },
 ];
 
 const STORAGE_KEY = 'bozzetto-keymap';
@@ -316,6 +332,7 @@ export class Keymap {
    * place 3: Standard clay", or "...: empty").
    */
   labelFor(a: ActionDef, mode: KeyMode = 'sculpt'): string {
+    if (mode === 'present' && a.presentLabel) return a.presentLabel;
     const place = placeOfAction(a.id);
     if (!place) return a.label;
     const id = toolBars.idAt(mode === 'paint' ? 'paint' : 'sculpt', place);
@@ -334,6 +351,7 @@ export class Keymap {
 
   /** Every action a mode's handler can be asked for, in table order. */
   actionsFor(mode: KeyMode): ActionDef[] {
+    if (mode === 'present') return ACTIONS.filter((a) => a.mode === 'present' || a.present);
     if (mode === 'paint') return ACTIONS.filter((a) => a.mode === 'paint' || a.mode === 'both' || (a.mode === 'sculpt' && !PAINT_LEAVES_OUT.test(a.id)));
     return ACTIONS.filter((a) => a.mode === mode || a.mode === 'both');
   }
@@ -431,6 +449,8 @@ export class Keymap {
     const modes = new Set<KeyMode | 'both'>(ACTIONS.filter((x) => this.keyOwner(x.id) === owner).map((x) => x.mode));
     // Sculpt's keys that the Paint workspace keeps answer there too: a chord taken in one is taken in the other.
     if (modes.has('sculpt') && !PAINT_LEAVES_OUT.test(owner)) modes.add('paint');
+    // The keys Present keeps answer there too.
+    if (ACTIONS.some((x) => this.keyOwner(x.id) === owner && x.present)) modes.add('present');
     return modes;
   }
 

@@ -279,7 +279,7 @@ export function sculptWorkspaces(p: SculptPage): Workspace[] {
       leave: () => undefined,
       details: () => readSculptDetails(),
     }),
-    of('present', 'sculpt', {
+    of('present', 'present', {
       enter: () => void p.present.enter(),
       leave: leavePresentTo,
       // The view is the presentation: its numbers are not written.

@@ -456,12 +456,38 @@ export class Lighting {
    * meaning anything and the light would appear to stick.
    */
   nudgeKey(deltaAzimuth: number, deltaElevation: number): void {
-    const key = this.config.key;
-    let az = (key.azimuth + deltaAzimuth) % 360;
+    this.nudge('key', deltaAzimuth, deltaElevation);
+  }
+
+  /** nudgeKey for any light (Present's hold-L moves the one picked with 1, 2 and 3). */
+  nudge(id: LightId, deltaAzimuth: number, deltaElevation: number): void {
+    const light = this.config[id];
+    let az = (light.azimuth + deltaAzimuth) % 360;
     if (az > 180) az -= 360;
     if (az < -180) az += 360;
-    const el = Math.max(-20, Math.min(90, key.elevation + deltaElevation));
-    this.setAngles('key', az, el);
+    const el = Math.max(-20, Math.min(90, light.elevation + deltaElevation));
+    this.setAngles(id, az, el);
+  }
+
+  private readonly markScratch = new Vector3();
+
+  /**
+   * Where a light comes from, as a unit vector from the subject toward it in
+   * the world (the rig's turn with the view included), and the subject's
+   * centre and radius: what Present's light markers are drawn from.
+   */
+  directionOf(id: LightId, out: Vector3): Vector3 {
+    this.rig.updateMatrixWorld(true);
+    const light = this.lights[id];
+    return out.setFromMatrixPosition(light.matrixWorld).sub(this.markScratch.setFromMatrixPosition(light.target.matrixWorld)).normalize();
+  }
+
+  /** The subject's centre into `center`; returns half its longest side (its bounding sphere is a box's corner away, too far to hang a marker on). */
+  subjectSphere(center: Vector3): number {
+    center.copy(this.aimCenter);
+    if (this.subjectBox.isEmpty()) return this.subjectRadius;
+    this.subjectBox.getSize(this.markScratch);
+    return Math.max(this.markScratch.x, this.markScratch.y, this.markScratch.z) / 2;
   }
 
   setShadow(id: LightId, castShadow: boolean): void {
