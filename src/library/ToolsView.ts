@@ -96,7 +96,7 @@ export class ToolsView implements LibraryView {
     this.empty.className = 'lib-later lib-empty';
     this.empty.textContent = 'Nothing called that.';
     this.mine.className = 'lib-later lib-empty';
-    this.mine.textContent = 'Copies you make of a tool show here.';
+    this.mine.textContent = 'Tools kept in a scene will show here.';
     root.append(this.empty, this.mine);
     body.appendChild(root);
     this.offState = this.host.onState(() => this.paint());

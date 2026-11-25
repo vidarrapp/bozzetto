@@ -694,9 +694,10 @@ Tool, with Material before it.
   **Materials**: the group Matcaps, ten tiles with the matcap's own
   picture, a tap sets the mode to Matcap and the matcap, and the line "Lit
   shows the materials again (Material tab)." under it. **Lighting**: the
-  ten built-in rigs, each a grey ball under it; Mine holds the saved rigs
+  ten built-in rigs, each a grey ball under it; Scene holds the saved rigs
   ("Rigs you save in the Lighting tab show here."). **HDRIs**: None, then
-  the six; the `.hdr` file is fetched only on the tap, the tile shows a
+  the six; Scene holds the one environment this scene uses, or the line
+  "This scene has no environment light." and a tap does nothing there; the `.hdr` file is fetched only on the tap, the tile shows a
   mark ("…", no change of size) while it comes, a failed fetch says
   "Garage could not be loaded. The environment is as it was." in the foot
   and changes nothing. An environment entry carries a list of files so
@@ -705,7 +706,11 @@ Tool, with Material before it.
   drawn: Present always draws them, a working view only while its mode is
   Lit (a matcap ignores the lights). Pictures: `public/assets/rigs` and
   `public/assets/env/thumbs`, made by `tools/render-library-thumbs.mjs`.
-  The other tabs' Mine says "Nothing of yours here yet."
+  **Models**: Scene lists the scene's objects in the Scene panel's order
+  as name tiles (the armature too), the active one marked; a tap selects it
+  as a tap on its row does. Empty: "Nothing in this scene yet." **Tools**:
+  Scene says "Tools kept in a scene will show here." Every Scene list
+  follows the scene as it changes, and the search filters it by name.
 
 - **One floating window**, "Asset library", over the view (`src/library`,
   owned by the Studio shell so every workspace can open it). It has no
@@ -730,12 +735,11 @@ Tool, with Material before it.
   always all five. A tab's body is a view registered for it (`AssetLibrary.register`:
   `mount`, `refresh`, `dispose`); a tab with none says one quiet line, for
   example "Materials come to the library in a later version." Under the
-  tabs, two buttons, **Library** and **Mine** (on the Materials tab the second is
-  **Scene**, the scene's own materials; the Community comes with a
+  tabs, two buttons, **Library** and **Scene** on every tab (Scene is what
+  this scene itself holds of the tab's kind; the Community comes with a
   later step and is not shown; room is left), and a **Search** field that
   filters the tiles showing by name as you type ("Nothing called that." when
-  none match). Mine says "Copies you make of a tool show here." until there
-  are copies.
+  none match). Scene on Tools says "Tools kept in a scene will show here."
 - **The Tools tab, Bozzetto.** Every tool a bar can hold, in two groups
   with small headings, **Sculpt** and **Paint**, the workspace you are in
   first. A tile is at least 64px, the tool's icon with its name under it

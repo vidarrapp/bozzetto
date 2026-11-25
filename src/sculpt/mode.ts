@@ -1934,6 +1934,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   studio.library.register(
     'models',
     new ModelsView({
+      sceneRows: () => scenePanel?.sceneRows() ?? [],
+      selectRow: (id) => scenePanel?.selectRow(id),
       addPrimitive: (kind) => scenePanel?.createPrimitive(kind),
       addBaseMesh: async (id) => (await scenePanel?.addBaseMesh(id)) ?? false,
       setArmature: (id) => scenePanel?.onArmature?.(id),

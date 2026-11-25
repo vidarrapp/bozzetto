@@ -718,6 +718,29 @@ export class ScenePanel extends SidePanel {
   /** What the armature's row does: the eye, and a tap on the row (it takes the selection's mark off the objects; a tap on an object gives it back). */
   armatureActions: { toggle(): void; select(): void; deselect(): void } | null = null;
 
+  /** The rows the list shows, in its order (the objects, then the armature): what the asset library's Models Scene lists. */
+  sceneRows(): { id: string; name: string; active: boolean }[] {
+    const active = this.session.getMesh();
+    const armature = this.armatureRow?.() ?? null;
+    const rows = this.session.getMeshes().map((mesh) => ({
+      id: `obj:${mesh.getID()}`,
+      name: this.session.getMeshName(mesh),
+      active: !armature?.selected && mesh === active,
+    }));
+    if (armature) rows.push({ id: 'armature', name: armature.name, active: armature.selected });
+    return rows;
+  }
+
+  /** A tap on a row: the same as a click on it in the list. */
+  selectRow(id: string): void {
+    if (id === 'armature') {
+      this.armatureActions?.select();
+      return;
+    }
+    const mesh = this.session.getMeshes().find((m) => `obj:${m.getID()}` === id);
+    if (mesh) this.pick(mesh, false, false);
+  }
+
   /** Rebuild the object rows from the live scene (list/selection changes). */
   refresh(): void {
     const active = this.session.getMesh();

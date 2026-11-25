@@ -317,10 +317,9 @@ export class AssetLibrary {
     this.refreshView();
   }
 
-  /** The second button is Scene on the Materials tab (the scene's own materials), Mine elsewhere. */
+  /** The second button is Scene on every tab: what this scene itself holds of the tab's kind. */
   private whereLabel(id: LibraryWhere): string {
-    if (id === 'bozzetto') return 'Library';
-    return this.tab === 'materials' ? 'Scene' : 'Mine';
+    return id === 'bozzetto' ? 'Library' : 'Scene';
   }
 
   private paintTab(): void {

@@ -321,4 +321,4 @@ Recorded in `docs/HANDOFF.md` as well.
 
 ## Where assets live (2026-11-25)
 
-Assets are kept either on Bozzetto, as shared community assets a person subscribes to or likes and as what they save to their own library (which is online too), or in the scene itself. **Library** is the button for the first, **Scene** for the second (on the Materials tab for now). Saving your own tools and presets online, subscribing and liking wait for the Rust core.
+Assets are kept either on Bozzetto, as shared community assets a person subscribes to or likes and as what they save to their own library (which is online too), or in the scene itself. **Library** is the button for the first, **Scene** for the second (on every tab). Saving your own tools and presets online, subscribing and liking wait for the Rust core.

@@ -221,7 +221,7 @@ export const PANELS: Topic[] = [
     group: G,
     blocks: [
       p('The **Asset library** is one window that floats over the view and stays open while you work. Open it with the **Library** button at the top of the Tool panel, or **View**, then **Asset library**. It does not block anything under it: you can sculpt and paint on the model while it is open. Drag it by its title row, resize it from the lower right corner, and close it with the **×**, with **Esc** while it has the focus, or from **View** again. **Tab** hides it with the rest of the interface. It keeps its place, size and last tab on this device when saving is on.'),
-      p('It has five tabs: **Tools**, **Models**, **Materials**, **Lighting** and **HDRIs**. Under the tabs, **Library** shows what ships with the app and **Mine** shows your own (on the Materials tab it is **Scene**, the scene\'s own materials): the rigs you saved in the Lighting tab, and copies of tools later. **Search** narrows the tiles that show by name as you type.'),
+      p('It has five tabs: **Tools**, **Models**, **Materials**, **Lighting** and **HDRIs**. Under the tabs, **Library** shows what ships with the app, and **Scene** shows what this scene itself holds of the tab\'s kind: its materials, its objects, the lighting it uses and the rigs you saved in the Lighting tab. **Search** narrows the tiles that show by name as you type.'),
       h('The Tools tab'),
       p('Every tool is a tile with its icon and its name, in two groups, **Sculpt** and **Paint**, the group of the workspace you are in first. A number in a tile\'s corner is the tool\'s key on that workspace\'s tool bar; a tile with no number is not on the bar. The tool in hand has the orange tile, as on the bar.'),
       options(
