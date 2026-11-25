@@ -339,6 +339,52 @@ export const suites = {
     const e1 = await keyLight(page);
     t.ok(e1.azimuth > e0.azimuth + 10 && e1.elevation > e0.elevation + 5, `a finger's drag moves the key light after Move light (${e0.azimuth}, ${e0.elevation}) to (${e1.azimuth}, ${e1.elevation})`);
 
+    // Relative: a finger that lands far from the last pointer position, and moves 10 px, turns the
+    // light by 10 px worth (5 degrees), not by the distance between the two places.
+    const near = (a, b, why) => t.ok(Math.abs(Math.abs(a) - 5) < 1.5 && Math.abs(b) < 1.5, `${why}: 10 px right turned it ${a.toFixed(2)} degrees (want about 5) and 0 px up ${b.toFixed(2)}`);
+    await page.mouse.move(100, 100);
+    await menuPick(page, 'View', 'Move light');
+    const r0 = await keyLight(page);
+    await touch('touchStart', 980, 300);
+    await touch('touchMove', 985, 300);
+    await touch('touchMove', 990, 300);
+    await touch('touchEnd');
+    await page.waitForTimeout(100);
+    const r1 = await keyLight(page);
+    near(r1.azimuth - r0.azimuth, r1.elevation - r0.elevation, 'a finger far from the last pointer, Move light');
+    await page.mouse.move(100, 100);
+    await page.keyboard.down('l');
+    const r2 = await keyLight(page);
+    await touch('touchStart', 300, 600);
+    await touch('touchMove', 305, 600);
+    await touch('touchMove', 310, 600);
+    await touch('touchEnd');
+    await page.waitForTimeout(100);
+    const r3 = await keyLight(page);
+    near(r3.azimuth - r2.azimuth, r3.elevation - r2.elevation, 'a finger far from the last pointer, L held');
+    const pen = (type, x, y, buttons) => cdp.send('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' && !buttons ? 'none' : 'left', buttons, clickCount: type === 'mouseMoved' ? 0 : 1, pointerType: 'pen', force: 0.6 });
+    await pen('mouseMoved', 150, 150, 0);
+    await pen('mouseMoved', 800, 700, 0);
+    const r4 = await keyLight(page);
+    await pen('mousePressed', 800, 700, 1);
+    await pen('mouseMoved', 805, 700, 1);
+    await pen('mouseMoved', 810, 700, 1);
+    await pen('mouseReleased', 810, 700, 0);
+    await page.waitForTimeout(100);
+    const r5 = await keyLight(page);
+    near(r5.azimuth - r4.azimuth, r5.elevation - r4.elevation, 'a pen that lands far from where it hovered, L held');
+    // A hovering mouse: L goes down, the next move sets the reference, the ones after turn it.
+    await page.keyboard.up('l');
+    await page.mouse.move(100, 100);
+    await page.keyboard.down('l');
+    const r6 = await keyLight(page);
+    await page.mouse.move(700, 500);
+    await page.mouse.move(710, 500);
+    const r7 = await keyLight(page);
+    near(r7.azimuth - r6.azimuth, r7.elevation - r6.elevation, 'a hovering mouse');
+    t.ok(r7.azimuth > r6.azimuth, 'and right still swings it the way it did');
+    await page.keyboard.up('l');
+
     // Cavity: a switch with Strength and Radius under it, on the Material tab.
     await tapTab(page, 'panel--material');
     const cav = await page.evaluate(() => ({
@@ -380,6 +426,18 @@ export const suites = {
     const f1 = await keyLight(page);
     const probe = await page.evaluate(() => window.__probe.filter((x) => !x.startsWith('pointermove')).join(' | '));
     t.ok(f1.azimuth > f0.azimuth + 10, `Armature: Move light turns the key (${f0.azimuth}) to (${f1.azimuth}) [${probe}]`);
+    // Relative here too: a finger that lands far from the last pointer, 10 px, turns it 5 degrees.
+    await page.mouse.move(100, 100);
+    await page.keyboard.down('l');
+    const h0 = await keyLight(page);
+    await touch('touchStart', 900, 600);
+    await touch('touchMove', 905, 600);
+    await touch('touchMove', 910, 600);
+    await touch('touchEnd');
+    await page.waitForTimeout(100);
+    await page.keyboard.up('l');
+    const h1 = await keyLight(page);
+    near(h1.azimuth - h0.azimuth, h1.elevation - h0.elevation, 'Armature: a finger far from the last pointer, L held');
   },
 
   /** The public viewer: Material and Lighting at the right, the rig select alone. */

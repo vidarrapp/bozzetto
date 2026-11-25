@@ -504,6 +504,9 @@ export class InputShell {
    */
   private lightArmed = false;
   private lightPointer = -1;
+  /** Where the light drag measures from: set by the press (or the first move after L went down), NaN until then. */
+  private lightFromX = NaN;
+  private lightFromY = NaN;
   private strokeReduceTimer = 0;
   private lastOrbitTime = 0;
   private lastOrbitDir = 0;
@@ -1849,11 +1852,11 @@ export class InputShell {
    * navigate: holding the key is the deliberate part.
    */
   private heldKeyPress(e: PointerEvent): void {
-    if (this.lightArmed && this.lightPointer === -1) {
-      this.lightPointer = e.pointerId;
+    if (this.lightArmed && this.lightPointer === -1) this.lightPointer = e.pointerId;
+    if (this.lKeyHeld) {
       // The drag starts here: a touch has no hover to have brought the last position along.
-      this.lastAbsX = e.clientX;
-      this.lastAbsY = e.clientY;
+      this.lightFromX = e.clientX;
+      this.lightFromY = e.clientY;
     }
     if (this.adjust && this.adjustPointer === -1 && (e.pointerType !== 'mouse' || e.button === 0)) {
       this.adjustPointer = e.pointerId;
@@ -1909,8 +1912,6 @@ export class InputShell {
       this.hooks.orbitEnd();
     }
     const s = this.session;
-    const prevAbsX = this.lastAbsX;
-    const prevAbsY = this.lastAbsY;
     this.lastAbsX = e.clientX;
     this.lastAbsY = e.clientY;
 
@@ -1921,10 +1922,13 @@ export class InputShell {
     if (this.lKeyHeld) {
       // Armed from the menu, only the pointer that is down moves it.
       if (this.lightArmed && this.lightPointer !== e.pointerId) return;
-      this.hooks.moveKeyLight(
-        (e.clientX - prevAbsX) * KEY_DRAG_DEG_PER_PX,
-        -(e.clientY - prevAbsY) * KEY_DRAG_DEG_PER_PX,
-      );
+      const fromX = this.lightFromX;
+      const fromY = this.lightFromY;
+      this.lightFromX = e.clientX;
+      this.lightFromY = e.clientY;
+      // The first event only sets the reference: the light turns by movement made since.
+      if (!Number.isFinite(fromX)) return;
+      this.hooks.moveKeyLight((e.clientX - fromX) * KEY_DRAG_DEG_PER_PX, -(e.clientY - fromY) * KEY_DRAG_DEG_PER_PX);
       return;
     }
 
@@ -2083,6 +2087,7 @@ export class InputShell {
     const s = this.session;
     if (e.pointerType === 'touch') this.touchesDown.delete(e.pointerId);
     // The armed light drag is over with its press: one drag, then it lets go.
+    if (e.pointerType !== 'mouse') this.lightFromX = NaN;
     if (this.lightArmed && this.lightPointer === e.pointerId) {
       this.armLight(false);
       e.stopPropagation();
@@ -2762,6 +2767,7 @@ export class InputShell {
         s.toggleSymmetry();
         return this.claim(e);
       case 'light.move':
+        if (!this.lKeyHeld) this.lightFromX = NaN;
         this.lKeyHeld = true;
         return this.claim(e);
       case 'gizmo.exit':
@@ -2862,6 +2868,7 @@ export class InputShell {
     this.lightArmed = on;
     this.lightPointer = -1;
     this.lKeyHeld = on;
+    this.lightFromX = NaN;
     this.cursor.hide();
   }
 

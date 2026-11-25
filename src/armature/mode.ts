@@ -1202,6 +1202,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     lightArmed = on;
     lightPointer = -1;
     lightHeld = on;
+    lastPointer.x = NaN; // the light turns by movement made from now on, never from a stale position
   };
   /** Where the pointer last moved over the canvas: the light turns by the step from there. */
   const lastPointer = { x: NaN, y: NaN };
@@ -1266,11 +1267,10 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
       cancelPinPress();
     }
     if (lightHeld) {
-      if (lightArmed && lightPointer === -1) {
-        lightPointer = e.pointerId;
-        lastPointer.x = e.clientX;
-        lastPointer.y = e.clientY;
-      }
+      if (lightArmed && lightPointer === -1) lightPointer = e.pointerId;
+      // The drag starts at the press: a finger has no hover to have brought the last position along.
+      lastPointer.x = e.clientX;
+      lastPointer.y = e.clientY;
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {
@@ -1493,6 +1493,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
   };
   const onPointerUp = (e: PointerEvent): void => {
     down.delete(e.pointerId);
+    if (e.pointerType !== 'mouse') lastPointer.x = NaN; // the next touch or pen move only sets the reference
     if (lightArmed && lightPointer === e.pointerId) {
       armLight(false);
       claimForLight(e);
@@ -2424,6 +2425,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
         void remesh(host.figure.resolution);
         break;
       case 'arm.light':
+        if (!lightHeld) lastPointer.x = NaN; // from where the pointer is when L goes down
         lightHeld = true; // until its keyup (onKeyUp), or the window losing focus
         break;
       case 'view.frame':
