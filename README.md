@@ -177,6 +177,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **The asset library opens in the middle and a little bigger.** About 560 by 520, centred between the top strip and the tool bar; a window you have moved or resized stays where you put it.
+
 ### v0.7.25
 
 - **The Scene panel's Material row shows a matcap in use.** In Matcap it reads "Matcap: VR04" and stays until you pick a material, which also returns the view to Lit.

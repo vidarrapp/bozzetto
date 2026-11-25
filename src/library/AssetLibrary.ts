@@ -55,8 +55,11 @@ const WHERES: ReadonlyArray<{ id: LibraryWhere; label: string }> = [
 
 /** localStorage, through deviceStore: `{ v: 1, x, y, w, h, tab }`. */
 export const LIBRARY_KEY = 'bozzetto-library';
-const DEFAULT_W = 420;
-const DEFAULT_H = 480;
+const DEFAULT_W = 560;
+const DEFAULT_H = 520;
+/** The size and place the window opened with before it was centred: a kept place equal to it counts as never moved. */
+const OLD_W = 420;
+const OLD_H = 480;
 const MIN_W = 340;
 const MIN_H = 300;
 /** The foot's line goes by itself after this long. */
@@ -352,13 +355,30 @@ export class AssetLibrary {
 
   // --- place and size ---------------------------------------------------------------------------
 
-  /** About 420 by 480 and right of centre, under the strip and clear of the tool bar and the edge column. */
+  /** True once the person has moved or resized the window (or a kept place says so): then it is no longer centred for them. */
+  private placed = false;
+
+  /** About 560 by 520, centred in the view between the title strip and the tool bar. */
   private initialPlace(): Place {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const w = Math.min(DEFAULT_W, Math.max(MIN_W, vw - 2 * MARGIN));
-    const h = Math.min(DEFAULT_H, Math.max(MIN_H, vh - 2 * MARGIN));
-    return { x: Math.round(vw / 2 + 24), y: 64, w, h };
+    const top = this.minTop();
+    const bar = document.querySelector<HTMLElement>('.sculpt-toolbar__brushes')?.getBoundingClientRect();
+    const bottom = bar && bar.width > 0 && bar.top > top ? Math.round(bar.top) : vh;
+    const w = Math.min(DEFAULT_W, Math.max(MIN_W, vw - 48));
+    const h = Math.min(DEFAULT_H, Math.max(MIN_H, Math.min(vh - 48, bottom - top - 2 * MARGIN)));
+    return { x: Math.round((vw - w) / 2), y: Math.round((top + bottom - h) / 2), w, h };
+  }
+
+  /** The place the window opened with before it was centred (right of centre, 420 by 480). */
+  private oldPlace(): Place {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    return { x: Math.round(vw / 2 + 24), y: 64, w: Math.min(OLD_W, Math.max(MIN_W, vw - 2 * MARGIN)), h: Math.min(OLD_H, Math.max(MIN_H, vh - 2 * MARGIN)) };
+  }
+
+  private samePlace(a: Place, b: Place): boolean {
+    return a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
   }
 
   private readPlace(): void {
@@ -372,7 +392,14 @@ export class AssetLibrary {
       const y = n('y');
       const w = n('w');
       const h = n('h');
-      if (x !== null && y !== null && w !== null && h !== null) this.place = { x, y, w, h };
+      if (x !== null && y !== null && w !== null && h !== null) {
+        const kept = { x, y, w, h };
+        // The old default is no memory: it was never chosen.
+        if (!this.samePlace(this.clamp(kept), this.clamp(this.oldPlace()))) {
+          this.place = kept;
+          this.placed = true;
+        }
+      }
       if (typeof rec.tab === 'string' && tabIds.has(rec.tab)) this.tab = rec.tab as LibraryTabId;
     } catch {
       // A corrupt or blocked store: the default place stands.
@@ -415,8 +442,8 @@ export class AssetLibrary {
 
   /** Put the window back inside the view (the page was resized, or the window opened after it was). */
   private fit(): void {
-    const next = this.clamp(this.place);
-    if (next.x === this.place.x && next.y === this.place.y && next.w === this.place.w && next.h === this.place.h) return;
+    const next = this.clamp(this.placed ? this.place : this.initialPlace());
+    if (this.samePlace(next, this.place)) return;
     this.place = next;
     this.applyPlace();
   }
@@ -500,6 +527,7 @@ export class AssetLibrary {
     const d = this.drag;
     if (!d) return;
     this.drag = null;
+    this.placed = true;
     d.stop();
     this.el.classList.remove('is-dragging');
     this.keepPlace();

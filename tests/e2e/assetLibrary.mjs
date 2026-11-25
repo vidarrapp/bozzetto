@@ -110,6 +110,19 @@ const winRect = (page) =>
     const r = w.getBoundingClientRect();
     return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
   });
+/** The area the strip above and the tool bar below leave, as the window centres in it. */
+const freeArea = (page) =>
+  page.evaluate(() => {
+    const strip = document.querySelector('.bz-strip')?.getBoundingClientRect();
+    const bar = document.querySelector('.sculpt-toolbar__brushes')?.getBoundingClientRect();
+    const top = strip ? strip.bottom + 4 : 32;
+    const bottom = bar && bar.width > 0 && bar.top > top ? bar.top : window.innerHeight;
+    return { cx: window.innerWidth / 2, cy: (top + bottom) / 2 };
+  });
+const centred = async (page) => {
+  const [r, a] = [await winRect(page), await freeArea(page)];
+  return Math.abs(r.x + r.w / 2 - a.cx) <= 2 && Math.abs(r.y + r.h / 2 - a.cy) <= 2;
+};
 const isOpen = async (page) => (await winRect(page)) !== null;
 const foot = (page) => page.evaluate(() => document.querySelector('.lib-foot')?.textContent ?? '');
 
@@ -246,9 +259,16 @@ export const suites = {
     t.eq(await page.evaluate(() => document.querySelector('.lib-window').getAttribute('aria-label')), 'Asset library', 'a window named Asset library');
     t.eq(await page.evaluate(() => document.querySelector('.lib-title__name').textContent), 'Asset library', 'with the name in its title row');
     const r = await winRect(page);
-    t.ok(r.w === 420 && r.h === 480, `about 420 by 480 (${r.w} by ${r.h})`);
-    t.ok(r.x + r.w / 2 > 590, `right of centre (${r.x}..${r.x + r.w})`);
+    t.ok(r.w === 560 && r.h === 520, `560 by 520 (${r.w} by ${r.h})`);
+    t.ok(await centred(page), `centred in the free area (${JSON.stringify(await freeArea(page))} for ${JSON.stringify(r)})`);
     t.ok(r.x >= 0 && r.y >= 28 && r.x + r.w <= 1180 && r.y + r.h <= 820, 'inside the view');
+    // The iPad turned: an unmoved window stays centred, the size as it was.
+    await page.setViewportSize({ width: 820, height: 1180 });
+    await page.waitForFunction(() => Math.abs(document.querySelector('.lib-window').getBoundingClientRect().left + 280 - 410) <= 2);
+    const pr = await winRect(page);
+    t.ok(pr.w === 560 && pr.h === 520 && (await centred(page)), `centred at 820 by 1180 too (${JSON.stringify(pr)})`);
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await page.waitForFunction(() => Math.abs(document.querySelector('.lib-window').getBoundingClientRect().left - 310) <= 2);
     const clear = await page.evaluate(() => {
       const w = document.querySelector('.lib-window').getBoundingClientRect();
       const hit = (sel) => {
@@ -336,6 +356,12 @@ export const suites = {
     await page.evaluate(() => document.activeElement?.blur());
     const strokes = () => page.evaluate(() => window.__sculpt.input.strokeCount());
     const s0 = await strokes();
+    // The window opens over the middle: put it to the right so the model is clear.
+    const wr = await winRect(page);
+    await page.mouse.move(wr.x + 120, wr.y + 22);
+    await page.mouse.down();
+    for (const [x, y] of along([wr.x + 120, wr.y + 22], [wr.x + 420, wr.y + 22], 4)) await page.mouse.move(x, y);
+    await page.mouse.up();
     const model = [430, 380];
     await page.mouse.move(...model);
     await page.mouse.down();
@@ -431,6 +457,11 @@ export const suites = {
     await viewItem(page, 'Asset library', true);
     t.eq(JSON.stringify(await winRect(page)), JSON.stringify(mine), 'place and size survive a reload');
     t.eq(await page.evaluate(() => document.querySelector('.lib-tab.is-on').textContent), 'Lighting', 'and so does the last tab');
+    // The old default in storage is no memory: the new centred default opens.
+    await boot(page, base, null, JSON.stringify({ v: 1, x: 614, y: 64, w: 420, h: 480, tab: 'tools' }));
+    await viewItem(page, 'Asset library', true);
+    const olds = await winRect(page);
+    t.ok(olds.w === 560 && olds.h === 520 && (await centred(page)), `the old default kept in storage gives the new default (${JSON.stringify(olds)})`);
     // A stored place that no longer fits the view is brought inside.
     await boot(page, base, null, JSON.stringify({ v: 1, x: 5000, y: 5000, w: 9000, h: 9000, tab: 'tools' }));
     await viewItem(page, 'Asset library', true);
