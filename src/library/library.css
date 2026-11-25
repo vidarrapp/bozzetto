@@ -410,6 +410,11 @@ body.chrome-hidden .lib-window {
   min-height: 64px;
 }
 
+/* A longer name (Male mannequin, realistic) gets a third line before it is cut. */
+.lib-tile--pic .lib-tile__name {
+  -webkit-line-clamp: 3;
+}
+
 .lib-tile__note {
   max-width: 100%;
   overflow: hidden;

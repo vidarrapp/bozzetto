@@ -311,14 +311,14 @@ export const suites = {
     t.eq(await page.evaluate(() => document.querySelectorAll('.lib-body:not([hidden]) .lib-tile:not([hidden])').length), 0, 'and has no tiles yet');
     await page.click('.lib-where:text-is("Bozzetto")');
     await page.fill('.lib-search', 'cla');
-    t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-tile:not([hidden])')].map((b) => b.dataset.tool).join()), 'bz.clay', 'Search filters the tiles by name as you type');
+    t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-body[data-tab="tools"] .lib-tile:not([hidden])')].map((b) => b.dataset.tool).join()), 'bz.clay', 'Search filters the tiles by name as you type');
     await page.fill('.lib-search', 'AK');
-    t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-tile:not([hidden])')].map((b) => b.dataset.tool).join()), 'bz.rake', 'in any case, anywhere in the name (Rake)');
+    t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-body[data-tab="tools"] .lib-tile:not([hidden])')].map((b) => b.dataset.tool).join()), 'bz.rake', 'in any case, anywhere in the name (Rake)');
     await page.fill('.lib-search', 'zzz');
     t.eq(await page.evaluate(() => document.querySelector('.lib-body:not([hidden]) .lib-empty:not([hidden])')?.textContent ?? ''), 'Nothing called that.', 'a search with no match says so');
-    t.eq(await page.evaluate(() => document.querySelectorAll('.lib-group:not([hidden])').length), 0, 'and shows no group heading');
+    t.eq(await page.evaluate(() => document.querySelectorAll('.lib-body[data-tab="tools"] .lib-group:not([hidden])').length), 0, 'and shows no group heading');
     await page.fill('.lib-search', '');
-    t.eq(await page.evaluate(() => document.querySelectorAll('.lib-tile:not([hidden])').length), 15, 'clearing it brings them all back');
+    t.eq(await page.evaluate(() => document.querySelectorAll('.lib-body[data-tab="tools"] .lib-tile:not([hidden])').length), 15, 'clearing it brings them all back');
     // Typing in the field does not take a tool.
     const before = await inHand(page);
     await page.fill('.lib-search', '');
@@ -447,7 +447,7 @@ export const suites = {
     await openLib(page);
     const info = () =>
       page.evaluate(() => {
-        const groups = [...document.querySelectorAll('.lib-group:not([hidden])')].map((g) => ({ ws: g.dataset.group, head: g.querySelector('.lib-group__head').textContent, tools: [...g.querySelectorAll('.lib-tile')].map((b) => b.dataset.tool) }));
+        const groups = [...document.querySelectorAll('.lib-body[data-tab="tools"] .lib-group:not([hidden])')].map((g) => ({ ws: g.dataset.group, head: g.querySelector('.lib-group__head').textContent, tools: [...g.querySelectorAll('.lib-tile')].map((b) => b.dataset.tool) }));
         return groups;
       });
     let g = await info();
@@ -1091,7 +1091,7 @@ export const suites = {
       'in the same groups',
     );
     t.ok(models.filter((m) => m.img).length === models.length - 7, 'every tile has its picture but the primitives, which are their names');
-    t.eq(await thumbsLoad(page, 'models'), [], 'every Models thumbnail loads');
+    t.eq(JSON.stringify(await thumbsLoad(page, 'models')), '[]', 'every Models thumbnail loads');
     await page.screenshot({ path: `${SHOTS}/models.png` });
 
     // A tap does what Create does.
@@ -1140,7 +1140,7 @@ export const suites = {
     const caps = await tabTiles(page, 'materials');
     t.eq(caps.length, 10, 'Materials lists the ten matcaps');
     t.eq(JSON.stringify(caps.map(({ id, label }) => ({ id, label }))), JSON.stringify(panelCaps), "the same ids, labels and order as the Material panel's picker");
-    t.eq(await thumbsLoad(page, 'materials'), [], 'every matcap tile shows its picture');
+    t.eq(JSON.stringify(await thumbsLoad(page, 'materials')), '[]', 'every matcap tile shows its picture');
     t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="materials"] .lib-group__head').textContent), 'Matcaps', 'under the group Matcaps');
     t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="materials"] [data-role="library-tail"]').textContent), 'Lit shows the materials again (Material tab).', 'and the line about Lit');
     await page.evaluate(() => window.__sculpt.viewer.setMaterial('lit'));
@@ -1151,7 +1151,18 @@ export const suites = {
     t.eq(st.on, 'VR04', "the Material panel's picker follows");
     t.eq(st.mode2, 'matcap', 'and its Mode');
     t.eq((await tabTiles(page, 'materials')).filter((c) => c.state === 'use').map((c) => c.id).join(), 'vr04', 'the tile in use is marked');
+    // The Material panel's picker closed and the window moved aside, so both marks show.
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => { const g = document.querySelector('.mcpick__pop'); if (g) g.hidden = true; });
+    await page.mouse.move(700, 87);
+    await page.mouse.down();
+    await page.mouse.move(520, 90, { steps: 4 });
+    await page.mouse.move(330, 90, { steps: 4 });
+    await page.mouse.up();
+    await wait(page, 800);
     await page.screenshot({ path: `${SHOTS}/materials-with-panel.png` });
+    await page.evaluate(() => document.querySelector('.mcpick__trigger').click());
+    await wait(page, 300);
     await page.evaluate(() => document.querySelectorAll('.matcap-grid--pop .matcap-swatch')[7].click());
     await page.waitForFunction(() => document.querySelector('.lib-body[data-tab="materials"] .lib-tile[data-asset="vr08"]')?.dataset.state === 'use', null, { timeout: 5000 });
     t.eq((await tabTiles(page, 'materials')).filter((c) => c.state === 'use').map((c) => c.id).join(), 'vr08', 'picking in the panel moves the mark in the window');
@@ -1197,7 +1208,7 @@ export const suites = {
     const rigs = await tabTiles(page, 'lighting');
     t.eq(rigs.length, 10, 'Lighting lists the ten built-in rigs');
     t.eq(JSON.stringify(rigs.map(({ id, label }) => ({ id, label }))), JSON.stringify(panelRigs), "the same ids, labels and order as the Lighting tab's Rig select");
-    t.eq(await thumbsLoad(page, 'lighting'), [], 'every rig tile shows its picture');
+    t.eq(JSON.stringify(await thumbsLoad(page, 'lighting')), '[]', 'every rig tile shows its picture');
     await page.screenshot({ path: `${SHOTS}/lighting.png` });
     await tapAsset(page, 'lighting', 'rembrandt');
     await wait(page, 400);
@@ -1225,7 +1236,7 @@ export const suites = {
     await page.screenshot({ path: `${SHOTS}/lighting-mine.png` });
     await page.selectOption('.panel--lighting select', 'built:top_light');
     await wait(page, 700);
-    await page.evaluate(() => document.querySelector('.lib-body[data-tab="lighting"] .lib-grid .lib-tile').click());
+    await page.evaluate(() => document.querySelector('.lib-body[data-tab="lighting"] [data-group="mine"] .lib-tile').click());
     await wait(page, 300);
     const key = await page.evaluate(() => window.__bozzetto.lighting.state().find((l) => l.id === 'key'));
     t.ok(key.azimuth === 77 && key.elevation === 33, `a Mine tile applies the saved rig (${key.azimuth}, ${key.elevation})`);
@@ -1244,14 +1255,14 @@ export const suites = {
     const envs = await tabTiles(page, 'hdris');
     t.eq(JSON.stringify(envs.map(({ id, label }) => ({ id, label }))), JSON.stringify(panelEnvs.map((o) => ({ id: o.value, label: o.label }))), "HDRIs lists None and the six, as the Lighting tab's HDRI select does (same ids, labels, order)");
     t.eq(envs[0].label, 'None', 'None first');
-    t.eq(await thumbsLoad(page, 'hdris'), [], 'every HDRI tile shows its picture');
+    t.eq(JSON.stringify(await thumbsLoad(page, 'hdris')), '[]', 'every HDRI tile shows its picture');
     t.eq(hdrs.length, 0, `no .hdr file is fetched by looking (${hdrs.join()})`);
     t.eq(envs.find((e) => e.id === '').state, 'use', 'None is the one in use at first');
     await page.screenshot({ path: `${SHOTS}/hdris.png` });
 
     // A slow file: the tile reads loading, then in use; only that file is fetched.
     await page.route('**/studio-photo.hdr*', async (route) => {
-      await new Promise((r) => setTimeout(r, 2500));
+      await new Promise((r) => setTimeout(r, 9000));
       await route.continue();
     });
     await tapAsset(page, 'hdris', 'studio-photo');
@@ -1271,7 +1282,10 @@ export const suites = {
     t.ok(true, 'and the other way, the window follows the select');
 
     // A failed fetch leaves the environment as it was and says so.
-    await page.route('**/garage.hdr*', (route) => route.abort());
+    await page.evaluate(() => {
+      const real = window.fetch.bind(window);
+      window.fetch = (input, init) => (/garage\.hdr/.test(String(input?.url ?? input)) ? Promise.reject(new TypeError('offline')) : real(input, init));
+    });
     await tapAsset(page, 'hdris', 'garage');
     await page.waitForFunction(() => /could not be loaded/.test(document.querySelector('.lib-foot')?.textContent ?? ''), null, { timeout: 15000 });
     t.eq(await foot(page), 'Garage could not be loaded. The environment is as it was.', 'a failed fetch says so in the foot');
