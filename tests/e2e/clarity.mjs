@@ -196,6 +196,7 @@ export const suites = {
     await page.evaluate(() => window.dispatchEvent(new Event('bozzetto:controls-refresh')));
     t.eq((await sel())?.text, 'Custom', 'and the Rig reads Custom');
     await openArmature(page, base);
-    t.eq(await page.evaluate(() => window.__bozzetto.lighting.activePreset()), 'three_point', 'Armature opens with all three lights, which is Three-point');
+    // openArmature reloads the page, and a freshly loaded scene has the key light alone: Armature shows the scene's lights, as Sculpt does.
+    t.eq(await page.evaluate(() => window.__bozzetto.lighting.activePreset()), 'key_only', 'Armature shows the scene\'s lights, as Sculpt does: a freshly loaded scene has the key light alone, which is Key only');
   },
 };

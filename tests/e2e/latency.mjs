@@ -1313,7 +1313,7 @@ export const suites = {
     // Every mode: Armature, and the viewer.
     await openArmature(page, base);
     s = await shown();
-    t.ok(s.stall && s.meter && !s.input && solid(s.bg), `in Armature mode the stall log and the meter are up and the panels solid too (no input log: it is Sculpt's) (${show(s)})`);
+    t.ok(s.stall && s.meter && s.input && solid(s.bg), `in Armature mode the stall log, the input log and the meter are up and the panels solid too: Armature is on Sculpt's page (${show(s)})`);
     await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
     s = await page.evaluate(() => ({ stall: !!document.querySelector('.perf-debug'), meter: !document.querySelector('.fps-meter')?.hidden }));
