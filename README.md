@@ -185,6 +185,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ### v0.7.13
 
+- **Scenes with sculpt layers save to the library.** The site's upload check still expected the first layers format and refused a scene with sculpt layers as damaged. It takes both formats now.
 - **The head looks at a point.** The arrowhead in front of the face is now a point in the scene that you drag anywhere on the screen. The head keeps facing it however the figure moves, and it is drawn dimmer when the head cannot turn that far.
 - **Knee and elbow targets follow the pointer.** On a straight leg or arm the target no longer sticks, and the knee or elbow keeps pointing where you left it.
 - **The hips are one box.** The box round the hips is the box the hips show when selected. Tap it to select the hips and turn them with the rings, drag it to move the whole figure.
