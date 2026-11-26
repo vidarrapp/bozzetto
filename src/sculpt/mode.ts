@@ -2733,6 +2733,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   if (armatureAddress) {
     studio.go('armature');
     await armatureSlot.ready();
+  } else {
+    // A scene that has an armature shows its mannequin from the start: loaded once the first frame
+    // is on screen, so the sculpt appears as fast as it does without one.
+    const slot = armatureSlot;
+    requestAnimationFrame(() => window.setTimeout(() => void slot.preload().catch(() => {}), 0));
   }
 
   return () => {

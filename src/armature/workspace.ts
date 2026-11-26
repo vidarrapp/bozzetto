@@ -4,6 +4,7 @@ import type { SidePanel } from '../sculpt/ui/SidePanel';
 import { statusToast, type StatusToast } from '../sculpt/ui/statusToast';
 import type { ArmatureHost } from './host';
 import type { ArmatureMount } from './mode';
+import { hasArmature } from './persist';
 
 /**
  * Armature as a workspace of the Sculpt page, loaded when it is first entered
@@ -18,8 +19,9 @@ import type { ArmatureMount } from './mode';
  * way back to another workspace is as open as ever. Left before the load ends,
  * the workspace finishes loading put away.
  *
- * Until it has been entered once, the page has no armature and nothing of it
- * is drawn. From then on the mannequin is part of the scene: shown with its
+ * A scene whose device keeps an armature record loads Armature by itself once the first frame is on
+ * screen (ArmatureSlot.preload), put away; one without loads nothing. Until loaded, the page has no
+ * armature and nothing of it is drawn. From then on the mannequin is part of the scene: shown with its
  * handles in Armature, and as it stands in the other workspaces until a figure
  * has been made from it (ArmatureHost.figureMade).
  */
@@ -42,6 +44,12 @@ export interface ArmatureSlot {
   workspace: Workspace;
   /** Armature has been loaded into this page: the scene has an armature, and its mannequin is drawn. */
   present(): boolean;
+  /**
+   * The page has started: when the device keeps an armature record, load Armature now, put away, so
+   * the mannequin stands in the scene without the workspace having been entered. Nothing is fetched
+   * when there is no record.
+   */
+  preload(): Promise<void>;
   /** Resolves once the load a first entry began has ended (at once when none began). */
   ready(): Promise<void>;
   /** The loaded workspace's own handle, or null before the first entry. */
@@ -76,12 +84,20 @@ export function armatureWorkspace(page: ArmaturePage): ArmatureSlot {
   const none: Workspace['panels'] = { left: [], right: [] };
   const panels = (): Workspace['panels'] => mount?.workspace.panels ?? none;
 
-  const load = async (): Promise<void> => {
-    notice = statusToast('Loading Armature…');
+  let quietTimer = 0;
+  const showNotice = (): void => {
+    window.clearTimeout(quietTimer);
+    notice ??= statusToast('Loading Armature…');
+  };
+  const load = async (quiet = false): Promise<void> => {
+    // A load the page began by itself says so only if it takes over half a second.
+    if (quiet) quietTimer = window.setTimeout(showNotice, 500);
+    else showNotice();
     try {
       const { mountArmatureMode } = await import('./mode');
       mount = await mountArmatureMode(host.viewer, host);
-      notice.clear();
+      window.clearTimeout(quietTimer);
+      notice?.clear();
       notice = null;
       if (!wanted) {
         // Left before it was ready: it stands put away, as any visit's end leaves it.
@@ -95,7 +111,8 @@ export function armatureWorkspace(page: ArmaturePage): ArmatureSlot {
       page.changed();
     } catch (err) {
       console.error(err);
-      notice?.fail('Armature could not be loaded. Check the connection and try again.');
+      window.clearTimeout(quietTimer);
+      (notice ?? statusToast('Loading Armature…')).fail('Armature could not be loaded. Check the connection and try again.');
       notice = null;
       loading = null;
       if (wanted) host.studio.go('sculpt');
@@ -124,7 +141,8 @@ export function armatureWorkspace(page: ArmaturePage): ArmatureSlot {
       wanted = true;
       page.hold(true, from);
       if (mount) mount.workspace.enter(from);
-      else loading ??= load();
+      else if (loading) showNotice();
+      else loading = load();
     },
     leave: (to) => {
       wanted = false;
@@ -137,6 +155,10 @@ export function armatureWorkspace(page: ArmaturePage): ArmatureSlot {
   return {
     workspace,
     present: () => mount !== null,
+    preload: async () => {
+      if (loading || !(await hasArmature())) return;
+      loading ??= load(true);
+    },
     ready: () => loading ?? Promise.resolve(),
     mount: () => mount,
     name: () => mount?.armatureName() ?? 'Armature',

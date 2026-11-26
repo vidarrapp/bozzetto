@@ -25,7 +25,7 @@ Your work autosaves on your device. Nothing uploads unless you sign in and save 
 
 <img width="1180" height="820" alt="Bozzetto Screenshot - Armature mode" src="docs/screenshots/armature.jpg" />
 
-A posable mannequin, for reference or as the start of a sculpt, and the first of four workspaces of one page: Armature, Sculpt, Paint and Present, one `Shift`+`1` to `4` away from each other. Pick **Create → New Armature** in the gallery, or go to Armature from any workspace. No sign-in needed. Armature loads the first time you go there, so Sculpt starts as fast as before.
+A posable mannequin, for reference or as the start of a sculpt, and the first of four workspaces of one page: Armature, Sculpt, Paint and Present, one `Shift`+`1` to `4` away from each other. Pick **Create → New Armature** in the gallery, or go to Armature from any workspace. No sign-in needed. Armature loads after the first frame when the scene has an armature, and the first time you go there otherwise, so Sculpt starts as fast as before.
 
 - **Figures.** Four mannequins, male and female in realistic and stylized proportions, plus two block figures. You can also load your own rigged `.glb`.
 - **Pose.** Tap a part to turn its joint, held within the joint's limits. Symmetry (`X`) mirrors the pose to the other side.
@@ -176,6 +176,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 | `1`, `2`, `3` in Present | Pick the key, fill or rim light for `L` |
 
 ## Changelog
+
+### Unreleased
+
+- A scene's armature now shows from the start. After a reload the mannequin is in Sculpt, Paint and Present at once, with its pose, its eye and its material, without going to Armature first; New sculpt starts without one.
 
 ### v0.7.26
 

@@ -1026,7 +1026,12 @@ armature, which Armature reads and cleans off the address), and the address
 follows the workspace (`armature=1` while Armature is in front, `sculpt=1`
 when it is left, `paint=1` as before).
 
-- **Armature is loaded on first use.** Its code and the four mannequin files
+- **Armature is loaded on first use, or at the start for a scene that has
+  one.** When the device keeps an armature record (`hasArmature`), the page
+  loads it put away once the first frame is on screen (`ArmatureSlot.preload`;
+  the "Loading Armature…" notice only after half a second), so the mannequin
+  stands in Sculpt, Paint and Present after a reload. A new sculpt clears the
+  record. Otherwise its code and the four mannequin files
   are fetched the first time the workspace is entered (`src/armature/
   workspace.ts` is the facade the page carries), so Sculpt starts as fast as it
   did. The path shows Armature current at once, a quiet notice says "Loading
@@ -1061,9 +1066,8 @@ when it is left, `paint=1` as before).
   main action, not the danger style) and Cancel; Cancel leaves everything as
   it was and the press goes to the view. Once a figure stands in the scene
   (its step is in the history: undoing it brings the mannequin back) the
-  mannequin shows only in Armature. The scene has an armature from the first
-  entry to Armature in a visit; the second half of step C saves it in the
-  scene's record, so it is there from the start.
+  mannequin shows only in Armature. The scene has an armature when the device keeps
+  its record, loaded at the start of the page.
 - **Panels.** Armature: left Armature; right Material, Reference (the same
   two panels and the same board as in the other workspaces; pictures on the
   old Armature board are added to the page's board once, on first load). The
