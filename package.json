@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "@simplewebauthn/browser": "14.0.0",
-    "@simplewebauthn/server": "14.0.3",
+    "@simplewebauthn/server": "14.1.0",
     "client-zip": "2.5.1",
     "gifenc": "^1.0.3",
     "gl-matrix": "^3.4.4",
