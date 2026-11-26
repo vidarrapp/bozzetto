@@ -782,9 +782,21 @@ Tool, with Material before it.
   panels, the hotkeys and a restored look change it). **Models**: the
   Create choices in their groups (Primitives, Armatures, Base
   meshes: Figures, Heads, Parts); a tap does what the Create choice does.
-  **Materials**: the group Matcaps, ten tiles with the matcap's own
-  picture, a tap sets the mode to Matcap and the matcap, and the line "Lit
-  shows the materials again (Material tab)." under it. **Lighting**: the
+  **Materials**: three groups, Clays and casts (nine) and Metals (seven)
+  of preset materials, then Matcaps (ten). A preset tile is a rendered ball
+  (`public/assets/materials`); a tap adds a scene material with the preset's
+  name and values (the scene's own when one has the same name and the same
+  three values) and assigns it to the active object, goes to Lit from
+  Matcap, and with no object only adds it ("Added to the scene's
+  materials."). A matcap tap adds it to the scene's own list and uses it.
+  The scene holds its matcaps (`sceneMatcaps` in the look, default plus the
+  one in use when absent): the Material panel's picker lists only them and
+  ends with "Browse…" (opens this window on Materials, Library); the Scene
+  side lists them under a Matcaps heading with a 28px "Remove from scene"
+  button, absent on the one in use while the view is in Matcap and on the
+  last one. The Scene panel's Material select lists the scene's
+  materials, "New*" and "Browse…". The line "Lit shows the materials again
+  (Material tab)." ends the Library side. **Lighting**: the
   ten built-in rigs, each a grey ball under it; Scene holds the saved rigs
   ("Rigs you save in the Lighting tab show here."). **HDRIs**: None, then
   the six; Scene holds the one environment this scene uses, or the line

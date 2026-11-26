@@ -1,15 +1,17 @@
-// Renders the Asset library's light-rig and environment thumbnails from the app itself.
+// Renders the Asset library's light-rig, environment and preset-material thumbnails from the app itself.
 //
-//   npm run build:test && node tools/render-library-thumbs.mjs [--dist dist] [--rigs public/assets/rigs] [--envs public/assets/env/thumbs]
+//   npm run build:test && node tools/render-library-thumbs.mjs [--dist dist] [--rigs public/assets/rigs] [--envs public/assets/env/thumbs] [--materials public/assets/materials] [--only id,id]
 //
 // A rig's picture is a neutral grey ball under that rig (no environment light). An environment's is a chrome
 // ball lit by it alone (the lights off), which shows what the picture holds at tile size. Both are the app's own
 // sphere in its own Lit view, three-quarter on, the interface away. The ball is framed once and cut out of the
 // flat background with one circle for all of them, so the pictures line up, and written as 96 x 96 PNGs with a
 // transparent surround, the size and format the armature thumbnails (tools/render-armature-thumbs.mjs) have.
+// A preset material's is a ball of it in Lit under the Three-point rig and the Neutral studio environment
+// (a metal needs something to reflect), read from MATERIAL_PRESETS in src/library/assets.ts.
 //
 // It uses the browser plumbing of the end-to-end tests (tests/e2e/lib.mjs), so it runs where they do.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { launch, serve } from '../tests/e2e/lib.mjs';
 
@@ -20,11 +22,13 @@ const arg = (name, fallback) => {
 const dist = resolve(arg('dist', 'dist'));
 const rigsOut = resolve(arg('rigs', 'public/assets/rigs'));
 const envsOut = resolve(arg('envs', 'public/assets/env/thumbs'));
+const matsOut = resolve(arg('materials', 'public/assets/materials'));
 const SIZE = 96;
 const SHOT = 480;
 
 mkdirSync(rigsOut, { recursive: true });
 mkdirSync(envsOut, { recursive: true });
+mkdirSync(matsOut, { recursive: true });
 const { base, close } = await serve(dist);
 const browser = await launch();
 try {
@@ -60,6 +64,8 @@ try {
     await settle();
     return (await page.screenshot()).toString('base64');
   };
+
+  const envIntensity = await page.evaluate(() => window.__sculpt.viewer.environment.getState().intensity);
 
   // The ball: Lit, grey, no stage, no selection tint, no environment light.
   await page.evaluate(() => {
@@ -154,6 +160,50 @@ try {
     if (res !== 'done') throw new Error(`environment ${id}: ${res}`);
     writeFileSync(`${envsOut}/${id}.png`, Buffer.from(await cut(await shoot()), 'base64'));
     console.log(`environment ${id} -> ${envsOut}/${id}.png`);
+  }
+
+  // The preset materials: each ball in Lit under the Three-point rig and the Neutral studio environment.
+  const presets = [...readFileSync(resolve('src/library/assets.ts'), 'utf8').matchAll(/^\s*preset\('\w+', '([\w-]+)', '[^']*', '(#[0-9a-f]{6})', ([\d.]+), ([\d.]+)\),$/gm)].map((m) => ({
+    id: m[1],
+    albedo: m[2],
+    roughness: Number(m[3]),
+    metalness: Number(m[4]),
+  }));
+  if (!presets.length) throw new Error('no preset materials found in src/library/assets.ts');
+  await page.evaluate((intensity) => {
+    const v = window.__sculpt.viewer;
+    v.lighting.applyPreset('three_point');
+    v.environment.setIntensity(intensity);
+  }, envIntensity);
+  const neutral = await page.evaluate(() => window.__sculpt.viewer.environment.useEnvironment('studio-neutral'));
+  if (neutral !== 'done') throw new Error(`environment studio-neutral: ${neutral}`);
+  const only = arg('only', '');
+  for (const p of presets.filter((x) => !only || only.split(',').includes(x.id))) {
+    // Through the scene's own material, as the library's tap does, and wait until the ball shows its albedo.
+    await page.evaluate((m) => {
+      const { library, session } = window.__sculpt;
+      library.update(library.materialFor(session.getMesh()).id, { albedo: m.albedo, roughness: m.roughness, metalness: m.metalness });
+      session.render();
+    }, p);
+    await page.waitForFunction(
+      (m) => {
+        const k = window.__sculpt.viewer.display.userData.albedo;
+        const want = new k.constructor(m.albedo);
+        return Math.abs(k.r - want.r) + Math.abs(k.g - want.g) + Math.abs(k.b - want.b) < 0.005;
+      },
+      p,
+      { timeout: 20_000 },
+    );
+    // The test browser draws a frame only now and then: shoot again until two pictures in a row are the same.
+    let shot = await shoot();
+    for (let again = 0; again < 4; again++) {
+      const next = await shoot();
+      const same = next === shot;
+      shot = next;
+      if (same) break;
+    }
+    writeFileSync(`${matsOut}/${p.id}.png`, Buffer.from(await cut(shot), 'base64'));
+    console.log(`material ${p.id} -> ${matsOut}/${p.id}.png`);
   }
 } finally {
   await browser.close();

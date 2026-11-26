@@ -177,6 +177,13 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### v0.7.28
+
+- **Preset materials in the asset library.** The Materials tab has Clays and casts (wax clay, wet clay, plasteline, plaster, plastic and more) and Metals (steel, silver, gold, copper, bronze and more) as rendered balls; a tap adds the material to the scene and gives it to the selected object.
+- **The Material menu shows only what is in the scene.** It lists the scene's materials, New* and Browse…, which opens the asset library on the Materials tab.
+- **A scene keeps its own matcaps.** The Material panel's matcap picker lists the matcaps the scene holds and ends with Browse…; the asset library adds a matcap to the scene when you tap it, and its Scene side lists them with a button to remove one.
+- **The asset library opens in the middle and a little bigger.** About 560 by 520, centred between the top strip and the tool bar; a window you have moved or resized stays where you put it.
+
 ### v0.7.27
 
 - **A proportion guide, a ruler in heads.** Turn it on in View > Proportion guide or the Model tab's Measure section: a vertical line stands beside the figure with its height in centimetres, a numbered tick for every head, and the total in heads. Type the head height or tap the crown and the chin to pick it (for the mannequin, From the head), choose a canon of 7½, 8, 8½ or your own count to see where its top should be, and show landmark ticks for the chin, nipples, navel, crotch and knees. It follows a pose or an edit, is kept with the scene, and is never in a saved picture.

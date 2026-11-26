@@ -163,9 +163,9 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
     const m = /^material\.matcap(\d)$/.exec(action.id);
     if (m) {
       const index = Number(m[1]) - 1;
-      if (index < viewer.materials.matcaps().length) {
+      if (index < viewer.materials.sceneMatcaps().length) {
         viewer.setMaterial('matcap');
-        viewer.materials.setMatcapIndex(index);
+        viewer.materials.useSceneMatcap(index);
         handlers.refresh?.();
       }
     }
