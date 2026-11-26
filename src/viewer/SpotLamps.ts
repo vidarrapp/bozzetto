@@ -182,7 +182,8 @@ export class SpotLamps {
    * always reaches the model.
    */
   hit(clientX: number, clientY: number, camera: PerspectiveCamera, rect: DOMRect, subject: Box3, lighting: Lighting): SpotId | null {
-    if (!this.group.visible) return null;
+    // Wanted, not shown: a picture being made hides the lamps for a moment, and a press then still finds one.
+    if (!this.wanted) return null;
     camera.updateMatrixWorld();
     let best: SpotId | null = null;
     let bestPx = LAMP_REACH_PX;

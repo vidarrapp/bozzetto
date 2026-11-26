@@ -303,13 +303,19 @@ export const suites = {
     }, [lx, ly]);
     t.eq(found, 'spot1', `the lamp is found under a press at ${lx.toFixed(0)}, ${ly.toFixed(0)}`);
     const posA = (await spots(page))[0].position;
+    await page.evaluate(() => {
+      window.__lampLog = [];
+      window.addEventListener('pointerdown', (e) => window.__lampLog.push(`down on ${e.target.tagName}.${e.target.className} at ${e.clientX},${e.clientY} button ${e.button}`), true);
+      window.__sculpt.input.verdict = (text) => window.__lampLog.push(`verdict ${text}`);
+    });
     await page.mouse.move(lx, ly);
     await page.mouse.down();
     await page.mouse.move(lx + 20, ly + 10, { steps: 4 });
     await page.mouse.move(lx + 60, ly + 30, { steps: 4 });
     await page.mouse.up();
     const posB = (await spots(page))[0].position;
-    t.ok(dist(posA, posB) > 1, `a drag on the drawn lamp moves the light (${posA.map((n) => n.toFixed(1))} to ${posB.map((n) => n.toFixed(1))})`);
+    const lampLog = await page.evaluate(() => window.__lampLog.join(' | '));
+    t.ok(dist(posA, posB) > 1, `a drag on the drawn lamp moves the light (${posA.map((n) => n.toFixed(1))} to ${posB.map((n) => n.toFixed(1))}; ${lampLog})`);
     await page.screenshot({ path: `${SHOTS}/spotlights-test-lamp.png` });
 
     // --- the lamp: hidden behind the model, in no capture ----------------------------------------------
