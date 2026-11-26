@@ -263,6 +263,15 @@ place, each only where the place has it.
   In Paint the panel toggles are Scene, Layers, Material, Tool and Reference.
   In the viewer there is one subject, so one Frame all, on F. Cycle ground
   is G only, and stays in the hotkey guide.
+- **Straight views.** Holding the real Shift key while the
+  view is being rotated (OrbitControls' own rotate state: a mouse, Pencil or
+  one-finger orbit, in every workspace) turns it to the nearest of Front,
+  Back, Left, Right, Top and Bottom, level, with distance, target and lens
+  kept; a quiet label in the view names it and goes when the drag ends or
+  Shift lets go (which carries on freely from the snapped view). Shift at the
+  start of a press that a stroke takes (Smooth, Ctrl+Shift loop mask) never
+  rotates, so it never snaps; a Shift press that falls through to the
+  controls pans, as before. The on-screen Smooth button is not Shift.
 - **Help:** Help topics, Hotkeys, About and credits, from one list.
 
 **File**

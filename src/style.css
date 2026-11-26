@@ -1281,7 +1281,7 @@ html.is-page :is(#app, #admin, .page-scroll).page-scroll {
   border-radius: var(--radius);
 }
 
-/* --- frame meter (P, or Preferences > Diagnostics) --- */
+/* --- frame meter (Shift+P, or Preferences > Diagnostics) --- */
 .fps-meter {
   position: fixed;
   left: 12px;
@@ -1326,6 +1326,11 @@ html.is-page :is(#app, #admin, .page-scroll).page-scroll {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   pointer-events: none;
+}
+
+/* The name of the straight view a Shift rotation has snapped to: the same quiet hint, clear of the top strip. */
+.env-loading.view-snap {
+  top: 52px;
 }
 
 /* Narrow screens (phones): keep each slide-out panel and its edge handle on

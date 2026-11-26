@@ -489,6 +489,8 @@ export class Viewer {
   private currentMode = 'lit';
   /** Lens focal length (35mm-equivalent mm); drives the camera FOV. */
   private focalLength = DEFAULT_FOCAL_LENGTH;
+  /** The quiet label that says which straight view a Shift rotation has snapped to. */
+  private readonly snapEl: HTMLDivElement;
   /** Frame ordinal targeted by the timeline/scrubber. */
   private targetIndex = -1;
   /** Frame ordinal whose geometry is currently displayed. */
@@ -794,12 +796,21 @@ export class Viewer {
     this.environment.onLoading = (loading) => {
       this.envLoadingEl.hidden = !loading;
     };
+    this.snapEl = document.createElement('div');
+    this.snapEl.className = 'env-loading view-snap';
+    this.snapEl.setAttribute('role', 'status');
+    this.snapEl.hidden = true;
+    container.appendChild(this.snapEl);
     this.captureGuide = new CaptureGuide(container);
 
     this.currentMode = this.materials.has(manifest.defaults.material)
       ? manifest.defaults.material
       : 'lit';
     this.controls = new Controls(this.camera, this.renderer.domElement);
+    this.controls.onSnap = (name) => {
+      this.snapEl.hidden = name === null;
+      if (name !== null && this.snapEl.textContent !== name) this.snapEl.textContent = name;
+    };
     this.controls.setSurfacePick((at) => this.surfaceUnder(at));
 
     const tier: Tier = manifest.config.tiers.includes('hd') ? 'hd' : 'sd';
@@ -2196,10 +2207,6 @@ export class Viewer {
     this.invalidate();
   }
 
-  getFocalLength(): number {
-    return this.focalLength;
-  }
-
   /** Current camera placement, persisted with the saved look (editor). */
   getCameraState(): {
     autoFrame: boolean;
@@ -2848,6 +2855,7 @@ export class Viewer {
     this.container.removeEventListener('pointercancel', this.onTapCancel, true);
     this.reticle.remove();
     this.envLoadingEl.remove();
+    this.snapEl.remove();
     this.captureGuide.dispose();
     this.controls.dispose();
     this.streamer.dispose();

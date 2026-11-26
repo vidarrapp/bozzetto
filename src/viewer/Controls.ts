@@ -32,6 +32,12 @@ const NEAR_OF_DISTANCE = 1 / 50;
 const NEAR_OF_RADIUS = 1 / 100;
 const FAR_OF_RADIUS = 100;
 
+/** How far off the vertical a Top or Bottom view sits, so its heading is kept (radians). */
+const POLE_TILT = 1e-5;
+/** OrbitControls' states for a rotation: the mouse or pen, and one finger. */
+const STATE_ROTATE = 0;
+const STATE_TOUCH_ROTATE = 3;
+
 /**
  * Damping, as the share of the motion still owed that one 60 Hz frame
  * applies. It used to be a flat 0.08 per frame, so the feel followed the
@@ -173,6 +179,17 @@ export class Controls {
   private panAnchor: Vector3 | null = null;
   private readonly holdP = new Vector3();
   private readonly holdQ = new Vector3();
+  /** The real Shift key, as the last event said (never the on-screen Smooth button). */
+  private shiftDown = false;
+  /**
+   * While Shift snaps a rotation: the camera's offset from the target as
+   * the free rotation has it, which carries on under the snapped view and
+   * decides which view is nearest.
+   */
+  private snapFree: Vector3 | null = null;
+  private readonly snapOut = new Vector3();
+  /** Told the name of the view a rotation is snapped to, and null when it is not. */
+  onSnap: ((name: string | null) => void) | null = null;
 
   constructor(
     private readonly camera: PerspectiveCamera,
@@ -209,7 +226,7 @@ export class Controls {
     const orbitUpdate = controls.update.bind(controls);
     controls.update = (deltaTime?: number | null): boolean => {
       this.zoomTowardFocus();
-      return orbitUpdate(deltaTime);
+      return this.snapUpdate(() => orbitUpdate(deltaTime));
     };
     // Before OrbitControls on the press (the window's capture phase runs
     // ahead of the canvas), after it to see what it started, and on the
@@ -222,6 +239,65 @@ export class Controls {
     domElement.addEventListener('lostpointercapture', this.onLostCapture);
     window.addEventListener('blur', this.onWindowBlur);
     window.addEventListener('wheel', this.onWheelFirst, { capture: true, passive: true });
+    window.addEventListener('keydown', this.onShiftKey, true);
+    window.addEventListener('keyup', this.onShiftKey, true);
+  }
+
+  /** Shift, as the keyboard and every pointer event say it. */
+  private readonly onShiftKey = (e: KeyboardEvent): void => {
+    this.shiftDown = e.shiftKey;
+  };
+
+  /**
+   * Run one OrbitControls update, with Shift snapping a rotation to the
+   * nearest straight view. A rotation is OrbitControls' own state (a press
+   * that fell through to it), so a Shift press that smooths or masks a
+   * stroke never gets here. The free rotation goes on beneath the snap: the
+   * camera is put back on it before each update and snapped again after.
+   * Letting Shift go keeps the view where it is and drops what was owed.
+   */
+  private snapUpdate(run: () => boolean): boolean {
+    const state = (this.controls as unknown as OrbitInternals).state;
+    const on = this.shiftDown && (state === STATE_ROTATE || state === STATE_TOUCH_ROTATE);
+    const target = this.controls.target;
+    if (this.snapFree && !on) {
+      this.snapFree = null;
+      this.halt();
+      this.onSnap?.(null);
+    }
+    if (this.snapFree) this.camera.position.copy(target).add(this.snapFree);
+    const moved = run();
+    if (!on) return moved;
+    const free = (this.snapFree ??= new Vector3());
+    free.subVectors(this.camera.position, target);
+    const name = this.snapOffset(free, this.snapOut);
+    this.camera.position.copy(target).add(this.snapOut);
+    this.camera.lookAt(target);
+    this.camera.updateMatrixWorld();
+    this.onSnap?.(name);
+    return true;
+  }
+
+  /** The straight view nearest `free` (its distance kept) written to `out`; its name. */
+  private snapOffset(free: Vector3, out: Vector3): string {
+    const d = Math.max(free.length(), 1e-9);
+    const ax = Math.abs(free.x);
+    const ay = Math.abs(free.y);
+    const az = Math.abs(free.z);
+    if (ay >= ax && ay >= az) {
+      // Top or Bottom, turned to the nearest of the four ways round.
+      const up = free.y >= 0 ? 1 : -1;
+      const sx = az > ax ? 0 : free.x >= 0 ? 1 : -1;
+      const sz = az > ax ? (free.z >= 0 ? 1 : -1) : 0;
+      out.set(sx * POLE_TILT, up, sz * POLE_TILT).normalize().multiplyScalar(d);
+      return up > 0 ? 'Top' : 'Bottom';
+    }
+    if (ax >= az) {
+      out.set(free.x >= 0 ? d : -d, 0, 0);
+      return free.x >= 0 ? 'Right' : 'Left';
+    }
+    out.set(0, 0, free.z >= 0 ? d : -d);
+    return free.z >= 0 ? 'Front' : 'Back';
   }
 
   private readonly domElement: HTMLElement;
@@ -248,6 +324,7 @@ export class Controls {
   private readonly onPressFirst = (e: PointerEvent): void => {
     this.restoreButtons();
     this.notePointer(e);
+    this.shiftDown = e.shiftKey;
     if (e.pointerType !== 'pen' || (e.button !== 1 && e.button !== 2)) return;
     if (e.target !== this.domElement) return;
     this.savedButtons = { ...this.controls.mouseButtons };
@@ -295,6 +372,7 @@ export class Controls {
    */
   private readonly onAnyMove = (e: PointerEvent): void => {
     this.notePointer(e);
+    this.shiftDown = e.shiftKey;
     const d = this.drag;
     if (!d || e.pointerType === 'touch') return;
     // Only the drag's own pointer: Firefox on Windows interleaves mouse
@@ -342,6 +420,7 @@ export class Controls {
   };
 
   private readonly onWindowBlur = (): void => {
+    this.shiftDown = false;
     this.touches.clear();
     if (this.drag) this.endDrag();
   };
@@ -843,6 +922,8 @@ export class Controls {
     this.domElement.removeEventListener('lostpointercapture', this.onLostCapture);
     window.removeEventListener('blur', this.onWindowBlur);
     window.removeEventListener('wheel', this.onWheelFirst, { capture: true });
+    window.removeEventListener('keydown', this.onShiftKey, true);
+    window.removeEventListener('keyup', this.onShiftKey, true);
     this.restoreButtons();
     this.controls.dispose();
   }

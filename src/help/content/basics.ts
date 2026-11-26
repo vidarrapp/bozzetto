@@ -60,6 +60,8 @@ export const BASICS: Topic[] = [
         ['Frame the whole scene', 'Press **A**.'],
       ),
       p('In the Select tool, **Alt** and drag orbits.'),
+      h('Straight views'),
+      p('Hold **Shift** while you orbit and the view turns to the nearest straight view, Front, Back, Left, Right, Top or Bottom, with a small label naming it. It stays there while you drag on and moves to the next one when you turn past halfway. Let go of Shift and the view turns freely again from where it is. This works with the mouse, the Pencil and a finger, in every workspace. A Shift press on the model still smooths, and a press that starts with Shift pans.'),
       h('In Armature'),
       p('The view moves as it does in Sculpt. Tapping a part selects its joint, and tapping off the figure lets it go, so turning the view keeps your selection.'),
       p('All of these keys can be changed. See the Hotkeys topic.'),
