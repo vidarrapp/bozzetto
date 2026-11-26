@@ -148,6 +148,7 @@
 ## Later
 
 - Orthographic is a very long lens (0.5 degrees from far away), not a true orthographic projection (0.7.31): parallel lines converge by a fraction of a degree and the floor grows with the distance. A true orthographic projection touches the occlusion, paint, depth of field, cavity, shadows' fit, gizmo scale and picking code; it belongs with the Rust core's camera.
+- `present` failed once in a long run on 0.7.31 ("the viewer opens at the presented camera", off by 0.3 percent) and passed alone; `accounts` once could not start its local server in the local stand-in for CI and passed alone. Watch both.
 - `fingers` fails now and then after other suites ("a pen landing while a finger orbits takes the stroke") and passes alone; seen once the view snap was merged (0.7.31). Check it if it recurs.
 - `armatureAddress` fails now and then under load on the project case (the default mannequin instead of the project's), and passes alone; seen in the 0.7.14 and 0.7.29 passes. Not reproduced on its own; the likely cause is the test's replace question or mock route timing out. Check the question and the routes first if it recurs.
 - After Remesh to a figure, the mannequin stays away after a reload because the armature record is marked and an object named "Figure" is in the scene (0.7.29). Renaming that object would bring the mannequin back beside it; a firmer tie (the figure's own id) belongs with the scene format on the Rust core.
