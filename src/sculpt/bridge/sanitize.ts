@@ -14,6 +14,7 @@ import { sanitizeGroups } from './groupsRecord';
 import { sanitizeLayers } from './layersRecord';
 import { sanitizePaintLayers } from './paintLayersRecord';
 import { sanitizeMeasures } from './measure';
+import { sanitizeGuide } from './guide';
 import { MAX_REFERENCES, cleanBlend, cleanCamera, cleanOpacity, cleanPlace, type FileReference, type FileReferences } from '../../reference/board';
 
 /**
@@ -539,6 +540,8 @@ export function sanitizeScene(scene: SavedScene): SavedScene {
     // before real units, which is what it would have been read as.
     units: isUnits(scene.units) ? scene.units : undefined,
     scaleDismissed: !isUnits(scene.units) && scene.scaleDismissed === true ? true : undefined,
+    armatureMeasures: sanitizeMeasures(scene.armatureMeasures),
+    guide: sanitizeGuide(scene.guide),
     project: sanitizeLink(scene.project),
     unsent: isProjectId(scene.unsent) ? scene.unsent : undefined,
     synced: scene.synced === true ? true : undefined,

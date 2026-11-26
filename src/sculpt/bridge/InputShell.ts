@@ -1054,6 +1054,8 @@ export class InputShell {
     this.session.measure.clearWorking();
     this.syncCursorBrush();
     this.onMeasureModeChange?.(false);
+    // Pick head is two taps of this tool: leaving it gives that up.
+    this.session.guide.cancelPick();
   }
 
   toggleMeasure(): void {
@@ -2540,6 +2542,12 @@ export class InputShell {
     // Delete removes it (CurveEditor).
     if ((e.target as Element | null)?.closest?.('.curve-editor__plot') && !e.ctrlKey && !e.metaKey && e.key !== 'Tab') return;
     const s = this.session;
+
+    // A caliper picked in the Scene panel or the view: Delete or Backspace takes it, and not an object.
+    if ((e.key === 'Delete' || e.key === 'Backspace') && !e.ctrlKey && !e.metaKey && !e.altKey && !this.held && s.measure.selected) {
+      s.measure.removeSelected();
+      return this.claim(e);
+    }
 
     // Esc lets go of an armed Move light.
     if (this.lightArmed && e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.bz-menuname.is-open')) {

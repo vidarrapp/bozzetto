@@ -48,6 +48,7 @@ import type { CameraAdapter } from './CameraAdapter';
 import type { SavedLevel, SavedMesh, SavedScene } from './ScenePersist';
 import { SymmetryStore, type SymmetryAxis } from './symmetry';
 import { Measurements } from './measure';
+import { ProportionGuide } from './guide';
 import { perfLog } from '../../viewer/perfLog';
 import { boxOfPositions, checkRemesh, REMESH_LIMITS } from './remeshBudget';
 import { PointGrid } from './quadMesh';
@@ -341,6 +342,8 @@ export class SculptSession {
     () => this.meshes,
     (mesh) => ({ origin: mesh.getSymmetryOrigin(), normal: mesh.getSymmetryNormal() }),
   );
+  /** The proportion guide: a ruler in heads beside the subject (guide.ts). Never in the sculpt history. */
+  readonly guide = new ProportionGuide();
   private readonly sculptManager: SculptManager;
   private readonly picking: Picking;
   private readonly pickingSym: Picking;
@@ -374,6 +377,8 @@ export class SculptSession {
       for (const entry of entries) this.cssWidth = entry.contentRect.width;
     });
     this.sizeObserver.observe(canvas);
+    // Pinning, deleting, renaming and hiding a caliper are steps of the history.
+    this.measure.history = (undo, redo) => this.stateManager.pushStateCustom(undo, redo);
     // Deeper than upstream's 15: the WS2 fuzz exercises 50-deep undo, and
     // history is worth keeping (a stroke state holds only the touched
     // vertices).
@@ -2357,6 +2362,10 @@ export class SculptSession {
       // a scene from before real units, as one written before it did.
       ...(this.units ? { units: this.units } : {}),
       ...(!this.units && this.scaleDismissed ? { scaleDismissed: true } : {}),
+      // The calipers placed on the mannequin, with the parts their ends are tied to.
+      ...(this.measure.serializeArmature() ? { armatureMeasures: this.measure.serializeArmature() } : {}),
+      // The proportion guide: on, head height, canon.
+      ...(this.guide.serialize() ? { guide: this.guide.serialize() } : {}),
     };
   }
 
@@ -2416,6 +2425,8 @@ export class SculptSession {
   restoreScene(saved: SavedScene): Multimesh {
     this.sceneEpoch++;
     this.measure.reset();
+    this.measure.restore(null, saved.armatureMeasures);
+    this.guide.restore(saved.guide);
     const built: Multimesh[] = [];
     for (const savedMesh of saved.meshes) {
       const mesh = this.buildRestoredMesh(savedMesh);
@@ -2569,6 +2580,7 @@ export class SculptSession {
   newScene(opts: { sphere?: boolean } = {}): Multimesh | null {
     this.setSolo(false); // a new scene is not the one that was soloed
     this.measure.reset();
+    this.guide.reset();
     this.meshes.length = 0;
     this.selectMeshes.length = 0;
     this.mesh = null;

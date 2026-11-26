@@ -177,6 +177,12 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### v0.7.27
+
+- **A proportion guide, a ruler in heads.** Turn it on in View > Proportion guide or the Model tab's Measure section: a vertical line stands beside the figure with its height in centimetres, a numbered tick for every head, and the total in heads. Type the head height or tap the crown and the chin to pick it (for the mannequin, From the head), choose a canon of 7½, 8, 8½ or your own count to see where its top should be, and show landmark ticks for the chin, nipples, navel, crotch and knees. It follows a pose or an edit, is kept with the scene, and is never in a saved picture.
+- **Pinned calipers are rows in the Scene panel.** Each has a ruler mark, its name (double-tap to rename), its length, and an eye, under a Calipers heading below the objects. Tap a row, or the line in the view with the Calipers tool, to pick it: it is drawn in orange, and Delete or Backspace removes it. Pinning, deleting, renaming and hiding a caliper can be undone.
+- **Calipers work on the armature.** With the mannequin standing in the scene, the Calipers tool measures on it too. Each end stays on the part it was placed on and moves with it when you pose the figure, and the length follows. If the mannequin is replaced or a figure is made from it, the ends stay where they were.
+
 ### v0.7.26
 
 - **The Weight slider follows your finger at lower subdivision levels too.** It no longer waits for you to pause: the level on screen moves with every drag, a close approximation, and the exact result lands when you let go. The first drag on a layer at a dense level waits a moment while it works out the layer's effect.

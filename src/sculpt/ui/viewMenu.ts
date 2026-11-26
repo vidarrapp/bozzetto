@@ -30,6 +30,8 @@ export interface ViewHooks {
   moveLight?: { get: () => boolean; toggle: () => void };
   /** The details overlay (a setting: ui/DetailsOverlay); where the view has one. */
   details?: boolean;
+  /** The proportion guide beside the subject (a setting of the scene; sculpt/bridge/guide.ts). */
+  proportionGuide?: { get: () => boolean; toggle: () => void };
   /** The Reference pictures in the view, shown or hidden all at once. */
   referenceShow?: { get: () => boolean; toggle: () => void };
   /** Arrange (unlock) the pictures in the view; `key` says the mode answers its hotkey. */
@@ -97,6 +99,8 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
   }
   const light = h.moveLight;
   if (light) looks.push({ label: 'Move light', checked: light.get, toggle: () => light.toggle() });
+  const ruler = h.proportionGuide;
+  if (ruler) looks.push({ label: 'Proportion guide', checked: ruler.get, toggle: () => ruler.toggle() });
   const colours = h.groupColors;
   if (colours) {
     looks.push({ label: 'Poly group colours', key: keyFor('groups.show'), checked: colours.get, toggle: () => colours.toggle() });

@@ -38,6 +38,7 @@ import { suspensionText } from '../net/account';
 import { signInAgain, signInButton } from '../ui/signIn';
 import { sceneStateWord } from '../ui/sceneState';
 import { defaultSceneName, newSceneName } from '../sculpt/bridge/SceneLibrary';
+import type { BoneFrames, Vec3 as Point } from '../sculpt/bridge/measure';
 import {
   ArmatureFileError,
   armatureText,
@@ -148,6 +149,14 @@ export interface SuspendOptions {
  * nothing, shows nothing of its own and has put the viewer back as it found
  * it (viewerNeeds.ts); resumed, it has everything as it left it.
  */
+/** Which figure an Armature is, for a key that changes when the figure is replaced. */
+const serials = new WeakMap<object, number>();
+let serialCount = 0;
+const armatureSerial = (a: object): number => {
+  let n = serials.get(a);
+  if (n === undefined) serials.set(a, (n = ++serialCount));
+  return n;
+};
 /** The values of an object's material, for the mannequin. */
 export type MannequinSurface = { albedo: string; roughness: number; metalness: number };
 
@@ -178,6 +187,14 @@ export type ArmatureMount = (() => void) & {
   /** The mannequin's own material, as the Material tab's Surface section shows it. */
   surface(): MannequinSurface;
   setSurface(patch: Partial<MannequinSurface>): void;
+  /** The posed mannequin's parts as the calipers read them (a point in a part's frame, in the world as it stands). */
+  frames(): BoneFrames;
+  /** The part of the mannequin a ray lands on, with the point in that part's frame; null on a miss. */
+  partHit(ray: Raycaster): { world: Point; bone: string; rig: string; local: Point; distance: number } | null;
+  /** What the proportion guide stands beside: the posed figure's box (read again when the pose or proportions change). */
+  guideSubject(): { key: string; box(): { min: Point; max: Point } };
+  /** The head part's height as it stands, in centimetres; null when the rig has no head part. */
+  headHeight(): number | null;
   /** The camera onto the figure. */
   frame(): void;
   /** Whether the figure has been posed or its proportions changed (a new mannequin would lose them). */
@@ -2289,6 +2306,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
         },
       },
       details: true,
+      proportionGuide: host.proportionGuide,
       referenceShow: { get: () => referenceView.isShown(), toggle: () => referenceView.setShown(!referenceView.isShown()) },
       referenceArrange: { get: () => referenceBoard.isArranging(), toggle: () => referenceBoard.setArranging(!referenceBoard.isArranging()) },
       panels: [
@@ -2860,6 +2878,74 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     outside: () => (suspended && figureShown && !eyeOff ? armature.mesh : null),
     shadowBox,
     showOutside,
+    frames: (): BoneFrames => {
+      const arm = armature;
+      return {
+        token: arm,
+        rig: arm.rig.id,
+        hasBone: (name) => arm.partBones.has(name),
+        toWorld: (name, p) => {
+          const bone = arm.partBones.get(name)!;
+          bone.updateWorldMatrix(true, false);
+          const v = new Vector3(p[0], p[1], p[2]).applyMatrix4(bone.matrixWorld);
+          return [v.x, v.y, v.z];
+        },
+      };
+    },
+    guideSubject: () => {
+      // A cheap key: where every bone stands and how it is scaled, and which figure it is.
+      let sum = 0;
+      for (const bone of armature.skeleton.bones) {
+        bone.updateWorldMatrix(true, false);
+        const e = bone.matrixWorld.elements;
+        sum += e[12] * 1.3 + e[13] * 2.9 + e[14] * 5.3 + e[0] * 0.7 + e[5] * 1.1 + e[10] * 1.7 + e[1] * 0.3 + e[6] * 0.5 + e[8] * 0.9;
+      }
+      return {
+        key: `${armatureSerial(armature)}:${sum.toFixed(4)}`,
+        box: () => {
+          const b = armature.bounds();
+          return { min: [b.min.x, b.min.y, b.min.z] as Point, max: [b.max.x, b.max.y, b.max.z] as Point };
+        },
+      };
+    },
+    headHeight: () => {
+      const part = armature.partBones.get('head');
+      const index = part ? armature.skeleton.bones.indexOf(part) : -1;
+      if (index < 0) return null;
+      const g = armature.mesh.geometry;
+      const skin = g.getAttribute('skinIndex');
+      const weight = g.getAttribute('skinWeight');
+      const pos = g.getAttribute('position');
+      armature.mesh.updateMatrixWorld(true);
+      armature.skeleton.update();
+      const v = new Vector3();
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let i = 0; i < pos.count; i++) {
+        if (skin.getX(i) !== index || (weight && weight.getX(i) < 0.5)) continue;
+        v.fromBufferAttribute(pos, i);
+        armature.mesh.applyBoneTransform(i, v);
+        v.applyMatrix4(armature.mesh.matrixWorld);
+        lo = Math.min(lo, v.y);
+        hi = Math.max(hi, v.y);
+      }
+      return hi > lo ? hi - lo : null;
+    },
+    partHit: (ray: Raycaster) => {
+      const hit = ray.intersectObject(armature.mesh, false)[0];
+      const name = hit ? armature.boneAt(hit) : null;
+      const bone = name ? armature.partBones.get(name) : null;
+      if (!hit || !name || !bone) return null;
+      bone.updateWorldMatrix(true, false);
+      const local = bone.worldToLocal(hit.point.clone());
+      return {
+        world: [hit.point.x, hit.point.y, hit.point.z] as Point,
+        bone: name,
+        rig: armature.rig.id,
+        local: [local.x, local.y, local.z] as Point,
+        distance: hit.distance,
+      };
+    },
     armatureName: () => link?.title ?? name,
     label: () => {
       // What the Preset select shows for this figure.

@@ -1442,6 +1442,81 @@ body.presenting .measure-overlay {
   display: none;
 }
 
+/* The proportion guide (GuideLayer), drawn on the calipers' canvas with its labels beside it: grey, orange only for the tick that was tapped. */
+.guide-label,
+.guide-tick,
+.guide-canon,
+.guide-landmark {
+  position: absolute;
+  font-family: var(--bz-font-mono);
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+  color: var(--bz-text-2);
+  text-shadow: var(--bz-view-shade);
+}
+
+.guide-label {
+  transform: translate(-50%, -100%);
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--bz-text);
+}
+
+.guide-label__heads {
+  color: var(--bz-text-2);
+}
+
+.guide-tick {
+  transform: translate(-100%, -50%);
+}
+
+.guide-canon,
+.guide-landmark {
+  pointer-events: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.guide-canon {
+  transform: translate(0, -50%);
+  min-height: 24px;
+}
+
+.guide-canon.guide-pick--on {
+  color: var(--bz-orange);
+}
+
+/* A landmark is a 44px hit area at its tick; its name shows on hover or once tapped. */
+.guide-landmark {
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.guide-landmark__label {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  visibility: hidden;
+  padding-left: 2px;
+  color: var(--bz-text);
+}
+
+.guide-landmark--hover .guide-landmark__label,
+.guide-landmark.guide-pick--on .guide-landmark__label {
+  visibility: visible;
+}
+
+.guide-landmark.guide-pick--on .guide-landmark__label {
+  color: var(--bz-orange);
+}
+
 /* Present's light markers (LightMarkers): a canvas over the view, drawn only while Present moves a light. Not
    interface to hide with Tab, and nothing in it takes a press. */
 .light-markers {
@@ -1471,11 +1546,6 @@ body.presenting .measure-overlay {
   font-family: var(--bz-font-mono);
   font-size: 13px;
   color: var(--bz-text);
-}
-
-.measure-undo {
-  align-items: center;
-  justify-content: space-between;
 }
 
 /* The symmetry ghost: the mirrored brush ring, drawn on hover. Faint on
@@ -1820,7 +1890,8 @@ body.presenting .measure-overlay {
   background: var(--hover);
 }
 
-.outliner__row--active {
+.outliner__row--active,
+.outliner__row--picked {
   background: var(--accent-soft);
   color: var(--accent-hover);
 }
@@ -6461,7 +6532,9 @@ h1,
 }
 
 .outliner__row--active,
+.outliner__row--picked,
 .outliner__row--active:hover,
+.outliner__row--picked:hover,
 .outliner__row--selected,
 .outliner__row--selected:hover {
   background: var(--bz-hover);

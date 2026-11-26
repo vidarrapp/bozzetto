@@ -4,6 +4,7 @@ import type { SculptSession } from '../bridge/SculptSession';
 import type { MeasureTool } from '../bridge/measureTool';
 import { lengthText, toWorld, type Measure, type Vec3 } from '../bridge/measure';
 import { onTap } from '../../ui/dom';
+import { drawGuide } from './GuideLayer';
 
 /** One measurement's line, as drawn: its end points on the page and its label. */
 interface Drawn {
@@ -29,11 +30,14 @@ const HALO = 'rgba(0, 0, 0, 0.35)';
  * Pinned measurements show while their object does; the one being made
  * shows with a Pin button on its label. All of it is interface: Tab and
  * Present hide it (style.css), as they hide the panels.
+ *
+ * The proportion guide is drawn here too (GuideLayer.ts): the same canvas
+ * and the same boxes, so it is out of every capture the same way.
  */
 export class MeasureOverlay {
   private readonly root: HTMLDivElement;
   private readonly canvas: HTMLCanvasElement;
-  private readonly labels = new Map<string, HTMLDivElement>();
+  private readonly labels = new Map<string, HTMLElement>();
   private seen = '';
 
   constructor(
@@ -55,14 +59,14 @@ export class MeasureOverlay {
   }
 
   /** The measurements now to draw, each with its object, in order (pinned first). */
-  private items(): Array<{ mesh: SculptMesh; m: Measure; working: boolean }> {
+  private items(): Array<{ mesh: SculptMesh | null; m: Measure; working: boolean }> {
     const store = this.session.measure;
-    const out: Array<{ mesh: SculptMesh; m: Measure; working: boolean }> = [];
+    const out: Array<{ mesh: SculptMesh | null; m: Measure; working: boolean }> = [];
     for (const { mesh, measure } of store.all()) {
-      if (measure.visible && mesh.isVisible()) out.push({ mesh, m: measure, working: false });
+      if (measure.visible && (!mesh || mesh.isVisible())) out.push({ mesh, m: measure, working: false });
     }
     const w = store.working;
-    if (w && w.mesh.isVisible() && this.session.getMeshes().includes(w.mesh)) out.push({ mesh: w.mesh, m: w.m, working: true });
+    if (w && (!w.mesh || (w.mesh.isVisible() && this.session.getMeshes().includes(w.mesh)))) out.push({ mesh: w.mesh, m: w.m, working: true });
     return out;
   }
 
@@ -72,9 +76,12 @@ export class MeasureOverlay {
    * frame; a frame where none of those changed costs the comparison.
    */
   tick(): void {
+    this.session.measure.settleArmature();
     const items = this.items();
-    for (const mesh of new Set(items.map((i) => i.mesh))) this.session.measure.settle(mesh);
-    if (!items.length) {
+    for (const mesh of new Set(items.map((i) => i.mesh))) if (mesh) this.session.measure.settle(mesh);
+    const guide = this.session.guide;
+    const guideBox = guide.on && this.session.getUnits() ? guide.bounds() : null;
+    if (!items.length && !guideBox) {
       if (this.seen !== '') this.clear();
       return;
     }
@@ -86,14 +93,20 @@ export class MeasureOverlay {
       window.innerHeight,
       this.tool.dragging() ?? '',
       this.inHand() ? 1 : 0,
+      this.session.measure.selected?.id ?? 0,
+      guide.version,
+      guideBox ? guideBox.min.join('/') + guideBox.max.join('/') : '',
       ...cam.matrixWorld.elements,
       ...cam.projectionMatrix.elements,
     ];
-    for (const { mesh } of items) parts.push(...mesh.getMatrix());
+    for (const { mesh, m } of items) {
+      if (mesh) parts.push(...mesh.getMatrix());
+      else if (m.b) parts.push(...this.session.measure.pointWorld(null, m, 'a'), ...this.session.measure.pointWorld(null, m, 'b'));
+    }
     const sig = parts.join(',');
     if (sig === this.seen) return;
     this.seen = sig;
-    this.draw(items);
+    this.draw(items, !!guideBox);
   }
 
   private clear(): void {
@@ -104,7 +117,7 @@ export class MeasureOverlay {
     this.labels.clear();
   }
 
-  private draw(items: Array<{ mesh: SculptMesh; m: Measure; working: boolean }>): void {
+  private draw(items: Array<{ mesh: SculptMesh | null; m: Measure; working: boolean }>, guideOn: boolean): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -122,12 +135,13 @@ export class MeasureOverlay {
     const dragging = this.tool.dragging();
     const live = new Set<string>();
     for (const { mesh, m, working } of items) {
-      const mat = mesh.getMatrix();
-      const place = (p: Vec3): [number, number] | null => this.tool.screenOf(toWorld(mat, p));
-      const a = place(m.a);
+      const mat = mesh?.getMatrix();
+      const place = (p: Vec3): [number, number] | null => this.tool.screenOf(mat ? toWorld(mat, p) : p);
+      const a = this.tool.screenOf(store.pointWorld(mesh, m, 'a'));
       if (!a) continue;
-      const b = m.b ? place(m.b) : null;
-      const color = working ? LINE : PINNED;
+      const b = m.b ? this.tool.screenOf(store.pointWorld(mesh, m, 'b')) : null;
+      const picked = store.selected === m;
+      const color = picked ? this.orange() : working ? LINE : PINNED;
       if (b) {
         this.line(ctx, { a, b }, color, false);
         this.label(`m${m.id}`, live, { a, b }, lengthText(store.length(mesh, m) ?? 0), working && this.inHand() ? m : null, w, h);
@@ -149,14 +163,44 @@ export class MeasureOverlay {
         if (mb) this.dot(ctx, mb, color, false, true);
       }
     }
+    // For the tests: what is drawn.
+    this.root.dataset.lines = String(live.size);
+    if (guideOn) {
+      const cam = this.viewer.camera.matrixWorld.elements;
+      const n = Math.hypot(cam[0], cam[2]);
+      drawGuide(this.session.guide, {
+        ctx,
+        width: w,
+        height: h,
+        screenOf: (p) => this.tool.screenOf(p),
+        right: () => (n > 1e-3 ? [cam[0] / n, cam[2] / n] : [1, 0]),
+        box: (key, tag, className) => {
+          live.add(key);
+          let el = this.labels.get(key);
+          if (!el) {
+            el = document.createElement(tag);
+            el.className = className;
+            this.root.appendChild(el);
+            this.labels.set(key, el);
+          }
+          return el;
+        },
+        orange: this.orange(),
+        halo: HALO,
+        grey: PINNED,
+      });
+    }
     for (const [key, el] of this.labels) {
       if (!live.has(key)) {
         el.remove();
         this.labels.delete(key);
       }
     }
-    // For the tests: what is drawn.
-    this.root.dataset.lines = String(live.size);
+  }
+
+  /** The interface's orange (a picked caliper, an end in hand). */
+  private orange(): string {
+    return getComputedStyle(this.root).getPropertyValue('--bz-orange').trim() || '#ff5a1f';
   }
 
   private line(ctx: CanvasRenderingContext2D, d: Drawn, color: string, dashed: boolean): void {
@@ -181,7 +225,7 @@ export class MeasureOverlay {
     ctx.fill();
     ctx.lineWidth = held ? 2.5 : 1.5;
     // Orange is the focus: the end under the finger or the Pencil.
-    ctx.strokeStyle = held ? (getComputedStyle(this.root).getPropertyValue('--bz-orange').trim() || '#ff5a1f') : faint ? color : HALO;
+    ctx.strokeStyle = held ? this.orange() : faint ? color : HALO;
     ctx.stroke();
   }
 

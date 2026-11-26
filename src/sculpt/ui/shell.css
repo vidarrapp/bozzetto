@@ -1272,7 +1272,36 @@ body.bz-shell.armature-ws:not(.presenting) :is(.panel--scene, .panel--model, .pa
   cursor: pointer;
 }
 
-.outliner__row--armature .outliner__mark {
+/* The pinned calipers, a group under the objects: a ruler mark, the name, its length as a quiet second text. */
+.outliner__calipers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.outliner__calipers[hidden] {
+  display: none;
+}
+
+.outliner__group {
+  padding: 6px 4px 2px;
+  font-family: var(--bz-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bz-text-3);
+}
+
+.outliner__sub {
+  flex: none;
+  padding: 0 4px;
+  font-family: var(--bz-font-mono);
+  font-size: 11px;
+  color: var(--bz-text-3);
+}
+
+.outliner__row--armature .outliner__mark,
+.outliner__row--caliper .outliner__mark {
   flex: none;
   width: 27px;
   padding-left: 7px;

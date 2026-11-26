@@ -11,6 +11,11 @@ import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
  * belongs to one object (both points on it), and is saved with that object
  * (SavedMesh.measures).
  *
+ * A caliper can instead sit on the armature's mannequin (owner null): each
+ * end is tied to the part it was placed on and kept in that part's frame, so
+ * it follows the pose. An end whose figure is replaced or turned into a
+ * figure stays where it last was in the world, untied.
+ *
  * Two kinds: the one being made (`working`, one at a time, never saved, gone
  * when the Calipers tool is left) and the pinned ones (kept, listed in the
  * Model panel's Measure section, saved with the scene).
@@ -30,7 +35,32 @@ export interface Measure {
   /** Pinned measurements can be hidden from the view. */
   visible: boolean;
   pinned: boolean;
+  /** On the mannequin: the part each end is tied to; that end's point is then in the part's frame, otherwise in the world. */
+  ties?: { a?: BoneTie; b?: BoneTie };
+  /** Which figure the ties are to (adopted by the first one that fits, after a reload). */
+  token?: object;
+  /** Where the ends last were in the world, for a tied end while its figure is not there to say. */
+  world?: { a: Vec3; b: Vec3 };
 }
+
+/** A part of the mannequin: the bone's name, and the rig it is of. */
+export interface BoneTie {
+  bone: string;
+  rig: string;
+}
+
+/** The mannequin's parts as the calipers ask of them. */
+export interface BoneFrames {
+  /** The figure itself: another figure is another token. */
+  token: object;
+  rig: string;
+  hasBone(bone: string): boolean;
+  /** A point in a part's frame, in the world as the figure is posed now. */
+  toWorld(bone: string, p: Vec3): Vec3;
+}
+
+/** Where the mannequin is: its frames, 'gone' once a figure was made from it, null while it has not been loaded. */
+export type FramesState = BoneFrames | 'gone' | null;
 
 /** What a scene file keeps of a pinned measurement. */
 export interface SavedMeasure {
@@ -39,6 +69,9 @@ export interface SavedMeasure {
   b: number[];
   mirror?: { a: number[]; b: number[] };
   visible?: boolean;
+  /** A caliper on the mannequin: the ties of its ends, and where they last stood in the world. */
+  ties?: { a?: BoneTie; b?: BoneTie };
+  world?: { a: number[]; b: number[] };
 }
 
 /** A column-major 4x4, as the meshes keep theirs. */
@@ -138,7 +171,7 @@ function meshStamp(mesh: SculptMesh): string {
   return `${n}:${mesh.getNbFaces()}:${h.toFixed(5)}`;
 }
 
-const NAME = /^Measure (\d+)$/;
+const NAME = /^(?:Measure|Caliper) (\d+)$/;
 /** More than anyone pins; a file's thousands are not measurements. */
 const MAX_PER_OBJECT = 200;
 
@@ -151,15 +184,21 @@ export class Measurements {
   private readonly pinned = new WeakMap<object, Measure[]>();
   private nextId = 1;
   /** The measurement being made, and the object it is on. */
-  working: { mesh: SculptMesh; m: Measure } | null = null;
+  working: { mesh: SculptMesh | null; m: Measure } | null = null;
+  /** The pinned calipers on the mannequin (they have no object). */
+  private readonly armature: Measure[] = [];
+  /** Where the mannequin is, set by the page. */
+  frames: (() => FramesState) | null = null;
+  /** The pinned caliper picked in the Scene panel or the view: Delete takes it, its row and its line are marked. */
+  selected: Measure | null = null;
+  /** The sculpt history, to put a pin, a delete, a rename or an eye in as one step (set by the session). */
+  history: ((undo: () => void, redo: () => void) => void) | null = null;
   /** Bumped by every change, so the overlay knows to draw again. */
   version = 0;
   /** A pinned measurement changed: the scene has something new to save. */
   onPersist: (() => void) | null = null;
   /** The panels that show a change (pin, rename, delete, mirror, a point set). */
   private readonly listeners = new Set<() => void>();
-  /** A pinned measurement was deleted: its restore, until the next change. */
-  lastDeleted: { mesh: SculptMesh; measure: Measure; index: number } | null = null;
 
   constructor(
     private readonly meshes: () => readonly SculptMesh[],
@@ -188,38 +227,84 @@ export class Measurements {
     return mesh ? (this.pinned.get(mesh) ?? []) : [];
   }
 
-  /** Every pinned measurement of a live object, with its object. */
-  all(): Array<{ mesh: SculptMesh; measure: Measure }> {
-    const out: Array<{ mesh: SculptMesh; measure: Measure }> = [];
+  /** Every pinned measurement of a live object, with its object (null: on the mannequin). */
+  all(): Array<{ mesh: SculptMesh | null; measure: Measure }> {
+    const out: Array<{ mesh: SculptMesh | null; measure: Measure }> = [];
     for (const mesh of this.meshes()) for (const measure of this.list(mesh)) out.push({ mesh, measure });
+    for (const measure of this.armature) out.push({ mesh: null, measure });
     return out;
+  }
+
+  private listOf(owner: SculptMesh | null): Measure[] {
+    return owner ? (this.pinned.get(owner) ?? []) : this.armature;
+  }
+
+  /** The object a pinned measurement is on (null: the mannequin), or undefined when it is not pinned. */
+  ownerOf(m: Measure): SculptMesh | null | undefined {
+    return this.all().find((e) => e.measure === m)?.mesh;
+  }
+
+  /** One undo step for a change to the pinned calipers; each side repeats the change and tells the panels. */
+  private step(undo: () => void, redo: () => void): void {
+    const wrap = (f: () => void) => (): void => {
+      f();
+      this.changed();
+      this.onPersist?.();
+    };
+    this.history?.(wrap(undo), wrap(redo));
+  }
+
+  private insert(owner: SculptMesh | null, m: Measure, index: number): void {
+    if (owner && !this.meshes().includes(owner)) return;
+    const list = this.listOf(owner);
+    if (list.includes(m)) return;
+    list.splice(Math.min(index, list.length), 0, m);
+    if (owner) this.pinned.set(owner, list);
+  }
+
+  private take(owner: SculptMesh | null, m: Measure): number {
+    const list = this.listOf(owner);
+    const i = list.indexOf(m);
+    if (i >= 0) list.splice(i, 1);
+    if (this.selected === m) this.selected = null;
+    return i;
+  }
+
+  /** Pick a pinned measurement (or none). */
+  select(m: Measure | null): void {
+    if (this.selected === m) return;
+    this.selected = m;
+    this.changed();
   }
 
   // --- the one being made ------------------------------------------------
 
   /** A first point: a new measurement on `mesh`, replacing the one before it. */
-  begin(mesh: SculptMesh, a: Vec3): Measure {
+  begin(mesh: SculptMesh | null, a: Vec3, tie?: BoneTie): Measure {
     const m: Measure = { id: this.nextId++, name: '', a, b: null, mirror: null, visible: true, pinned: false };
+    if (tie) m.ties = { a: tie };
     this.working = { mesh, m };
-    this.lastDeleted = null;
+    this.selected = null;
     this.changed();
     return m;
   }
 
   /** The second point of the working measurement. */
-  finish(b: Vec3): void {
+  finish(b: Vec3, tie?: BoneTie): void {
     const w = this.working;
     if (!w) return;
     w.m.b = b;
+    if (tie) w.m.ties = { ...w.m.ties, b: tie };
     if (w.m.mirror) w.m.mirror = this.mirrorOf(w.mesh, w.m);
     this.changed();
   }
 
   /** One end moved (a drag). */
-  moveEnd(which: 'a' | 'b', p: Vec3): void {
+  moveEnd(which: 'a' | 'b', p: Vec3, tie?: BoneTie): void {
     const w = this.working;
     if (!w) return;
     w.m[which] = p;
+    if (tie && w.m.ties) w.m.ties[which] = tie;
     if (w.m.mirror && w.m.b) w.m.mirror = this.mirrorOf(w.mesh, w.m);
     this.version++;
     this.notify();
@@ -242,79 +327,87 @@ export class Measurements {
       const hit = NAME.exec(measure.name);
       if (hit) this.named = Math.max(this.named, Number(hit[1]));
     }
-    return `Measure ${++this.named}`;
+    return `Caliper ${++this.named}`;
   }
 
   /** Keep the working measurement in the scene; it stays as it is on screen. */
   pinWorking(): Measure | null {
     const w = this.working;
     if (!w || !w.m.b) return null;
-    const list = this.pinned.get(w.mesh) ?? [];
+    const owner = w.mesh;
+    const list = this.listOf(owner);
     if (list.length >= MAX_PER_OBJECT) return null;
     const m = w.m;
     m.name = this.nextName();
     m.pinned = true;
-    list.push(m);
-    this.pinned.set(w.mesh, list);
+    this.cacheWorld(m);
+    this.insert(owner, m, list.length);
     this.working = null;
-    this.lastDeleted = null;
     this.changed();
     this.onPersist?.();
+    const at = this.listOf(owner).length - 1;
+    this.step(
+      () => void this.take(owner, m),
+      () => this.insert(owner, m, at),
+    );
     return m;
   }
 
   rename(measure: Measure, name: string): void {
     const trimmed = name.trim().slice(0, 200);
-    if (!trimmed || trimmed === measure.name) return;
+    const was = measure.name;
+    if (!trimmed || trimmed === was) return;
     measure.name = trimmed;
     this.changed();
     this.onPersist?.();
+    this.step(
+      () => void (measure.name = was),
+      () => void (measure.name = trimmed),
+    );
   }
 
   setVisible(measure: Measure, visible: boolean): void {
+    if (measure.visible === visible) return;
     measure.visible = visible;
     this.changed();
     this.onPersist?.();
+    this.step(
+      () => void (measure.visible = !visible),
+      () => void (measure.visible = visible),
+    );
   }
 
-  /** Delete a pinned measurement. Not part of the sculpt history: restoreDeleted brings the last one back. */
-  remove(mesh: SculptMesh, measure: Measure): void {
-    const list = this.pinned.get(mesh);
-    const i = list ? list.indexOf(measure) : -1;
-    if (!list || i < 0) return;
-    list.splice(i, 1);
-    this.lastDeleted = { mesh, measure, index: i };
+  /** Delete a pinned measurement: an undo step. */
+  remove(owner: SculptMesh | null, measure: Measure): void {
+    const i = this.take(owner, measure);
+    if (i < 0) return;
     this.changed();
     this.onPersist?.();
+    this.step(
+      () => this.insert(owner, measure, i),
+      () => void this.take(owner, measure),
+    );
   }
 
-  /** The measurement deleted last, back where it was. False when it cannot be (its object is gone). */
-  restoreDeleted(): boolean {
-    const d = this.lastDeleted;
-    if (!d) return false;
-    this.lastDeleted = null;
-    if (!this.meshes().includes(d.mesh)) {
-      this.changed();
-      return false;
-    }
-    const list = this.pinned.get(d.mesh) ?? [];
-    list.splice(Math.min(d.index, list.length), 0, d.measure);
-    this.pinned.set(d.mesh, list);
-    this.changed();
-    this.onPersist?.();
+  /** Delete the picked measurement (Delete or Backspace). False with none picked. */
+  removeSelected(): boolean {
+    const m = this.selected;
+    const owner = m ? this.ownerOf(m) : undefined;
+    if (!m || owner === undefined) return false;
+    this.remove(owner, m);
     return true;
   }
 
   // --- the mirror --------------------------------------------------------
 
-  private mirrorOf(mesh: SculptMesh, m: Measure): { a: Vec3; b: Vec3 } | null {
-    const plane = this.plane(mesh);
+  private mirrorOf(mesh: SculptMesh | null, m: Measure): { a: Vec3; b: Vec3 } | null {
+    const plane = mesh ? this.plane(mesh) : null;
     if (!plane || !m.b) return null;
     return { a: mirrorAcross(m.a, plane.origin, plane.normal), b: mirrorAcross(m.b, plane.origin, plane.normal) };
   }
 
   /** Add the mirror across the object's symmetry plane to a measurement (it must have both points). */
-  addMirror(mesh: SculptMesh, m: Measure): boolean {
+  addMirror(mesh: SculptMesh | null, m: Measure): boolean {
     const mirror = this.mirrorOf(mesh, m);
     if (!mirror) return false;
     m.mirror = mirror;
@@ -371,14 +464,66 @@ export class Measurements {
 
   // --- lengths -----------------------------------------------------------
 
+  /** An end in the world: through its object's matrix, or where its part of the mannequin has it now. */
+  pointWorld(owner: SculptMesh | null, m: Measure, which: 'a' | 'b'): Vec3 {
+    const p = m[which]!;
+    if (owner) return toWorld(owner.getMatrix(), p);
+    const tie = m.ties?.[which];
+    if (!tie) return p;
+    const f = this.frames?.();
+    if (f && f !== 'gone' && this.fits(m, tie, f)) return f.toWorld(tie.bone, p);
+    return m.world?.[which] ?? p;
+  }
+
+  private fits(m: Measure, tie: BoneTie, f: BoneFrames): boolean {
+    return f.rig === tie.rig && f.hasBone(tie.bone) && (m.token === undefined || m.token === f.token);
+  }
+
+  private cacheWorld(m: Measure): void {
+    if (!m.ties || !m.b) return;
+    m.world = { a: this.pointWorld(null, m, 'a'), b: this.pointWorld(null, m, 'b') };
+  }
+
+  /**
+   * Called every frame by the overlay. Keeps where the tied ends stand in the world, takes the
+   * first figure that fits as the one a reloaded caliper was on, and lets go of the ties of a
+   * figure that was replaced or made into an object: those ends stay where they were.
+   */
+  settleArmature(): void {
+    const f = this.frames?.() ?? null;
+    let froze = false;
+    for (const m of [...this.armature, ...(this.working && !this.working.mesh ? [this.working.m] : [])]) {
+      if (!m.ties) continue;
+      for (const which of ['a', 'b'] as const) {
+        const tie = m.ties[which];
+        if (!tie || !m[which]) continue;
+        if (f && f !== 'gone' && this.fits(m, tie, f)) {
+          m.token ??= f.token;
+          continue;
+        }
+        // A figure that is not loaded yet (a reload) may still come; anything else has gone.
+        if (f === null) continue;
+        m[which] = this.pointWorld(null, m, which);
+        delete m.ties[which];
+        froze = true;
+      }
+      if (m.ties && !m.ties.a && !m.ties.b) delete m.ties;
+      if (m.ties && m.b) this.cacheWorld(m);
+    }
+    if (froze) {
+      this.changed();
+      this.onPersist?.();
+    }
+  }
+
   /** A measurement's length in the scene's units, the object's scale included. */
-  length(mesh: SculptMesh, m: Measure): number | null {
-    return m.b ? lengthIn(mesh.getMatrix(), m.a, m.b) : null;
+  length(owner: SculptMesh | null, m: Measure): number | null {
+    return m.b ? distance(this.pointWorld(owner, m, 'a'), this.pointWorld(owner, m, 'b')) : null;
   }
 
   /** The mirror's length, or null with none. */
-  mirrorLength(mesh: SculptMesh, m: Measure): number | null {
-    return m.mirror ? lengthIn(mesh.getMatrix(), m.mirror.a, m.mirror.b) : null;
+  mirrorLength(mesh: SculptMesh | null, m: Measure): number | null {
+    return m.mirror && mesh ? lengthIn(mesh.getMatrix(), m.mirror.a, m.mirror.b) : null;
   }
 
   // --- the scene file ----------------------------------------------------
@@ -398,26 +543,49 @@ export class Measurements {
       }));
   }
 
-  /** Put an object's saved measurements back, as pinned ones. */
-  restore(mesh: SculptMesh, saved: SavedMeasure[] | undefined): void {
+  /** The pinned calipers on the mannequin as a scene file keeps them, or undefined with none. */
+  serializeArmature(): SavedMeasure[] | undefined {
+    if (!this.armature.length) return undefined;
+    return this.armature
+      .filter((m) => m.b)
+      .map((m) => ({
+        name: m.name,
+        a: [...m.a],
+        b: [...m.b!],
+        ...(m.visible ? {} : { visible: false }),
+        ...(m.ties ? { ties: { ...m.ties } } : {}),
+        ...(m.ties && m.world ? { world: { a: [...m.world.a], b: [...m.world.b] } } : {}),
+      }));
+  }
+
+  private revive(s: SavedMeasure, withTies: boolean): Measure | null {
+    const a = vec3(s.a);
+    const b = vec3(s.b);
+    if (!a || !b) return null;
+    const mirror = s.mirror ? { a: vec3(s.mirror.a), b: vec3(s.mirror.b) } : null;
+    const world = s.world ? { a: vec3(s.world.a), b: vec3(s.world.b) } : null;
+    return {
+      id: this.nextId++,
+      name: s.name,
+      a,
+      b,
+      mirror: mirror?.a && mirror.b ? { a: mirror.a, b: mirror.b } : null,
+      visible: s.visible !== false,
+      pinned: true,
+      ...(withTies && s.ties && world?.a && world.b ? { ties: s.ties, world: { a: world.a, b: world.b } } : {}),
+    };
+  }
+
+  /** Put an object's saved measurements back (null: the mannequin's), as pinned ones. */
+  restore(mesh: SculptMesh | null, saved: SavedMeasure[] | undefined): void {
     if (!saved?.length) return;
     const list: Measure[] = [];
     for (const s of saved) {
-      const a = vec3(s.a);
-      const b = vec3(s.b);
-      if (!a || !b) continue;
-      const mirror = s.mirror ? { a: vec3(s.mirror.a), b: vec3(s.mirror.b) } : null;
-      list.push({
-        id: this.nextId++,
-        name: s.name,
-        a,
-        b,
-        mirror: mirror?.a && mirror.b ? { a: mirror.a, b: mirror.b } : null,
-        visible: s.visible !== false,
-        pinned: true,
-      });
+      const m = this.revive(s, mesh === null);
+      if (m) list.push(m);
     }
-    this.pinned.set(mesh, list);
+    if (mesh) this.pinned.set(mesh, list);
+    else this.armature.splice(0, this.armature.length, ...list);
     this.version++;
   }
 
@@ -434,7 +602,8 @@ export class Measurements {
   /** The whole scene is replaced (New, Open, a restore): nothing carries over. */
   reset(): void {
     this.working = null;
-    this.lastDeleted = null;
+    this.selected = null;
+    this.armature.length = 0;
     this.named = 0;
     this.changed();
   }
@@ -453,13 +622,33 @@ export function sanitizeMeasures(v: unknown): SavedMeasure[] | undefined {
     const m = r.mirror && typeof r.mirror === 'object' ? (r.mirror as Record<string, unknown>) : null;
     const ma = m ? vec3(m.a) : null;
     const mb = m ? vec3(m.b) : null;
+    const ties = cleanTies(r.ties);
+    const wr = r.world && typeof r.world === 'object' ? (r.world as Record<string, unknown>) : null;
+    const wa = wr ? vec3(wr.a) : null;
+    const wb = wr ? vec3(wr.b) : null;
     out.push({
-      name: typeof r.name === 'string' && r.name.trim() ? r.name.slice(0, 200) : `Measure ${out.length + 1}`,
+      name: typeof r.name === 'string' && r.name.trim() ? r.name.slice(0, 200) : `Caliper ${out.length + 1}`,
       a,
       b,
       ...(ma && mb ? { mirror: { a: ma, b: mb } } : {}),
       ...(r.visible === false ? { visible: false } : {}),
+      ...(ties && wa && wb ? { ties, world: { a: wa, b: wb } } : {}),
     });
   }
   return out.length ? out : undefined;
+}
+
+const cleanTie = (v: unknown): BoneTie | undefined => {
+  const r = v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+  return r && typeof r.bone === 'string' && typeof r.rig === 'string' && r.bone && r.rig
+    ? { bone: r.bone.slice(0, 80), rig: r.rig.slice(0, 80) }
+    : undefined;
+};
+
+function cleanTies(v: unknown): { a?: BoneTie; b?: BoneTie } | undefined {
+  const r = v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+  if (!r) return undefined;
+  const a = cleanTie(r.a);
+  const b = cleanTie(r.b);
+  return a || b ? { ...(a ? { a } : {}), ...(b ? { b } : {}) } : undefined;
 }

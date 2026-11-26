@@ -592,7 +592,12 @@ export class SculptPanel extends SidePanel {
       reading.textContent = measureReading(this.session, w);
     };
     paint();
-    this.measureUnsub = store.subscribe(paint);
+    const offStore = store.subscribe(paint);
+    const offGuide = this.session.guide.subscribe(paint);
+    this.measureUnsub = () => {
+      offStore();
+      offGuide();
+    };
     this.onSymmetryChanged = paint;
   }
 
@@ -730,6 +735,9 @@ export class SculptPanel extends SidePanel {
  * the difference when it has one; a prompt before it has two points.
  */
 export function measureReading(session: SculptSession, w: SculptSession['measure']['working']): string {
+  // Pick head (the proportion guide) has the tool for its two taps.
+  const pick = session.guide.picking;
+  if (pick) return pick.step === 'crown' ? 'Tap the crown of the head' : 'Tap the chin';
   if (!w) return 'Tap the model for the first point';
   const len = session.measure.length(w.mesh, w.m);
   if (len === null) return 'Tap for the second point';

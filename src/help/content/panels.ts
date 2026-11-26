@@ -100,7 +100,14 @@ export const PANELS: Topic[] = [
         'Groups also come from an imported OBJ\'s `g` and `o` lines, and both OBJ exports write them back.',
       ),
       h('Measure'),
-      p('The measurements you pinned with the Calipers tool on the selected object. Each row has its name, which you tap to rename, its length, a mirror button, the eye, and the trash. A measurement that has a mirror shows the other length and the difference under it. The eye hides one from the view. Deleting is not a sculpt undo step, so the section offers **Undo** for the last one you deleted. Pinned measurements are saved with the scene, in the library too, and they are drawn whenever their object is shown and the interface is.'),
+      p('The **Proportion guide** is a ruler in heads. Turn it on here, or in View > Proportion guide, and a vertical line stands beside the subject on the floor, with its height in centimetres at the top and a numbered tick every head from the top, and the total in heads. The subject is the selected object, or the mannequin when its row in the Scene panel is selected or it is the only thing in the scene. It turns with the view so it always reads, Tab hides it, and it is never in a saved picture.'),
+      options(
+        ['Head height', 'Type it, or tap **Pick head** and then the crown and the chin on the model. For the mannequin, **From the head** takes it from its own head part.'],
+        ['Canon', '7½, 8 or 8½ heads, or Custom with a count of your own. A faint dashed line shows where the top of the figure would be on that canon; tap it to pick it. The model is not resized.'],
+        ['Landmarks', 'Short ticks at the chin, nipples, navel, crotch and knees of the canon. Hover or tap one for its name.'],
+      ),
+      p('The guide works only in a scene on real units; without them the section says "Set the scene\'s scale first". It follows a pose or a resize of the mannequin and an edit of the object, and it is saved with the scene: on or off, the head height and the canon.'),
+      p('The measurements you pinned with the Calipers tool on the selected object. Each row has its name, which you tap to rename, its length, a mirror button, the eye, and the trash. A measurement that has a mirror shows the other length and the difference under it. The eye hides one from the view. Pinned calipers also have rows in the Scene panel, where Delete removes the picked one, and Undo brings it back. Pinned measurements are saved with the scene, in the library too, and they are drawn whenever their object is shown and the interface is.'),
     ],
   },
   {

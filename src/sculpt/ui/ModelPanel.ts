@@ -1,5 +1,5 @@
 import Enums from '@sculpt-vendor/misc/Enums';
-import { div, onTap } from '../../ui/dom';
+import { div, labelRow, onTap, selectEl } from '../../ui/dom';
 import { GROUPS_LOCKED_NOTICE, hexToPacked, TooManyGroups } from '../bridge/polyGroups';
 import { dynamicNote } from './dynamicNote';
 import { GeometrySync } from '../bridge/GeometrySync';
@@ -27,6 +27,7 @@ import { askFlatten, layerWords, layeredMeshes, withLayersFlattened } from './la
 import { showWhileHeld, VoxelOverlay } from './VoxelOverlay';
 import { formatSceneLength } from '../../viewer/units';
 import { lengthText, type Measure } from '../bridge/measure';
+import { CANONS, HEADS_LIMITS, HEAD_LIMITS, type CanonId } from '../bridge/guide';
 import { voxelGrid } from '../bridge/remeshBudget';
 import {
   defaultQuadTarget,
@@ -619,6 +620,11 @@ export class ModelPanel extends SidePanel {
 
   private measureList?: HTMLDivElement;
   private measureUnsub: (() => void) | null = null;
+  /** The proportion guide's controls, at the top of the Measure section. */
+  private guideBlock?: HTMLDivElement;
+  private guideRefresh: (() => void) | null = null;
+  /** What the page knows of the guide's subject: whether it is the mannequin, and the head height of its own head part. */
+  guideSubject: { mannequin(): boolean; headHeight(): number | null } | null = null;
   /** The measurement whose name is being typed, so a refresh mid-edit leaves the field be. */
   private renamingMeasure: Measure | null = null;
   /** Set scale, for a scene without real units (mode.ts opens the banner). */
@@ -627,15 +633,94 @@ export class ModelPanel extends SidePanel {
   private buildMeasure(body: HTMLElement): void {
     const sec = section(body, 'Measure');
     sec.dataset.role = 'measure';
+    this.guideBlock = div('measure-guide');
+    this.guideBlock.dataset.role = 'guide';
+    sec.appendChild(this.guideBlock);
+    this.buildGuide(this.guideBlock);
     this.measureList = div('groups-list measure-list');
     this.measureList.dataset.role = 'measure-list';
     sec.appendChild(this.measureList);
-    this.measureUnsub = this.session.measure.subscribe(() => this.refreshMeasures());
+    const offStore = this.session.measure.subscribe(() => this.refreshMeasures());
+    const offGuide = this.session.guide.subscribe(() => this.refreshGuide());
+    this.measureUnsub = () => {
+      offStore();
+      offGuide();
+    };
     this.refreshMeasures();
+  }
+
+  /**
+   * The proportion guide (docs/plans/reference-and-measure.md): its switch, the canon with a
+   * count of one's own, the head height typed or picked, and the landmark ticks. The subject is
+   * the active object, or the mannequin (From the head fills the height from its own head part).
+   */
+  private buildGuide(block: HTMLElement): void {
+    const guide = this.session.guide;
+    const on = checkbox('Proportion guide', guide.on, (v) => guide.setOn(v));
+    on.dataset.role = 'guide-switch';
+    const canonSelect = selectEl(
+      CANONS.map((c) => [c.id, c.label] as [string, string]),
+      guide.canon,
+    );
+    canonSelect.dataset.role = 'guide-canon-select';
+    canonSelect.addEventListener('change', () => guide.setCanon(canonSelect.value as CanonId));
+    const canonRow = labelRow('Canon', canonSelect);
+    canonRow.dataset.role = 'guide-canon-row';
+    const heads = compactRange('Heads', HEADS_LIMITS.min, HEADS_LIMITS.max, 0.5, guide.customHeads, (v) => guide.setCustomHeads(v), {
+      limits: { min: HEADS_LIMITS.min, max: HEADS_LIMITS.max },
+    });
+    heads.dataset.role = 'guide-heads';
+    const head = compactRange('Head height', 0, 40, 0.1, guide.head, (v) => guide.setHead(v), {
+      limits: { min: 0, max: HEAD_LIMITS.max },
+      unit: 'cm',
+    });
+    head.dataset.role = 'guide-head';
+    const pick = this.opButton('Pick head', () => (guide.picking ? guide.cancelPick() : guide.beginPick()));
+    pick.dataset.role = 'guide-pick';
+    pick.title = 'Tap the crown, then the chin';
+    const fromHead = this.opButton('From the head', () => {
+      const h = this.guideSubject?.headHeight();
+      if (h) guide.setHead(h);
+    });
+    fromHead.dataset.role = 'guide-from-head';
+    fromHead.title = "Take the head height from the mannequin's own head";
+    const buttons = div('sculpt-panel__row');
+    buttons.append(pick, fromHead);
+    const landmarks = checkbox('Landmarks', guide.landmarks, (v) => guide.setLandmarks(v));
+    landmarks.dataset.role = 'guide-landmarks';
+    const note = div('sculpt-panel__hint muted');
+    note.dataset.role = 'guide-note';
+    const rest = [canonRow, heads, head, buttons, landmarks, note];
+    block.append(on, ...rest);
+    this.guideRefresh = (): void => {
+      const units = !!this.session.getUnits();
+      block.hidden = !units;
+      const input = on.querySelector('input')!;
+      if (input.checked !== guide.on) input.checked = guide.on;
+      for (const el of rest) el.hidden = !guide.on;
+      if (canonSelect.value !== guide.canon) canonSelect.value = guide.canon;
+      heads.hidden = !guide.on || guide.canon !== 'custom';
+      const headInput = head.querySelector('input[type=range]') as HTMLInputElement;
+      if (document.activeElement !== headInput && Math.abs(sliderValue(headInput) - guide.head) > 1e-6) setSliderValue(headInput, guide.head);
+      const headsInput = heads.querySelector('input[type=range]') as HTMLInputElement;
+      if (document.activeElement !== headsInput && Math.abs(sliderValue(headsInput) - guide.customHeads) > 1e-6) setSliderValue(headsInput, guide.customHeads);
+      const lm = landmarks.querySelector('input')!;
+      if (lm.checked !== guide.landmarks) lm.checked = guide.landmarks;
+      pick.textContent = guide.picking ? 'Cancel pick' : 'Pick head';
+      fromHead.hidden = !this.guideSubject?.mannequin() || this.guideSubject.headHeight() === null;
+      note.textContent = guide.subject?.() ? (guide.head > 0 ? '' : 'Type the head height, or pick it on the model.') : 'Nothing to measure: add an object or the armature.';
+    };
+    this.guideRefresh();
+  }
+
+  /** The guide's controls read again (the subject changed, the scale was set, the scene was opened). */
+  refreshGuide(): void {
+    this.guideRefresh?.();
   }
 
   /** Redraw the Measure list for the active object (a pin, a rename, another object, symmetry). */
   refreshMeasures(): void {
+    this.refreshGuide();
     const list = this.measureList;
     if (!list) return;
     if (this.renamingMeasure && list.contains(document.activeElement)) return;
@@ -647,7 +732,9 @@ export class ModelPanel extends SidePanel {
       msg.dataset.role = 'measure-needs-scale';
       msg.textContent = "Set the scene's scale first";
       const row = div('sculpt-panel__row');
-      row.appendChild(this.tapButton('Set scale', () => this.onSetScale?.()));
+      const setScale = this.tapButton('Set scale', () => this.onSetScale?.());
+      setScale.dataset.role = 'measure-set-scale';
+      row.appendChild(setScale);
       list.append(msg, row);
       return;
     }
@@ -694,18 +781,6 @@ export class ModelPanel extends SidePanel {
         pair.textContent = `Mirror ${lengthText(other)}, difference ${lengthText(Math.abs(len - other))}`;
         list.appendChild(pair);
       }
-    }
-    // Deleting a pinned measurement is not a sculpt undo step (the scene's
-    // history carries meshes only); the one deleted last can be brought back here.
-    const gone = store.lastDeleted;
-    if (gone && gone.mesh === mesh) {
-      const row = div('sculpt-panel__row measure-undo');
-      const text = div('sculpt-panel__hint muted');
-      text.textContent = `Deleted ${gone.measure.name}.`;
-      const undo = this.tapButton('Undo', () => store.restoreDeleted());
-      undo.dataset.role = 'measure-undo';
-      row.append(text, undo);
-      list.appendChild(row);
     }
   }
 
