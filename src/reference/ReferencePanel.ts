@@ -20,6 +20,17 @@ export const CARD_ACTIONS = [
   { id: 'delete', name: 'Delete', icon: 'fi-ss-trash' },
 ] as const;
 
+/** What a card asks of the scene's cameras (sculpt/mode.ts gives it). */
+export interface CardCameras {
+  list(): { id: string; name: string }[];
+  /** The camera a picture is tied to, or null. */
+  tied(reference: string): string | null;
+  tie(reference: string, camera: string | null): void;
+  /** A locked camera at the view the picture was locked with, tied to it, and looked through. */
+  makeFrom(item: RefItem): void;
+  subscribe(fn: () => void): () => void;
+}
+
 /**
  * The Reference tab, on the right after Tool and before Render: the
  * board's pictures as a list of cards, newest first, with Add picture…
@@ -55,6 +66,8 @@ export class ReferencePanel extends SidePanel {
   private readonly offBoard: () => void;
   /** The library project this scene is, or null: the note under the grid says where pictures stay. */
   private linked: () => boolean = () => false;
+  private cameras: CardCameras | null = null;
+  private offCameras: (() => void) | null = null;
 
   constructor(private readonly board: ReferenceBoard) {
     super({ id: 'reference', title: 'Reference', side: 'right', variant: 'panel--reference' });
@@ -112,6 +125,14 @@ export class ReferencePanel extends SidePanel {
     document.addEventListener('touchmove', stopScroll, { passive: false });
     this.offDocTouch = () => document.removeEventListener('touchmove', stopScroll);
     this.offBoard = board.onChange(() => this.refresh());
+    this.refresh();
+  }
+
+  /** The scene's cameras: each card gets a Camera select, and a saved view can become a camera. */
+  setCameras(cameras: CardCameras | null): void {
+    this.offCameras?.();
+    this.cameras = cameras;
+    this.offCameras = cameras ? cameras.subscribe(() => this.refresh()) : null;
     this.refresh();
   }
 
@@ -192,6 +213,30 @@ export class ReferencePanel extends SidePanel {
     blend.setAttribute('aria-label', `Blend mode of ${item.name}`);
     blend.addEventListener('change', () => this.board.setLook(item.id, { blend: blend.value }));
     text.append(name, meta, blend);
+    const cams = this.cameras;
+    if (cams) {
+      // Tied, the picture shows in the view only while that camera is looked through.
+      const tied = cams.tied(item.id);
+      const select = document.createElement('select');
+      select.className = 'ref-card__camera';
+      select.dataset.role = 'ref-camera';
+      select.title = 'Show this picture only through one camera';
+      select.setAttribute('aria-label', `Camera of ${item.name}`);
+      select.appendChild(new Option('Camera: none', ''));
+      for (const c of cams.list()) select.appendChild(new Option(`Camera: ${c.name}`, c.id));
+      select.value = tied ?? '';
+      select.addEventListener('change', () => cams.tie(item.id, select.value || null));
+      text.appendChild(select);
+      if (item.camera && !tied) {
+        const make = document.createElement('button');
+        make.type = 'button';
+        make.className = 'outliner__btn ref-card__make';
+        make.dataset.role = 'ref-make-camera';
+        make.textContent = 'Make a camera of this view';
+        make.addEventListener('click', () => cams.makeFrom(item));
+        text.appendChild(make);
+      }
+    }
     card.appendChild(text);
 
     // The icons: the same glyphs as the row over a picture in the view.
@@ -215,13 +260,13 @@ export class ReferencePanel extends SidePanel {
           b.addEventListener('click', () => (on ? this.board.takeOut(item.id) : this.board.putInView(item.id)));
           break;
         case 'match':
-          if (!item.camera) {
+          if (!item.camera && !this.cameras?.tied(item.id)) {
             // Greyed, but still named by a long press: the reason is its tip.
             b.setAttribute('aria-disabled', 'true');
             tip = `${MATCH_VIEW_LABEL}: ${MATCH_VIEW_HINT.toLowerCase()}`;
           }
           b.addEventListener('click', () => {
-            if (item.camera) void this.board.matchView(item.id);
+            void this.board.matchView(item.id);
           });
           break;
         case 'flip':
@@ -337,6 +382,7 @@ export class ReferencePanel extends SidePanel {
   }
 
   override dispose(): void {
+    this.offCameras?.();
     this.offBoard();
     this.offDocTouch();
     for (const off of this.offTips) off();

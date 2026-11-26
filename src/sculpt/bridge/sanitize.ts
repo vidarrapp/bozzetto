@@ -15,6 +15,7 @@ import { sanitizeLayers } from './layersRecord';
 import { sanitizePaintLayers } from './paintLayersRecord';
 import { sanitizeMeasures } from './measure';
 import { sanitizeGuide } from './guide';
+import { sanitizeCameras } from './cameras';
 import { MAX_REFERENCES, cleanBlend, cleanCamera, cleanOpacity, cleanPlace, type FileReference, type FileReferences } from '../../reference/board';
 
 /**
@@ -506,6 +507,7 @@ function sanitizeReferences(v: unknown): FileReferences | undefined {
     const height = num(raw.height, 1, 16384);
     if (width === undefined || height === undefined) continue;
     items.push({
+      id: typeof raw.id === 'string' && raw.id && raw.id.length <= 40 ? raw.id : undefined,
       name: str(raw.name) ?? 'Picture',
       type: png ? 'image/png' : 'image/jpeg',
       width: Math.round(width),
@@ -544,6 +546,7 @@ export function sanitizeScene(scene: SavedScene): SavedScene {
     scaleDismissed: !isUnits(scene.units) && scene.scaleDismissed === true ? true : undefined,
     armatureMeasures: sanitizeMeasures(scene.armatureMeasures),
     guide: sanitizeGuide(scene.guide),
+    cameras: sanitizeCameras(scene.cameras),
     project: sanitizeLink(scene.project),
     unsent: isProjectId(scene.unsent) ? scene.unsent : undefined,
     synced: scene.synced === true ? true : undefined,

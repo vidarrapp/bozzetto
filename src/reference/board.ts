@@ -34,6 +34,8 @@ export interface StoredCamera {
   position: [number, number, number];
   target: [number, number, number];
   focalLength: number;
+  /** Only when the view was orthographic; a picture locked before this was kept has none. */
+  projection?: 'orthographic';
 }
 
 export interface RefItem {
@@ -89,7 +91,7 @@ export function cleanCamera(v: unknown): StoredCamera | null {
   const position = triple(r.position);
   const target = triple(r.target);
   if (!position || !target || !finite(r.focalLength)) return null;
-  return { position, target, focalLength: r.focalLength };
+  return { position, target, focalLength: r.focalLength, ...(r.projection === 'orthographic' ? { projection: 'orthographic' as const } : {}) };
 }
 
 /** The most pictures a board holds: each is up to a few hundred kilobytes. */
@@ -214,8 +216,35 @@ export class ReferenceBoard {
     this.camSet = set;
   }
 
-  /** Put the camera back as it was when this picture was locked. False when none is kept. */
+  /**
+   * The scene's cameras, as far as the board asks of them (Cameras): which camera a picture is tied to,
+   * which one is in use, and the way to look through one. A tied picture shows only while its camera is in use.
+   */
+  private cameras: { cameraOf(id: string): string | null; inUse(): string | null; look(cameraId: string): void } | null = null;
+
+  bindCameras(c: { cameraOf(id: string): string | null; inUse(): string | null; look(cameraId: string): void } | null): void {
+    this.cameras = c;
+    this.emit();
+  }
+
+  /** The camera a picture is tied to, or null. */
+  cameraOf(id: string): string | null {
+    return this.cameras?.cameraOf(id) ?? null;
+  }
+
+  /** Whether a picture shows now: not tied to a camera, or tied to the one in use. */
+  shownNow(id: string): boolean {
+    const tied = this.cameraOf(id);
+    return tied === null || tied === this.cameras?.inUse();
+  }
+
+  /** Put the camera back as it was when this picture was locked, or look through the camera it is tied to. False when neither. */
   matchView(id: string): boolean {
+    const tied = this.cameraOf(id);
+    if (tied && this.cameras) {
+      this.cameras.look(tied);
+      return true;
+    }
     const cam = this.get(id)?.camera;
     if (!cam || !this.camSet) return false;
     this.camSet(cam);
@@ -446,6 +475,8 @@ export class ReferenceBoard {
 
 /** How the pictures ride a .bozz file: bytes, so the container's walk carries them as it does an array. */
 export interface FileReference {
+  /** The picture's id on the board, which a camera tied to it names; a file from before cameras has none. */
+  id?: string;
   name: string;
   type: string;
   width: number;
@@ -472,6 +503,7 @@ export async function toFileReferences(board: ReferenceBoard): Promise<FileRefer
   const items: FileReference[] = [];
   for (const i of list) {
     items.push({
+      id: i.id,
       name: i.name,
       type: i.blob.type === 'image/png' ? 'image/png' : 'image/jpeg',
       width: i.width,
@@ -491,10 +523,11 @@ export async function toFileReferences(board: ReferenceBoard): Promise<FileRefer
   return { items };
 }
 
-/** A file's pictures as board items; ids are made new, so a file never collides with what is here. */
+/** A file's pictures as board items. They keep the id the file gives (a camera names it), else a new one; a file replaces the board, so none collides. */
 export function fromFileReferences(refs: FileReferences): { items: RefItem[] } {
+  const seen = new Set<string>();
   const items: RefItem[] = refs.items.map((r) => ({
-    id: newId(),
+    id: typeof r.id === 'string' && r.id && r.id.length <= 40 && !seen.has(r.id) ? (seen.add(r.id), r.id) : newId(),
     name: r.name,
     width: r.width,
     height: r.height,

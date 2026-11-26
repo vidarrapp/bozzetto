@@ -705,6 +705,13 @@ export class Viewer {
   /** Fired when DoF is toggled on/off (e.g. hotkey or a tap-to-focus that turns
    *  it on), so the panel checkbox can re-sync. */
   onDofChange: (() => void) | null = null;
+  /**
+   * A try to move the view while a locked camera is looked through (orbit, pan, zoom, a pinch, a
+   * frame, a turn): the page says why. Not called for what the page itself does.
+   */
+  onViewBlocked: (() => void) | null = null;
+  /** A locked camera is in use (Cameras): navigation leaves the view where it is. */
+  private viewLocked = false;
 
   /** The adapter line's wording, reachable from the console and the tests. */
   static readonly describeAdapter = describeAdapter;
@@ -824,6 +831,7 @@ export class Viewer {
       if (name !== null && this.snapEl.textContent !== name) this.snapEl.textContent = name;
     };
     this.controls.setSurfacePick((at) => this.surfaceUnder(at));
+    this.controls.onRefused = () => this.onViewBlocked?.();
 
     const tier: Tier = manifest.config.tiers.includes('hd') ? 'hd' : 'sd';
     this.streamer = new FrameStreamer(source, manifest.frames, tier);
@@ -2330,8 +2338,58 @@ export class Viewer {
     this.onDofChange?.();
   }
 
+  /** Where the view stands now, as a camera keeps it: place, target, lens and projection (Cameras). */
+  readView(): { position: [number, number, number]; target: [number, number, number]; lens: number; projection: 'perspective' | 'orthographic' } {
+    const s = this.controls.getState();
+    return {
+      position: s.position,
+      target: s.target,
+      lens: this.focalLength,
+      projection: this.orthographic ? 'orthographic' : 'perspective',
+    };
+  }
+
+  /** How tall the view is at the target for a camera's place and lens, in scene units (a camera's orthographic size). */
+  viewHeight(v: { position: number[]; target: number[]; lens: number; projection: 'perspective' | 'orthographic' }): number {
+    const dist = Math.hypot(v.position[0] - v.target[0], v.position[1] - v.target[1], v.position[2] - v.target[2]);
+    const slope = v.projection === 'orthographic' ? Math.tan((ORTHO_FOV * Math.PI) / 360) : (0.5 * this.camera.getFilmHeight()) / v.lens;
+    return 2 * dist * slope;
+  }
+
+  /**
+   * Put the view where a camera stands, in the order a saved look is applied in (the lens, the
+   * projection, then the place), and take its lock. Only the camera moves: nothing is built.
+   */
+  placeView(v: { position: number[]; target: number[]; lens: number; projection: 'perspective' | 'orthographic' }, locked: boolean): void {
+    this.setViewLocked(false);
+    this.controls.halt();
+    this.setFocalLength(v.lens);
+    this.setOrthographic(v.projection === 'orthographic');
+    this.controls.setState(v.position, v.target);
+    this.setViewLocked(locked);
+    this.invalidate();
+  }
+
+  /** A locked camera is in use: the view stays where it is whatever the person does. */
+  setViewLocked(on: boolean): void {
+    this.viewLocked = on;
+    this.controls.setLocked(on);
+  }
+
+  isViewLocked(): boolean {
+    return this.viewLocked;
+  }
+
+  /** True, with the page told why, when the view is locked and so may not be moved by the person's own try. */
+  refuseMove(): boolean {
+    if (!this.viewLocked) return false;
+    this.onViewBlocked?.();
+    return true;
+  }
+
   /** Frame the current model in place, keeping the view angle (hotkey "f"). */
   focusSubject(): void {
+    if (this.refuseMove()) return;
     const box = this.inSculpt ? null : this.playedBounds(this.display.geometry);
     if (box && !box.isEmpty()) {
       this.subjectBox.copy(box);
@@ -3136,6 +3194,7 @@ export class Viewer {
    * three-quarter direction.
    */
   frameBounds(box: Box3): void {
+    if (this.refuseMove()) return;
     this.fitSubjectBounds(box, true, true);
   }
 
@@ -3144,12 +3203,15 @@ export class Viewer {
 
   /** Turntable step around the subject (sculpt wheel keys, degrees). */
   orbitAzimuth(deg: number): void {
+    if (this.refuseMove()) return;
     this.controls.rotateAzimuth(deg);
     this.invalidate();
   }
 
   /** Place the camera and its orbit target directly (pivot-orbit rewrite). */
   setCameraState(position: Vector3, target: Vector3): void {
+    // The pivot orbit re-centres through here every frame of a drag that a locked view has refused: quiet.
+    if (this.viewLocked) return;
     this.controls.placeCamera(position, target);
     this.invalidate();
   }
@@ -3164,6 +3226,7 @@ export class Viewer {
 
   /** Turntable about a world point; see Controls.rotateAzimuthAbout. */
   orbitAzimuthAbout(centre: Vector3, deg: number): void {
+    if (this.refuseMove()) return;
     this.controls.rotateAzimuthAbout(centre, deg);
     this.invalidate();
   }
@@ -3182,6 +3245,8 @@ export class Viewer {
    * turn ends where it began however many frames it took.
    */
   placeCameraTurned(mark: { position: Vector3; target: Vector3 }, centre: Vector3, deg: number): void {
+    // A turntable clip is refused before it starts (Present); a turn put back to 0 is not a move.
+    if (this.viewLocked && deg !== 0) return;
     this.controls.halt();
     this.controls.placeCamera(mark.position, mark.target);
     if (deg !== 0) this.controls.rotateAzimuthAbout(centre, deg);
@@ -3193,6 +3258,7 @@ export class Viewer {
    * page point `at` when one is set; see Controls.dollyBy.
    */
   dolly(factor: number, at: ScreenPoint | null = null): void {
+    if (this.refuseMove()) return;
     this.controls.dollyBy(factor, at);
     this.invalidate();
   }

@@ -203,6 +203,12 @@ export class Controls {
   private readonly snapOut = new Vector3();
   /** Told the name of the view a rotation is snapped to, and null when it is not. */
   onSnap: ((name: string | null) => void) | null = null;
+  /**
+   * A locked camera is being looked through: orbit, pan, zoom, a pinch and the Shift snap leave the
+   * view exactly where it is. `onRefused` hears of each try (the page says why, not too often).
+   */
+  private locked = false;
+  onRefused: (() => void) | null = null;
 
   constructor(
     private readonly camera: PerspectiveCamera,
@@ -238,6 +244,7 @@ export class Controls {
     // zoom focus set, applied about that point instead (zoomTowardFocus).
     const orbitUpdate = controls.update.bind(controls);
     controls.update = (deltaTime?: number | null): boolean => {
+      if (this.locked) this.refuseOwed();
       this.zoomTowardFocus();
       return this.snapUpdate(() => orbitUpdate(deltaTime));
     };
@@ -271,7 +278,7 @@ export class Controls {
    */
   private snapUpdate(run: () => boolean): boolean {
     const state = (this.controls as unknown as OrbitInternals).state;
-    const on = this.shiftDown && (state === STATE_ROTATE || state === STATE_TOUCH_ROTATE);
+    const on = !this.locked && this.shiftDown && (state === STATE_ROTATE || state === STATE_TOUCH_ROTATE);
     const target = this.controls.target;
     if (this.snapFree && !on) {
       this.snapFree = null;
@@ -289,6 +296,26 @@ export class Controls {
     this.camera.updateMatrixWorld();
     this.onSnap?.(name);
     return true;
+  }
+
+  /** Lock the view (a locked camera is in use) or free it; what was still owed to a coast stops. */
+  setLocked(on: boolean): void {
+    this.locked = on;
+    if (on) this.halt();
+  }
+
+  isLocked(): boolean {
+    return this.locked;
+  }
+
+  /** Whatever a drag, the wheel or a pinch has asked of the view is dropped, and the try is told. */
+  private refuseOwed(): void {
+    const c = this.controls as unknown as OrbitInternals;
+    const owed =
+      c._sphericalDelta.theta !== 0 || c._sphericalDelta.phi !== 0 || c._panOffset.lengthSq() !== 0 || c._scale !== 1;
+    if (!owed) return;
+    this.halt();
+    this.onRefused?.();
   }
 
   /** The straight view nearest `free` (its distance kept) written to `out`; its name. */
@@ -741,6 +768,11 @@ export class Controls {
    * there) is the point that stays under the middle for the whole gesture.
    */
   private beginHold(): void {
+    if (this.locked) {
+      this.hold = null;
+      this.onRefused?.();
+      return;
+    }
     // Whatever a one-finger orbit still owed stops here; the fingers own the view.
     this.halt();
     this.hold = null;
@@ -777,6 +809,7 @@ export class Controls {
    * with: the view stops when the fingers do (and so does a release).
    */
   private holdGesture(): void {
+    if (this.locked) return;
     const h = this.hold;
     const f = this.fingers();
     if (!h || !f) return;

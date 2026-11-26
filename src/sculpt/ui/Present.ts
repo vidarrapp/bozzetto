@@ -49,6 +49,8 @@ export interface PresentHost {
   canEnter(): boolean;
   /** Hide and lock what edits; returns how to put it all back as it was. */
   enter(): () => void;
+  /** Whether the view is locked (a locked camera is in use): the turntable is refused, and the person told. */
+  turnBlocked(): boolean;
   /** Turn the camera by `deg` about the subject's vertical axis. */
   turn(deg: number): void;
   /** Render the still and hand it over (Save image). */
@@ -269,6 +271,7 @@ export class PresentMode {
   setTurning(on: boolean): void {
     // Not while a clip renders: it has the camera.
     on = on && this.active && !this.clip;
+    if (on && this.host.turnBlocked()) on = false;
     if (on === this.turning) return;
     this.turning = on;
     this.lastTurn = performance.now();
@@ -339,6 +342,7 @@ export class PresentMode {
    */
   async saveTurntable(): Promise<void> {
     if (this.clip || this.saving || !this.active) return;
+    if (this.host.turnBlocked()) return;
     const wasTurning = this.turning;
     this.setTurning(false);
     const clip = new AbortController();

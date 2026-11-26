@@ -146,6 +146,9 @@ export const MAX_SOURCE_LINES = 1_000_000;
  * few enough that their names stay a small part of the header.
  */
 export const MAX_GROUPS = 4096;
+/** The most cameras a scene keeps, and the longest lens one may have, in millimetres (src/sculpt/bridge/cameras.ts holds the app to the same). */
+export const MAX_CAMERAS = 64;
+const MAX_LENS = 10000;
 /**
  * The poly groups record's version (SavedMesh.groups.v): 2 since
  * 2026-11-01, one group a face of level 0. Version 1 (2026-10-31), one a
@@ -330,6 +333,51 @@ export function checkHeader(layout: Layout): void {
     }
   };
 
+  /**
+   * The scene's cameras (SavedScene.cameras, src/sculpt/bridge/cameras.ts; docs/ui-spec.md, "Cameras"): version 1,
+   * at most MAX_CAMERAS of them, each with an id, a name, a place and a target that differ, an up
+   * vector, a lens, a projection, the orthographic size, a lock and the id of the picture tied to
+   * it or null; the one in use is none or one of them. A reference picture is only ever named by
+   * its id: the picture never rides the scene.
+   */
+  const checkCameras = (c: unknown): void => {
+    const bad = (what: string): never => {
+      throw damaged(`the scene has bad cameras (${what})`);
+    };
+    const vec = (v: unknown): boolean => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === 'number' && Number.isFinite(x));
+    const view = (v: Rec, who: string): void => {
+      if (!vec(v.position) || !vec(v.target) || !vec(v.up)) bad(`${who} has a place, target or up that is not three numbers`);
+      const p = v.position as number[];
+      const t = v.target as number[];
+      if (p[0] === t[0] && p[1] === t[1] && p[2] === t[2]) bad(`${who} looks from where it looks at`);
+      if (typeof v.lens !== 'number' || !Number.isFinite(v.lens) || v.lens <= 0 || v.lens > MAX_LENS) bad(`${who} has a lens that is not a length in millimetres`);
+      if (v.projection !== 'perspective' && v.projection !== 'orthographic') bad(`${who} has a projection that is neither perspective nor orthographic`);
+      if (typeof v.orthoSize !== 'number' || !Number.isFinite(v.orthoSize) || v.orthoSize < 0) bad(`${who} has a size that is not a length`);
+    };
+    if (!isRec(c) || c.v !== 1) bad('a version this app does not read');
+    const r = c as Rec;
+    if (!Array.isArray(r.items) || r.items.length === 0 || r.items.length > MAX_CAMERAS) bad(`not 1 to ${MAX_CAMERAS} cameras`);
+    const ids = new Set<string>();
+    for (const it of r.items as unknown[]) {
+      if (!isRec(it)) bad('a camera that is not one');
+      const cam = it as Rec;
+      if (typeof cam.id !== 'string' || cam.id.length < 1 || cam.id.length > 64) bad('a camera with no id');
+      if (ids.has(cam.id as string)) bad('two cameras with one id');
+      ids.add(cam.id as string);
+      if (typeof cam.name !== 'string' || cam.name.length > MAX_NAME) bad(`a name that is not text of up to ${MAX_NAME} characters`);
+      view(cam, 'a camera');
+      if (typeof cam.locked !== 'boolean') bad('a camera whose lock is neither on nor off');
+      if (cam.reference !== null && (typeof cam.reference !== 'string' || cam.reference.length < 1 || cam.reference.length > 64)) {
+        bad('a tied picture that is neither an id nor null');
+      }
+    }
+    if (r.active !== null && (typeof r.active !== 'string' || !ids.has(r.active))) bad('a camera in use that is not in the list');
+    if (r.working !== undefined) {
+      if (!isRec(r.working)) bad('a working view that is not one');
+      view(r.working as Rec, 'the working view');
+    }
+  };
+
   const scene = layout.scene;
   if (!isRec(scene)) throw damaged('it holds no scene');
   if (scene.v !== 3 && scene.v !== 4 && scene.v !== 5) throw damaged('a version this app does not read');
@@ -380,6 +428,7 @@ export function checkHeader(layout: Layout): void {
     if (m.layers !== undefined) checkLayers(m.layers, object);
   });
   if (scene.units !== undefined && scene.units !== 'cm' && scene.units !== 'm') throw damaged('units this app does not read');
+  if (scene.cameras !== undefined) checkCameras(scene.cameras);
   const materials = scene.materials;
   if (Array.isArray(materials)) {
     if (materials.length > MAX_MATERIALS) throw damaged(`more than ${MAX_MATERIALS} materials`);

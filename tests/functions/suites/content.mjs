@@ -121,6 +121,23 @@ const withLayers = (h, edit, { v = 2, full = false } = {}) => {
   edit?.(layers, h);
 };
 
+/**
+ * Give the scene its cameras (SavedScene.cameras, cameras.ts; docs/ui-spec.md, "Cameras"): version 1, as the app
+ * writes them. Two cameras, the second locked and tied to a picture's id, the first in use, and the working view
+ * kept while it is. `edit` then has its way with the record.
+ */
+const withCameras = (h, edit) => {
+  const cam = (id, name, extra = {}) => ({ id, name, position: [30, 20, 40], target: [0, 10, 0], up: [0, 1, 0], lens: 50, projection: 'perspective', orthoSize: 31.2, locked: false, reference: null, ...extra });
+  const cameras = {
+    v: 1,
+    active: 'c1',
+    working: { position: [10, 10, 10], target: [0, 0, 0], up: [0, 1, 0], lens: 35, projection: 'orthographic', orthoSize: 18.5 },
+    items: [cam('c1', 'Camera 1'), cam('c2', 'Camera 2', { locked: true, reference: 'r1abc' })],
+  };
+  h.scene.cameras = cameras;
+  edit?.(cameras, h);
+};
+
 export async function run({ checks, on, off, compileShared, repo }) {
   const member = new Browser(on, { ip: '198.51.100.60', clock: { now: T + 60_000 } });
   member.jar.set('__Host-bz_session', seededToken('cn-member'));
@@ -218,6 +235,26 @@ export async function run({ checks, on, off, compileShared, repo }) {
     [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.colors.__buf].t = 'f32'), { colors: true }) }), /bad poly groups \(colours that are not one a group/, 'group colours that are floats'],
     [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.colors.__buf].t = 'u8'), { colors: true }) }), /bad poly groups \(colours that are not one a group/, 'group colours of one byte each'],
     [bozz({ edit: (h) => withGroups(h, (g) => (g.colors = [0xff0000, 0xffffffff]), { colors: true }) }), /bad poly groups \(colours that are not one a group/, 'group colours as a plain list'],
+    // The cameras (SavedScene.cameras), one thing wrong at a time.
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.v = 2)) }), /bad cameras \(a version this app does not read/, 'cameras of a version there is not'],
+    [bozz({ edit: (h) => (h.scene.cameras = [1, 2]) }), /bad cameras \(a version this app does not read/, 'cameras as a plain list'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.items = [])) }), /bad cameras \(not 1 to 64 cameras/, 'a cameras record with no cameras'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.items = Array.from({ length: 65 }, (_, i) => ({ ...c.items[0], id: `c${i}` })))) }), /bad cameras \(not 1 to 64 cameras/, '65 cameras'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.items[1].id = 'c1')) }), /bad cameras \(two cameras with one id/, 'two cameras with one id'],
+    [bozz({ edit: (h) => withCameras(h, (c) => delete c.items[0].id) }), /bad cameras \(a camera with no id/, 'a camera with no id'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.items[0].name = 'n'.repeat(201))) }), /bad cameras \(a name that is not text/, 'a camera named in 201 characters'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.items[0].position = [1, 2])) }), /bad cameras \(a camera has a place, target or up/, 'a camera whose place is two numbers'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.items[0].target = [30, 20, 40])) }), /bad cameras \(a camera looks from where it looks at/, 'a camera that looks at where it stands'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.items[0].up = 'y')) }), /bad cameras \(a camera has a place, target or up/, 'a camera whose up is text'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.items[0].lens = 0)) }), /bad cameras \(a camera has a lens/, 'a camera with a lens of no millimetres'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.items[0].projection = 'fisheye')) }), /bad cameras \(a camera has a projection/, 'a camera with a projection there is not'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.items[0].orthoSize = -1)) }), /bad cameras \(a camera has a size/, 'a camera with a negative size'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.items[0].locked = 'yes')) }), /bad cameras \(a camera whose lock/, 'a camera whose lock is a word'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.items[0].reference = 7)) }), /bad cameras \(a tied picture/, 'a camera tied to a number'],
+    [bozz({ edit: (h) => withCameras(h, (c) => delete c.items[0].reference) }), /bad cameras \(a tied picture/, 'a camera that says nothing of its picture'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.active = 'c9')) }), /bad cameras \(a camera in use that is not in the list/, 'a camera in use that is not in the list'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.working.position = [0, 0, 0])) }), /bad cameras \(the working view looks from where it looks at/, 'a working view that looks at where it stands'],
+    [bozz({ edit: (h) => withCameras(h, (c) => (c.working = 'free')) }), /bad cameras \(a working view that is not one/, 'a working view that is text'],
     [bozz({ edit: (h) => (h.buffers[0].t = 'u16') }), /a bad buffer entry/, 'a buffer of sixteen-bit numbers'],
   ];
   for (const [file, reason, what] of cases) {
@@ -385,5 +422,11 @@ export async function run({ checks, on, off, compileShared, repo }) {
   t.eq(content.MAX_SERVER_HEADER, MiB, 'the server reads at most 1 MiB of header');
   const source = readFileSync(join(repo, 'src', 'sculpt', 'bridge', 'SceneFile.ts'), 'utf8');
   t.ok(/from '\.\.\/\.\.\/\.\.\/shared\/bozz'/.test(source) && !/function readLayout/.test(source) && !/class SceneFileError/.test(source), "the app's SceneFile.ts reads with shared/bozz.ts's readLayout and defines none of its own");
+  const { r: cameras } = await send(bozz({ edit: (h) => withCameras(h) }));
+  t.ok(cameras.status === 201, `a scene with cameras, one locked and tied to a picture's id, is taken (${cameras.status} ${cameras.json?.reason ?? ''})`);
+  const { r: freeView } = await send(bozz({ edit: (h) => withCameras(h, (c) => { c.active = null; delete c.working; }) }));
+  t.ok(freeView.status === 201, `and one with no camera in use, so no working view kept (${freeView.status} ${freeView.json?.reason ?? ''})`);
+  const { r: noCameras } = await send(bozz());
+  t.ok(noCameras.status === 201, `and a scene from before cameras still is (${noCameras.status} ${noCameras.json?.reason ?? ''})`);
   t.report();
 }
