@@ -984,8 +984,10 @@ reuse it with one more control a row (a blend mode select).
   0% refuses a stroke ("Show the layer to sculpt on it."). Weight changes
   apply on every drawn frame of a drag (the Weight slider's `input`, coalesced
   by `LayerControls`) while the highest level is on screen; from a lower level
-  (about a second at a million triangles) after the slider has been still for
-  120 ms, and always on release.
+  the level on screen follows by scaling the layer's (or group's) effect on it
+  (`SculptLayers.follow`: taken from two real updates the first time, kept for
+  the next drags until a stroke or another edit), and the release always does
+  the real update.
 - Changing the active layer, a weight or visibility, Add, Duplicate,
   Flatten, Delete are undo steps. Remesh, merge, split and dynamic topology
   ask to flatten the layers first ("Flatten the layers of "Sphere"?", button

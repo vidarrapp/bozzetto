@@ -1161,8 +1161,8 @@ export const suites = {
 
   /**
    * The Weight slider shows its effect while it is dragged (owner, 2026-11-25): on the highest level on every
-   * move, at most once a drawn frame; from a lower level when the slider has been still for 120 ms (an update
-   * costs a second at a million triangles). The release is one undo step; a drag back to the start adds none;
+   * move, at most once a drawn frame; from a lower level by scaling the layer's effect on the level on screen (a real update
+   * costs a second at a million triangles; it is done once, then on the release). The release is one undo step; a drag back to the start adds none;
    * a group's slider is the same.
    */
   async sculptLayersLive(page, base, t) {
@@ -1275,20 +1275,197 @@ export const suites = {
       session.layers.setActive(m, window.__lt.layers().find((l) => l.kind === 'layer'));
     });
 
-    // --- a lower level ----------------------------------------------------
+    // --- a lower level: the level on screen follows by scaling the layer's effect ---------------------
+    // Real updates (the ones that go through every level) are counted: `show` is the one that does them.
+    await page.evaluate(() => {
+      const layers = window.__sculpt.session.layers;
+      window.__real = 0;
+      // Level changes made by anyone: a background round trip (the autosave reads the levels) moves the level on screen.
+      const mesh = window.__sculpt.session.getMesh();
+      window.__sel = 0;
+      const sel = mesh.selectResolution.bind(mesh);
+      mesh.selectResolution = (k) => {
+        window.__sel++;
+        return sel(k);
+      };
+      const orig = layers.show.bind(layers);
+      layers.show = (...a) => {
+        window.__real++;
+        return orig(...a);
+      };
+    });
+    const real = () => page.evaluate(() => window.__real);
+    const setLayerActive = () =>
+      page.evaluate(() => {
+        const { session } = window.__sculpt;
+        const m = session.getMesh();
+        session.layers.setActive(m, window.__lt.layers().find((l) => l.kind === 'layer'));
+      });
+    await setLayerActive();
     await page.evaluate((k) => window.__lt.go(k), top - 1);
     await page.evaluate(() => window.__lt.snap('l1'));
-    await wait(() => document.querySelector('.panel--layers .layer-row--active'));
     d0 = await depth();
+    const ext = await page.evaluate(() => window.__lt.extent());
+    /** Move the held pointer one step and wait for the update that move asked for. */
+    const stepTo = async (frac) => {
+      const bx = await box();
+      const n0 = await page.evaluate(() => window.__cnt.live);
+      await page.mouse.move(bx.x + bx.w * frac, bx.y);
+      await wait((n) => window.__cnt.live > n, n0);
+      return page.evaluate(() => window.__lt.sum());
+    };
+    const frames3 = () => page.evaluate(() => window.__cnt.frames).then((n) => wait((f) => window.__cnt.frames > f + 3, n));
     const c2 = await page.evaluate(() => ({ ...window.__cnt }));
-    await press(0.4);
-    await dragged('l1');
-    t.ok(true, 'from a lower level the surface moves before the release, once the slider is still');
+    // The first drag takes the effect with one real update; the rest of it only scales.
+    await press(0.9, 2);
+    await frames3();
+    const states = new Set();
+    for (let i = 0; i < 10; i++) states.add(await stepTo(0.85 - i * 0.05));
+    t.ok(states.size >= 5, `from a lower level the surface changes on every move, not after a pause (${states.size} states in 10 moves)`);
+    t.eq(await real(), 2, 'the first drag takes the layer\'s effect with two real updates (the first settles the level)');
     t.eq(await depth(), d0, 'with no undo step yet');
+    await page.evaluate(() => window.__lt.snap('pvA'));
+    const wA = await page.evaluate(() => window.__lt.layers().find((l) => l.kind === 'layer').weight);
     await page.mouse.up();
     t.eq(await depth(), d0 + 1, 'the release is one undo step');
+    // How far the scaled surface is from the real one at the same weight.
+    const errA = await page.evaluate(() => window.__lt.diff('pvA'));
+    console.log(`  scaled preview against the real update at ${wA.toFixed(2)}: ${errA.toExponential(2)} (object size ${ext.toFixed(3)}, ${(errA / ext).toExponential(2)} relative)`);
+    t.ok(errA < ext * 1e-4, 'the scaled surface is the real one to within 0.01% of the object');
     await page.evaluate(() => window.__lt.undo());
-    t.ok((await page.evaluate(() => window.__lt.diff('l1'))) < tol * 8, 'and undo puts the level back');
+    t.ok((await page.evaluate(() => window.__lt.diff('l1'))) < tol * 8, 'undo puts the level back');
+
+    // A second drag on the same layer: the effect is kept, so nothing real happens before the release.
+    const r0 = await real();
+    const sel0 = await page.evaluate(() => window.__sel);
+    await press(0.9, 2);
+    await frames3();
+    const states2 = new Set();
+    for (let i = 0; i < 10; i++) states2.add(await stepTo(0.85 - i * 0.05));
+    t.ok(states2.size >= 5, `the second drag follows every move too (${states2.size} states)`);
+    // The autosave syncs the layers mid-drag: the preview must not be taken for a stroke.
+    const dsum = () =>
+      page.evaluate(() => {
+        const d = window.__lt.layers().find((l) => l.kind === 'layer').delta;
+        let sum = 0;
+        for (let i = 0; i < d.length; i++) sum += d[i] * ((i % 7) + 1);
+        return sum;
+      });
+    const ds0 = await dsum();
+    await page.evaluate(() => window.__sculpt.session.layers.sync(window.__sculpt.session.getMesh()));
+    t.eq(await dsum(), ds0, 'a sync (the autosave) in the middle of a drag does not take the preview for a stroke');
+    await stepTo(0.36);
+    t.eq((await real()) - r0, 0, 'and makes no real update before the release');
+    await page.evaluate(() => window.__lt.snap('pvB'));
+    const disturbed = (await page.evaluate(() => window.__sel)) !== sel0;
+    await page.mouse.up();
+    const wB = await page.evaluate(() => window.__lt.layers().find((l) => l.kind === 'layer').weight);
+    t.eq((await real()) - r0, 1, 'the release makes the real one');
+    await page.evaluate(() => window.__lt.snap('relB'));
+    await page.evaluate((k) => window.__lt.go(k), top);
+    await page.evaluate(() => window.__lt.snap('relBT'));
+    await page.evaluate((k) => window.__lt.go(k), top - 1);
+    const errB = await page.evaluate(() => window.__lt.diff('pvB', 'relB'));
+    console.log(`  second drag: preview against the real result at ${wB.toFixed(2)}: ${errB.toExponential(2)} (${(errB / ext).toExponential(2)} relative)`);
+    if (disturbed) t.ok(true, 'the preview at the release was within 0.01% of the real result (skipped: a background round trip moved the level mid-drag)');
+    else t.ok(errB < ext * 1e-4, 'the preview at the release was within 0.01% of the real result');
+    await page.evaluate(() => window.__lt.undo());
+    t.ok((await page.evaluate(() => window.__lt.diff('l1'))) < tol * 8, 'undo restores the level');
+    await page.evaluate((w) => window.__sculpt.session.layers.setWeight(window.__sculpt.session.getMesh(), window.__lt.layers().find((l) => l.kind === 'layer'), w, 'commit'), wB);
+    t.ok((await page.evaluate(() => window.__lt.diff('relB'))) < tol * 2, 'the release equals a single change to that weight');
+    await page.evaluate(() => window.__lt.undo());
+    // The preview leaves no trace: moved and brought back to where it began, every level is exactly as it was.
+    await page.evaluate((k) => window.__lt.go(k), top);
+    await page.evaluate(() => window.__lt.snap('x0T'));
+    await page.evaluate((k) => window.__lt.go(k), top - 1);
+    await page.evaluate(() => window.__lt.snap('x0'));
+    const dx = await depth();
+    const rx = await real();
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const m = session.getMesh();
+      const l = window.__lt.layers().find((x) => x.kind === 'layer');
+      const w0 = l.weight;
+      for (const w of [w0 - 0.3, w0 - 0.6, w0 - 0.9]) session.layers.setWeight(m, l, w, 'live');
+      window.__lt.snap('x1');
+      session.layers.setWeight(m, l, w0, 'commit');
+    });
+    t.ok((await page.evaluate(() => window.__lt.diff('x0', 'x1'))) > ext * 1e-3, 'the preview moved the surface');
+    // Exactly as it was, bit for bit, when the effect was kept (no real update ran); a sync that took a rounding for a
+    // stroke would have dropped it and a real round trip leaves rounding behind, as it always has.
+    const exactNow = await page.evaluate(() => window.__lt.diff('x0'));
+    if ((await real()) === rx) t.eq(exactNow, 0, 'and a release at the weight it began leaves the level on screen exactly as it was');
+    else t.ok(exactNow < ext * 1e-6, `and a release at the weight it began leaves the level as it was to rounding (${exactNow.toExponential(2)}; a real update ran)`);
+    await page.evaluate((k) => window.__lt.go(k), top);
+    t.ok((await page.evaluate(() => window.__lt.diff('x0T'))) < tol * 2, 'and the highest level too (to the rounding of going up and down a level)');
+    await page.evaluate((k) => window.__lt.go(k), top - 1);
+    t.eq(await depth(), dx, 'with no undo step');
+
+    // Negative weights and weights above 100%, as a typed value sends them (live, live, then the release).
+    for (const w of [-0.5, 1.8, 0.3]) {
+      await page.evaluate((w) => {
+        const { session } = window.__sculpt;
+        const m = session.getMesh();
+        const l = window.__lt.layers().find((x) => x.kind === 'layer');
+        const half = 1 + (w - 1) / 2;
+        session.layers.setWeight(m, l, half, 'live');
+        session.layers.setWeight(m, l, w, 'live');
+        window.__lt.snap('pv');
+      }, w);
+      await page.evaluate((w) => {
+        const { session } = window.__sculpt;
+        session.layers.setWeight(session.getMesh(), window.__lt.layers().find((x) => x.kind === 'layer'), w, 'commit');
+      }, w);
+      const e = await page.evaluate(() => window.__lt.diff('pv'));
+      console.log(`  scaled preview at ${w}: ${e.toExponential(2)} (${(e / ext).toExponential(2)} relative)`);
+      t.ok(e < ext * 1e-4, `at ${w * 100}% the scaled surface is within 0.01% of the real one`);
+      await page.evaluate(() => window.__lt.undo());
+    }
+
+    // A stroke on the layer drops the kept effect; the next drag is still right.
+    // (Sculpted on a level above and stepped down to, so that the level is settled: a stroke made on the level itself
+    // moves it a little once by itself, which is not what this checks.)
+    await page.evaluate((k) => window.__lt.go(k), top);
+    await page.evaluate(() => window.__lt.stroke(0, -30));
+    await page.evaluate((k) => window.__lt.go(k), top - 1);
+    await page.evaluate(() => window.__lt.snap('l2'));
+    const r1 = await real();
+    await press(0.9, 2);
+    await frames3();
+    for (let i = 0; i < 5; i++) await stepTo(0.8 - i * 0.1);
+    t.eq((await real()) - r1, 2, 'after a stroke on the layer the effect is taken again');
+    await page.evaluate(() => window.__lt.snap('pvC'));
+    await page.mouse.up();
+    const errC = await page.evaluate(() => window.__lt.diff('pvC'));
+    t.ok(errC < ext * 1e-4, `and the preview is still right (${(errC / ext).toExponential(2)} of the object)`);
+    await page.evaluate(() => window.__lt.undo());
+    const errL2 = await page.evaluate(() => window.__lt.diff('l2'));
+    console.log(`  after a drag and its undo, the level differs from before by ${errL2.toExponential(2)} (${(errL2 / ext).toExponential(2)} of the object)`);
+    t.ok(errL2 < ext * 1e-4, 'undo of that drag puts it back');
+
+    // A group's slider, from a lower level.
+    console.log('  group state', JSON.stringify(await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const m = session.getMesh();
+      const l = window.__lt.layers().find((x) => x.kind === 'layer');
+      const g = session.layers.rawList(m).find((x) => x.kind === 'group') ?? session.layers.group(m, l);
+      if (g) session.layers.setActive(m, g);
+      return { layer: !!l, parent: !!l?.parent, g: !!g, n: session.layers.rawList(m).length };
+    })));
+    await frames3();
+    await page.evaluate(() => window.__lt.snap('g1'));
+    d0 = await depth();
+    await press(0.9, 2);
+    await frames3();
+    const gs = new Set();
+    for (let i = 0; i < 8; i++) gs.add(await stepTo(0.85 - i * 0.05));
+    t.ok(gs.size >= 5, `a group's slider follows every move from a lower level (${gs.size} states)`);
+    await page.evaluate(() => window.__lt.snap('pvG'));
+    await page.mouse.up();
+    t.eq(await depth(), d0 + 1, 'and its release is one undo step');
+    t.ok((await page.evaluate(() => window.__lt.diff('pvG'))) < ext * 1e-4, 'the group preview is within 0.01% of the real result');
+    await page.evaluate(() => window.__lt.undo());
+    t.ok((await page.evaluate(() => window.__lt.diff('g1'))) < tol * 8, 'undo puts the level back');
     const c3 = await page.evaluate(() => ({ ...window.__cnt }));
     t.ok(c3.live - c2.live <= c3.frames - c2.frames, 'updates never exceeded frames there either');
   },
