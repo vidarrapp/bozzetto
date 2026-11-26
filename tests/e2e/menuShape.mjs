@@ -10,7 +10,7 @@ const HELP = ['Help topics', 'Hotkeys', 'About and credits'];
 
 /** What Sculpt's File and Edit hold, and its View in each workspace of the page (studioShell.mjs reads them too). */
 export const SCULPT_FILE = 'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
-const VIEW_LOOKS = 'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools';
+const VIEW_LOOKS = 'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Proportion guide|Poly group colours|References|Arrange references|Hotkeys on tools';
 const RESET_BAR = '|Reset tool bar';
 const VIEW_WORKSPACES = 'Asset library|Hide interface|Armature|Sculpt|Paint|Present';
 export const SCULPT_VIEW = {
@@ -134,7 +134,7 @@ export const suites = {
     checkShape(t, 'Armature', armature, {
       names: 'File,Edit,View,Help',
       file: 'New armature|Open…|Open recent|Rename…|Save file|Load model…|Remesh to a figure|Close',
-      view: 'Frame all|Wireframe|Shadows|Details|Move light|References|Arrange references|Armature panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Paint|Present',
+      view: 'Frame all|Wireframe|Shadows|Details|Move light|Proportion guide|References|Arrange references|Armature panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Paint|Present',
       edit: 'Undo|Redo|Paste picture|Preferences…',
     });
     const a = armature.View.filter((r) => ['Armature', 'Sculpt', 'Paint', 'Present'].includes(r.label));

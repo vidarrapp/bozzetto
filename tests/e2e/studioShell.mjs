@@ -145,7 +145,7 @@ export const suites = {
     checkShape(t, 'Armature', armMenus, {
       names: 'File,Edit,View,Help',
       file: 'New armature|Open…|Open recent|Rename…|Save file|Load model…|Remesh to a figure|Close',
-      view: 'Frame all|Wireframe|Shadows|Details|Move light|References|Arrange references|Armature panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Paint|Present',
+      view: 'Frame all|Wireframe|Shadows|Details|Move light|Proportion guide|References|Arrange references|Armature panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Paint|Present',
       edit: 'Undo|Redo|Paste picture|Preferences…',
     });
     t.eq(await stepOn(page), 'armature', 'Armature: Armature is lit in the path');
