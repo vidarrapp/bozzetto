@@ -177,6 +177,11 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **Spot lights.** The Lighting tab has **Add spot light**, for up to two spots beside the key, fill and rim. Each has a position, an aim, a cone angle and a penumbra from a hard edge to a soft one, and casts a shadow with the same softness as the other lights. They are kept in a rig and in the look.
+- **Spot lights are drawn in Present.** A small lamp and the outline of its cone show where each spot is and what it points at, hidden where the model is in front and never in a saved picture, a turntable or a thumbnail. **4** and **5** pick Spot 1 and Spot 2 for **L**, and a drag on the lamp moves the spot.
+
 ### v0.7.30
 
 - **Import model reads more than OBJ.** In the gallery's Create window and in Sculpt's File menu, Import model opens .obj, .glb, .stl and .ply files (and a .gltf that holds everything in itself), every mesh in the file as one object with a group for each mesh. Colours, materials, textures, rigs and animations are left out. A file that cannot be read says why and leaves the scene as it was.

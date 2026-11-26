@@ -50,7 +50,7 @@ import { ToolsView } from '../library/ToolsView';
 import { ModelsView } from '../library/TileViews';
 import { MeasureOverlay } from './ui/MeasureOverlay';
 import { LightMarkers } from './ui/LightMarkers';
-import type { LightId } from '../viewer/Lighting';
+import type { AnyLightId } from '../viewer/Lighting';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
 import { ScaleBanner, sceneSubjects } from './ui/SetScale';
@@ -941,11 +941,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Present's light markers (LightMarkers): while L moves a light, and for a moment after 1, 2 or 3 picks one.
   let lightMarkers: LightMarkers | null = null;
   // Which light Present's L moves: Key when Present is entered, 1, 2 and 3 pick (Present only).
-  const LIGHT_ORDER: LightId[] = ['key', 'fill', 'rim'];
-  const LIGHT_NAMES: Record<LightId, string> = { key: 'Key', fill: 'Fill', rim: 'Rim' };
-  let presentLight: LightId = 'key';
+  const LIGHT_ORDER: AnyLightId[] = ['key', 'fill', 'rim', 'spot1', 'spot2'];
+  const LIGHT_NAMES: Record<AnyLightId, string> = { key: 'Key', fill: 'Fill', rim: 'Rim', spot1: 'Spot 1', spot2: 'Spot 2' };
+  let presentLight: AnyLightId = 'key';
   /** The light an off-light note was made for, so a drag says it once. */
-  let offNoted: LightId | null = null;
+  let offNoted: AnyLightId | null = null;
+  /** Whether a light of the rig is there to pick: the three directional ones always, a spot once it is added. */
+  const lightExists = (id: AnyLightId): boolean => (id === 'spot1' || id === 'spot2' ? lighting.hasSpot(id) : true);
+  const lightOn = (id: AnyLightId): boolean =>
+    id === 'spot1' || id === 'spot2' ? !!lighting.spotState().find((sp) => sp.id === id)?.enabled : !!lighting.state().find((l) => l.id === id)?.enabled;
+  /** The picked spot's lamp is orange. */
+  const pickedLamp = (): void => viewer.lamps.setPicked(presentLight === 'spot1' || presentLight === 'spot2' ? presentLight : null);
   let lightNote: { clear(): void } | null = null;
   const sayLight = (text: string): void => {
     lightNote?.clear();
@@ -1282,9 +1288,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // Sideways swings the key light around the model, up/down raises it
     // (Lighting.nudgeKey, which Armature mode's hold-L drag shares).
     moveKeyLight: (deltaAzimuth, deltaElevation) => {
-      const id: LightId = presenting ? presentLight : 'key';
+      let id: AnyLightId = presenting ? presentLight : 'key';
+      // A spot that was removed after it was picked: the key moves instead.
+      if (!lightExists(id)) id = presentLight = 'key';
       // A light that is off still turns (the Lighting tab shows its angles); the note says why the view does not change.
-      if (presenting && offNoted !== id && !lighting.state().find((l) => l.id === id)?.enabled) {
+      if (presenting && offNoted !== id && !lightOn(id)) {
         offNoted = id;
         sayLight(`${LIGHT_NAMES[id]} is off`);
       }
@@ -1301,11 +1309,26 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     pickLight: (index) => {
       const id = LIGHT_ORDER[index];
       if (!id || !presenting) return;
+      if (!lightExists(id)) {
+        sayLight(`No ${LIGHT_NAMES[id]} light. Add one in the Lighting tab.`);
+        return;
+      }
       presentLight = id;
-      const on = !!lighting.state().find((l) => l.id === id)?.enabled;
+      pickedLamp();
+      const on = lightOn(id);
       offNoted = on ? null : id;
       sayLight(on ? `${LIGHT_NAMES[id]} light` : `${LIGHT_NAMES[id]} is off`);
       lightMarkers?.flash();
+    },
+    lampAt: (x, y) => {
+      if (!presenting) return false;
+      const hit = viewer.lamps.hit(x, y, viewer.camera, viewer.captureCanvas.getBoundingClientRect(), viewer.subjectBoundsNow(), lighting);
+      if (!hit) return false;
+      presentLight = hit;
+      pickedLamp();
+      offNoted = lightOn(hit) ? null : hit;
+      lightMarkers?.flash();
+      return true;
     },
     orbitY: (deltaDeg) => turntable(deltaDeg),
     dolly: (factor, at) => viewer.dolly(factor, at),
@@ -1454,6 +1477,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     input.presenting = true;
     presenting = true;
     presentLight = 'key';
+    pickedLamp();
+    viewer.lamps.setWanted(true);
     offNoted = null;
     cursor.hide();
     syncHighlights();
@@ -1478,6 +1503,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       window.dispatchEvent(new CustomEvent('bozzetto:present', { detail: { active: false } }));
       input.presenting = false;
       presenting = false;
+      viewer.lamps.setWanted(false);
       chrome.set(was.chrome);
       if (was.select) input.enterSelect();
       else if (was.gizmo) enterTransform(was.gizmo);

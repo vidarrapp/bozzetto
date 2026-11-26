@@ -143,7 +143,10 @@ no separate touch density. An earlier draft of this spec had one, with
   grouped Built in and My rigs, reading Custom when the lights match none;
   Save rig…, Import rig…, Manage in one row), Lights (Shadows, each light
   with Enabled, Intensity, Azimuth, Elevation, Colour, Casts shadow and
-  Softness, Rotate rig) and Environment light (HDRI, Intensity, Rotation).
+  Softness; under them one section for each spot light, Spot 1 and Spot 2, with
+  Enabled, Remove, Intensity, Colour, Position X, Y and Z, Aim X, Y and Z, Cone
+  angle, Penumbra, Casts shadow and Softness, and Add spot light while there
+  is room for one; Rotate rig) and Environment light (HDRI, Intensity, Rotation).
   **Camera**: Lens, Depth of field with Aperture and Focus. **Render**: Tone
   (Tone mapping), Ambient occlusion (Model, Strength, Radius), Background and
   ground (Background, Bg colour or Bg blur and Bg brightness, Ground, the
@@ -158,8 +161,14 @@ no separate touch density. An earlier draft of this spec had one, with
   Split, Rim, Top light, Under light, Soft front, and Raking key. My rigs are
   kept on this device (`bz.rigs`, following the storage choice). A `.bozzrig`
   file is JSON: `format`, `version`, `name`, a list of `lights` each with a
-  `type` (today `directional`, with `id` key, fill or rim) and its values, and
-  `ambient`. Import checks every field, holds numbers to the sliders' limits,
+  `type` (`directional`, with `id` key, fill or rim; `spot`, with `id` spot1 or
+  spot2, `position` and `aim` as [x, y, z] in centimetres from the subject's
+  floor centre (`aim` null for the subject's centre), `angle` 5 to 80 degrees,
+  `penumbra` 0 to 1, and the switch, intensity, colour, shadow and softness the
+  others have) and its values, and `ambient`. A file without spots reads as it
+  always did; a rig applied replaces the spots with its own, so a rig with none
+  takes them out. A look's `lighting` record carries them as `spots` (`spot1`,
+  `spot2`) and an older record has none. Import checks every field, holds numbers to the sliders' limits,
   and refuses anything else with a plain notice. Sharing rigs through the
   Community is later work.
 - **Move the key light** without a keyboard: View, **Move light** (Sculpt,
@@ -168,9 +177,11 @@ no separate touch density. An earlier draft of this spec had one, with
   The light turns by movement made since the press (or since L went down, for a
   hovering mouse): the first event only sets the reference, so a finger or Pencil
   that lands away from the last pointer position does not make the light jump.
-  **In Present** the keys 1, 2 and 3 (keymap actions `present.light1` to `3`,
+  **In Present** the keys 1 to 5 (keymap actions `present.light1` to `5`,
   group Lighting, rebindable) pick which light L and Move light turn: Key, Fill,
-  Rim, as the Lighting tab lists them; Key when Present is entered. A pick says
+  Rim, Spot 1 and Spot 2, as the Lighting tab lists them; Key when Present is
+  entered. 4 or 5 with no such spot says "No Spot 1 light. Add one in the
+  Lighting tab." and picks nothing. A pick says
   "Key light", "Fill light" or "Rim light" on the status line, or "Fill is off"
   for a light that is off (it still turns, the tab shows its angles). While L is
   held or Move light is armed, and for 1.5 s after a pick, one marker per light
@@ -179,6 +190,26 @@ no separate touch density. An earlier draft of this spec had one, with
   it): a disc with a short line toward the subject, in the direction the light
   comes from, the same size on screen at any zoom; the picked one orange
   (`--bz-orange`), the others `--bz-text-hint`. Sculpt and Paint show no markers.
+  **Spot lights** are drawn in the scene instead (src/viewer/SpotLamps.ts), in
+  Present only and all the time: a lamp (a short shade, 9 cm long, 4 cm across
+  at the front) at the spot's position pointing along its aim, and the outline
+  of its cone out to the aim (the cone's circle and eight spokes), in real
+  units. They are drawn into the wire overlay's target, so the model hides them
+  where it is in front and GTAO never reads them; the picked one is orange, the
+  others grey. The Viewer hides the group for every capture and readback
+  (beginCapture, beginStills, renderForReadback), so no saved image, turntable
+  or thumbnail holds them. A press (any pointer) within 28 px of a lamp that
+  the subject's bounds do not hide picks that spot and drags it as hold-L does,
+  0.5 degrees a pixel, round its aim at its distance; the aim stays. A spot's
+  shadow goes through the same tier (a map of 1024 on high and medium, none on
+  low, where the Casts shadow row says so), softness, bias and blur samples as
+  the others', and its map is drawn only when something it sees changes: the
+  model's geometry, matrix or visibility, the spot's own place, aim, cone or
+  softness (Lighting.updateSpotShadows), so a turn of the view draws none (a
+  spot is placed from the floor centre and the Rotate rig slider alone, not the
+  view's own turn that Sculpt's and Present's directional rig rides, so it stays
+  put as the view turns); under
+  Fast frames a change waits for every other frame during a stroke or a move.
   **Cavity**, Sculpt's form shading, is a switch on the Material tab's Display
   section with Strength and Radius under it.
 - **Hotkey guide per workspace.** The guide (H) is drawn from the keymap for the

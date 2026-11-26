@@ -29,7 +29,8 @@ import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls, type ScreenPoint, type ZoomFocus } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
 import { Lighting } from './Lighting';
-import type { LightId, LightingState } from './Lighting';
+import type { AnyLightId, LightingState } from './Lighting';
+import { SpotLamps } from './SpotLamps';
 import { Materials } from './Materials';
 import type { MaterialState } from './Materials';
 import { Environment } from './Environment';
@@ -400,6 +401,8 @@ export class Viewer {
   readonly timeline: Timeline;
   readonly materials: Materials;
   readonly lighting: Lighting;
+  /** The spot lights drawn in the scene, in Present only (SpotLamps). */
+  readonly lamps = new SpotLamps();
   readonly environment: Environment;
   private readonly envLoadingEl: HTMLDivElement;
   /** Crop-framing overlay for video/thumbnail capture (editor only). */
@@ -522,7 +525,11 @@ export class Viewer {
     bindGroups: 0,
   };
   /** Shadow maps drawn per light since boot, counted as they render. */
-  private readonly shadowRenders = { key: 0, fill: 0, rim: 0 };
+  private readonly shadowRenders: Record<AnyLightId, number> = { key: 0, fill: 0, rim: 0, spot1: 0, spot2: 0 };
+  /** Renders for a picture under way (renderForReadback): the lamps are not drawn in them. */
+  private readbackDepth = 0;
+  /** Fast frames under a stroke or a move: a changed spot shadow waits for every other frame. */
+  private spotReduced = false;
   /** This browser can time the GPU with timestamp queries (WebGPU's, or WebGL's timer query). */
   private gpuTimestamps = false;
   /** The meter is up, so the GPU is timed; see setGpuTiming. */
@@ -764,6 +771,7 @@ export class Viewer {
     this.camera.setFocalLength(this.focalLength);
 
     this.lighting = new Lighting(this.scene, this.renderer);
+    this.scene.add(this.lamps.group);
     this.setUpTiming();
     this.instrumentBackend();
     this.materials = new Materials(source);
@@ -1713,10 +1721,9 @@ export class Viewer {
     count('createBindings', 'bindGroups');
     // A shadow map is drawn by a render with its light's shadow camera,
     // which nothing else renders with, so that is where they are counted.
-    const cameras = new Map(this.lighting.shadowCameras());
     const render = this.renderer.render.bind(this.renderer);
     this.renderer.render = (scene, camera) => {
-      const id = cameras.get(camera);
+      const id = this.lighting.shadowIdOf(camera);
       if (id) {
         this.shadowRenders[id]++;
         // The light's shadow material is the scene's override during its
@@ -1729,7 +1736,7 @@ export class Viewer {
   }
 
   /** Each light's shadow-pass material, as last seen drawing its map. */
-  private readonly shadowPassMaterials = new Map<LightId, Material>();
+  private readonly shadowPassMaterials = new Map<AnyLightId, Material>();
 
   /**
    * Have the shadow passes rebuild what they draw each object with, where
@@ -1764,7 +1771,7 @@ export class Viewer {
   }
 
   /** Passes drawn since boot: GTAO, its denoise, and each light's shadow map. */
-  passCounts(): { gtao: number; denoise: number; shadows: { key: number; fill: number; rim: number } } {
+  passCounts(): { gtao: number; denoise: number; shadows: Record<AnyLightId, number> } {
     return { gtao: this.aoNode?.renders ?? 0, denoise: this.aoRttRenders, shadows: { ...this.shadowRenders } };
   }
 
@@ -2962,6 +2969,11 @@ export class Viewer {
    * figure's (Armature), the streamed frame's (the viewer, its bound
    * computed at decode), or the box the subject was fitted to.
    */
+  /** The subject's bounds as they are now (the lamps' hit test: a lamp behind them is not reached). */
+  subjectBoundsNow(): Box3 {
+    return this.liveShadowBox();
+  }
+
   private liveShadowBox(): Box3 {
     const given = this.shadowSubject?.();
     if (given && !given.isEmpty()) return given;
@@ -3211,7 +3223,7 @@ export class Viewer {
     // so a wire behind it is overdrawn as the depth test says.
     const wireMrt = (colourOut: Node): Node =>
       mrt({ output: colourOut, normal: vec4(0, 0, 0, 0), wire: vec4(materialColor, materialOpacity) }) as unknown as Node;
-    for (const m of [this.wireMaterial, this.wireLineMaterial]) {
+    for (const m of [this.wireMaterial, this.wireLineMaterial, ...this.lamps.materials]) {
       m.mrtNode = wireMrt(vec4(0, 0, 0, 0)) as unknown as typeof m.mrtNode;
       m.needsUpdate = true;
     }
@@ -3736,6 +3748,7 @@ export class Viewer {
       fast && kind === 'stroke' ? 'hold' : fast && kind === 'move' ? 'stagger' : 'all',
       this.frameNo,
     );
+    this.spotReduced = fast && kind !== null;
   }
 
   /**
@@ -3816,6 +3829,10 @@ export class Viewer {
     if (this.wireframeOn && this.sculptWires.size) this.refreshSculptWires();
     this.syncBackdropNode();
     this.followBackdropColour();
+    // The spots: placed for this render, their shadow maps drawn only if what they see changed; the lamps drawn in Present, never in a picture.
+    this.lighting.updateSpotShadows(this.frameNo, this.spotReduced && !this.capturing);
+    this.lamps.setHidden(this.capturing || this.stillsRatio !== null || this.readbackDepth > 0);
+    this.lamps.update(this.lighting);
     if (this.pipeline) this.pipeline.render();
     else this.renderer.render(this.scene, this.camera);
   }
@@ -3827,6 +3844,17 @@ export class Viewer {
    * present.
    */
   private async renderForReadback(smooth = true, samples = STILL_AA_SAMPLES): Promise<void> {
+    this.readbackDepth++;
+    try {
+      await this.renderForReadbackInner(smooth, samples);
+    } finally {
+      this.readbackDepth--;
+      // The picture is read; the next frame has the lamps back.
+      if (this.lamps.isWanted() && this.readbackDepth === 0) this.invalidate();
+    }
+  }
+
+  private async renderForReadbackInner(smooth: boolean, samples: number): Promise<void> {
     const acc = this.accumulate;
     this.refitShadows();
     // A camera moved since the last frame (directly, by code) makes a held
