@@ -1,14 +1,16 @@
 import { deviceStore } from './deviceStorage';
 import { isHexColor } from '../viewer/color';
-import type { LightId, RigLight, RigValues } from '../viewer/Lighting';
+import { SPOT_IDS, SPOT_LIMITS, type LightId, type Point3, type RigLight, type RigSpot, type RigValues, type SpotId } from '../viewer/Lighting';
 
 /**
  * The rig library: lights kept under a name, on this device (deviceStore, so
  * they follow the storage choice), and passed on as small `.bozzrig` files.
  *
  * A rig is the lights and the ambient and nothing else. The file lists its
- * lights, each with a type, so more lights and other kinds can come later;
- * today there are the key, the fill and the rim, all directional. Everything
+ * lights, each with a type: the key, the fill and the rim are directional,
+ * and up to two more are spot lights (type "spot", Spot 1 and Spot 2, with
+ * a position and an aim in centimetres from the subject's floor centre, a
+ * cone angle and a penumbra). A file without spots reads as it always did. Everything
  * read from a file is checked, each number held to the Lighting tab's slider
  * limits; a file that is not a rig, or has a value that is no number or no
  * colour, is refused with a plain sentence, never half applied.
@@ -88,20 +90,59 @@ const NO_LIGHT = (id: LightId): RigLight => ({
   softness: 5,
 });
 
+const isPoint = (v: unknown): v is Point3 => Array.isArray(v) && v.length === 3 && v.every(num);
+const holdPoint = (p: Point3): Point3 => [clamp(p[0], SPOT_LIMITS.coordinate), clamp(p[1], SPOT_LIMITS.coordinate), clamp(p[2], SPOT_LIMITS.coordinate)];
+
+/** One spot light from a file, every field present and what it says it is, or why not. */
+function readSpot(o: Record<string, unknown>): Parsed<RigSpot> {
+  if (typeof o.id !== 'string' || !SPOT_IDS.includes(o.id as SpotId)) return bad('A spot light in this file has a name this version does not know.');
+  if (typeof o.enabled !== 'boolean' || typeof o.castShadow !== 'boolean') return bad('A light in this file has a switch that is not on or off.');
+  if (!num(o.intensity) || !num(o.angle) || !num(o.penumbra) || !num(o.softness)) return bad('A light in this file has a value that is not a number.');
+  if (!isPoint(o.position) || !(o.aim === null || isPoint(o.aim))) return bad('A spot light in this file has a place that is not a point.');
+  if (!isHexColor(o.color)) return bad('A light in this file has a colour that is not a colour.');
+  return {
+    ok: true,
+    value: {
+      type: 'spot',
+      id: o.id as SpotId,
+      enabled: o.enabled,
+      intensity: clamp(o.intensity, SPOT_LIMITS.intensity),
+      color: o.color.toLowerCase(),
+      position: holdPoint(o.position),
+      aim: o.aim === null ? null : holdPoint(o.aim as Point3),
+      angle: clamp(o.angle, SPOT_LIMITS.angle),
+      penumbra: clamp(o.penumbra, SPOT_LIMITS.penumbra),
+      castShadow: o.castShadow,
+      softness: clamp(o.softness, SPOT_LIMITS.softness),
+    },
+  };
+}
+
 /** The lights and the ambient out of parsed JSON (a file's, or what the store holds). */
 export function readRig(raw: unknown): Parsed<RigValues> {
   if (!raw || typeof raw !== 'object') return bad('This file is not a rig.');
   const o = raw as Record<string, unknown>;
   if (!Array.isArray(o.lights) || o.lights.length === 0 || o.lights.length > 32) return bad('This rig has no lights.');
+  if (Array.isArray(o.spots) && o.spots.length > 8) return bad('This rig has too many lights.');
   const found = new Map<LightId, RigLight>();
-  for (const item of o.lights) {
+  const spots = new Map<SpotId, RigSpot>();
+  // A file lists its spots with the other lights; a rig kept on this device holds them under `spots`.
+  const listed = [...o.lights, ...(Array.isArray(o.spots) ? o.spots : [])];
+  for (const item of listed) {
+    if (item && typeof item === 'object' && (item as Record<string, unknown>).type === 'spot') {
+      const spot = readSpot(item as Record<string, unknown>);
+      if (!spot.ok) return spot;
+      if (spots.has(spot.value.id)) return bad('This rig names a light twice.');
+      spots.set(spot.value.id, spot.value);
+      continue;
+    }
     const light = readLight(item);
     if (!light.ok) return light;
     if (!light.value) continue;
     if (found.has(light.value.id)) return bad('This rig names a light twice.');
     found.set(light.value.id, light.value);
   }
-  if (found.size === 0) return bad('This rig has no lights this version can use.');
+  if (found.size === 0 && spots.size === 0) return bad('This rig has no lights this version can use.');
   let ambient = { intensity: 0.35, sky: '#c4d4ff', ground: '#4a3b2f' };
   if (o.ambient !== undefined) {
     const a = o.ambient as Record<string, unknown> | null;
@@ -111,12 +152,13 @@ export function readRig(raw: unknown): Parsed<RigValues> {
     ambient = { intensity: clamp(a.intensity, RIG_LIMITS.ambient), sky: a.sky.toLowerCase(), ground: a.ground.toLowerCase() };
   }
   // A light the rig does not name is off, so a rig with a key alone is a key alone.
-  return { ok: true, value: { lights: IDS.map((id) => found.get(id) ?? NO_LIGHT(id)), ambient } };
+  const spotList = SPOT_IDS.filter((id) => spots.has(id)).map((id) => spots.get(id)!);
+  return { ok: true, value: { lights: IDS.map((id) => found.get(id) ?? NO_LIGHT(id)), ...(spotList.length ? { spots: spotList } : {}), ambient } };
 }
 
 /** The text of a `.bozzrig` file. */
 export function rigFileText(name: string, rig: RigValues): string {
-  return JSON.stringify({ format: FORMAT, version: VERSION, name: cleanRigName(name), lights: rig.lights, ambient: rig.ambient }, null, 2);
+  return JSON.stringify({ format: FORMAT, version: VERSION, name: cleanRigName(name), lights: [...rig.lights, ...(rig.spots ?? [])], ambient: rig.ambient }, null, 2);
 }
 
 /** A file name for a rig: the name, kept to letters, digits and dashes. */

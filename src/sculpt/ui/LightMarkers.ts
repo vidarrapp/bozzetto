@@ -1,6 +1,6 @@
 import { Vector3 } from 'three';
 import type { Viewer } from '../../viewer/Viewer';
-import type { LightId } from '../../viewer/Lighting';
+import type { AnyLightId } from '../../viewer/Lighting';
 
 /** How long the markers stay after a light is picked. */
 export const MARKERS_AFTER_PICK_MS = 1500;
@@ -43,7 +43,7 @@ export class LightMarkers {
       /** L is held or armed. */
       moving(): boolean;
       /** The light a drag moves. */
-      picked(): LightId;
+      picked(): AnyLightId;
     },
   ) {
     this.root = document.createElement('div');
@@ -110,7 +110,7 @@ export class LightMarkers {
     return [r.left + (p.x * 0.5 + 0.5) * r.width, r.top + (-p.y * 0.5 + 0.5) * r.height];
   }
 
-  private draw(r: DOMRect, lights: ReturnType<Viewer['lighting']['state']>, picked: LightId, radius: number): void {
+  private draw(r: DOMRect, lights: ReturnType<Viewer['lighting']['state']>, picked: AnyLightId, radius: number): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
     const dpr = Math.min(2, window.devicePixelRatio || 1);

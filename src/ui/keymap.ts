@@ -141,10 +141,12 @@ export const ACTIONS: ActionDef[] = [
   { id: 'view.details', label: 'Details overlay on / off', group: 'Lighting', mode: 'both', chord: 'shift+i' },
   { id: 'view.arrange', label: 'Arrange the reference pictures (unlock / lock)', group: 'Lighting', mode: 'sculpt', chord: 'alt+r' },
   { id: 'light.move', present: true, presentLabel: 'Move the picked light (hold + drag: across / up; View > Move light does it with one drag)', label: 'Move the key light (hold + drag: across / up; View > Move light does it with one drag)', group: 'Lighting', mode: 'sculpt', chord: 'l', hold: true },
-  // Present: 1, 2 and 3 pick which light L moves (Key, Fill, Rim), where they pick tools in Sculpt.
+  // Present: 1 to 5 pick which light L moves (Key, Fill, Rim, Spot 1, Spot 2), where they pick tools in Sculpt.
   { id: 'present.light1', label: 'Pick the key light for L', group: 'Lighting', mode: 'present', chord: '1' },
   { id: 'present.light2', label: 'Pick the fill light for L', group: 'Lighting', mode: 'present', chord: '2' },
   { id: 'present.light3', label: 'Pick the rim light for L', group: 'Lighting', mode: 'present', chord: '3' },
+  { id: 'present.light4', label: 'Pick spot light 1 for L', group: 'Lighting', mode: 'present', chord: '4' },
+  { id: 'present.light5', label: 'Pick spot light 2 for L', group: 'Lighting', mode: 'present', chord: '5' },
   // The same key in the viewer and the editors' preview: one Preferences
   // change moves it in all three, as Armature's undo follows Sculpt's.
   { id: 'view.light', label: 'Move the key light (hold + drag: across / up)', group: 'Lighting', mode: 'view', chord: 'l', hold: true, sameKeyAs: 'light.move' },

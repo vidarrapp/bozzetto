@@ -2883,6 +2883,35 @@ body.bz-shell .rig-manage__name {
   }
 }
 
+/* The Lighting tab's spot lights (ui/lookPanels.ts): a section each, a Remove at the head's end, and Add spot light under them. */
+body.bz-shell .light--spot .light__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+body.bz-shell .light__note {
+  margin: 2px 0 6px;
+  color: var(--bz-text-2);
+  font: 400 12px/16px var(--bz-font);
+}
+
+body.bz-shell .spot-add {
+  margin: 8px 0 4px;
+}
+
+body.bz-shell .checkbox.is-disabled {
+  opacity: 0.5;
+}
+
+@media (pointer: coarse) {
+  body.bz-shell .light__remove,
+  body.bz-shell .spot-add {
+    min-height: 44px;
+  }
+}
+
 /* Reset look at the foot of the Render tab, under a line. */
 body.bz-shell .panel__foot {
   margin-top: 16px;

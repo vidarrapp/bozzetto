@@ -7,11 +7,15 @@ import {
   HemisphereLight,
   MathUtils,
   Matrix4,
+  type Mesh,
+  type Object3D,
   type PerspectiveCamera,
   type Plane,
   Quaternion,
   Scene,
   Sphere,
+  type SkinnedMesh,
+  SpotLight,
   Vector3,
   VSMShadowMap,
 } from 'three';
@@ -20,6 +24,42 @@ import { detectQuality, SHADOW_TIERS, type ShadowTier } from './quality';
 import { hexColor } from './color';
 
 export type LightId = 'key' | 'fill' | 'rim';
+
+/** The rig's spot lights: up to two, Spot 1 and Spot 2. */
+export type SpotId = 'spot1' | 'spot2';
+/** Any light of the rig: what Present's 1 to 5 pick and L moves. */
+export type AnyLightId = LightId | SpotId;
+export const SPOT_IDS: SpotId[] = ['spot1', 'spot2'];
+export const SPOT_LABELS: Record<SpotId, string> = { spot1: 'Spot 1', spot2: 'Spot 2' };
+
+/** A point in the scene in centimetres, from the subject's floor centre (x across, y up, z toward the front). */
+export type Point3 = [number, number, number];
+
+/**
+ * A spot light. Position and aim are in centimetres from the subject's
+ * floor centre; no aim means the subject's centre, wherever it grows to.
+ * The cone angle is the half angle, in degrees.
+ */
+export interface SpotConfig {
+  enabled: boolean;
+  intensity: number;
+  color: string;
+  position: Point3;
+  aim: Point3 | null;
+  angle: number;
+  penumbra: number;
+  castShadow: boolean;
+  softness: number;
+}
+
+/** The limits a spot's values are held to (the Lighting tab's sliders, and a rig file). */
+export const SPOT_LIMITS = {
+  angle: [5, 80],
+  penumbra: [0, 1],
+  intensity: [0, 5],
+  softness: [0, 16],
+  coordinate: [-100000, 100000],
+} as const;
 
 /** How often the fill and rim shadows redraw; see Lighting.scheduleShadows. */
 export type ShadowSchedule = 'all' | 'hold' | 'stagger';
@@ -35,6 +75,28 @@ export interface DirLightConfig {
   castShadow: boolean;
   /** Shadow penumbra blur radius (VSM). Larger = softer. */
   softness?: number;
+}
+
+/** A spot over the one it replaces: each value only when it is what it says it is, and held to its limits. */
+function mergeSpot(base: SpotConfig, saved: unknown): SpotConfig {
+  if (!saved || typeof saved !== 'object') return base;
+  const s = saved as Record<string, unknown>;
+  const clampTo = (v: number, [lo, hi]: readonly [number, number]): number => Math.min(hi, Math.max(lo, v));
+  const point = (v: unknown, fallback: Point3): Point3 => {
+    if (!Array.isArray(v) || v.length !== 3 || !v.every(finite)) return fallback;
+    return [clampTo(v[0], SPOT_LIMITS.coordinate), clampTo(v[1], SPOT_LIMITS.coordinate), clampTo(v[2], SPOT_LIMITS.coordinate)];
+  };
+  return {
+    enabled: typeof s.enabled === 'boolean' ? s.enabled : base.enabled,
+    intensity: finite(s.intensity) ? clampTo(s.intensity, SPOT_LIMITS.intensity) : base.intensity,
+    color: hexColor(s.color, base.color),
+    position: point(s.position, base.position),
+    aim: s.aim === null ? null : s.aim === undefined ? base.aim : point(s.aim, base.aim ?? [0, 0, 0]),
+    angle: finite(s.angle) ? clampTo(s.angle, SPOT_LIMITS.angle) : base.angle,
+    penumbra: finite(s.penumbra) ? clampTo(s.penumbra, SPOT_LIMITS.penumbra) : base.penumbra,
+    castShadow: typeof s.castShadow === 'boolean' ? s.castShadow : base.castShadow,
+    softness: finite(s.softness) ? clampTo(s.softness, SPOT_LIMITS.softness) : base.softness,
+  };
 }
 
 export interface AmbientConfig {
@@ -66,6 +128,16 @@ export interface LightStateView {
   canShadow: boolean;
 }
 
+/** A spot light as the Lighting tab reads it. */
+export interface SpotStateView extends SpotConfig {
+  id: SpotId;
+  label: string;
+  /** The aim as it is now, in centimetres from the floor centre (the subject's centre when none was set). */
+  aimNow: Point3;
+  /** Whether the tier gives this spot a shadow map; when not, the Casts shadow row says so. */
+  canShadow: boolean;
+}
+
 /**
  * The lighting record's version. 2: the rim's Casts shadow box is ticked by
  * default. A record without it was written while the box was unticked by
@@ -82,6 +154,8 @@ export interface LightingState {
   rim: DirLightConfig;
   ambient: AmbientConfig;
   rigRotation: number;
+  /** The spot lights, absent on a record from before there were any. */
+  spots?: Partial<Record<SpotId, SpotConfig>>;
   /**
    * Master shadow switch (shift+S, and the panel checkbox). Optional so
    * saves written before it existed still parse; without it a saved look
@@ -255,8 +329,16 @@ export interface RigLight {
   softness: number;
 }
 
+/** A spot light as a rig keeps it: a light of type 'spot', with the id of its place. */
+export interface RigSpot extends SpotConfig {
+  type: 'spot';
+  id: SpotId;
+}
+
 export interface RigValues {
   lights: RigLight[];
+  /** The spot lights, none in a rig from before there were any. */
+  spots?: RigSpot[];
   ambient: AmbientConfig;
 }
 
@@ -285,6 +367,7 @@ export function presetRig(p: LightingPreset): RigValues {
  * device quality tier so the public viewer stays performant on mobile.
  */
 export class Lighting {
+  private readonly scene: Scene;
   private readonly rig = new Group();
   private readonly key = new DirectionalLight();
   private readonly fill = new DirectionalLight();
@@ -312,6 +395,7 @@ export class Lighting {
     scene: Scene,
     private readonly renderer: WebGPURenderer,
   ) {
+    this.scene = scene;
     this.tier = SHADOW_TIERS[detectQuality()];
     this.sizes = { key: this.tier.key, fill: this.tier.fill, rim: this.tier.rim };
     // Soft, variance-based (VSM) shadows — the renderer's only shadow filter.
@@ -338,6 +422,283 @@ export class Lighting {
     scene.add(this.rig, this.hemi);
 
     this.applyPreset(preset.id);
+  }
+
+  // --- spot lights ------------------------------------------------------------
+  // Up to two, added from the Lighting tab. Each is a three SpotLight in the
+  // scene (not in the rig group, whose turn is about the origin: the Rotate rig
+  // turn is applied about the subject's floor centre instead, and the view's
+  // own turn, which the other lights ride, is not applied), made when the
+  // spot is added and taken out, shadow and all, when it is removed. The
+  // shadow goes through the same tier, softness, bias and blur samples as
+  // the directional lights', with the map redrawn only when something it
+  // sees changed (updateSpotShadows).
+
+  private readonly spotConf: Record<SpotId, SpotConfig | null> = { spot1: null, spot2: null };
+  private readonly spotLights: Record<SpotId, SpotLight | null> = { spot1: null, spot2: null };
+  /** What each spot's map was last drawn for; null before its first draw. */
+  private readonly spotDrawn: Record<SpotId, string | null> = { spot1: null, spot2: null };
+  private readonly spotFloor = new Vector3();
+  private readonly spotQuat = new Quaternion();
+  private readonly hashF = new Float32Array(1);
+  private readonly hashI = new Int32Array(this.hashF.buffer);
+
+  /** The subject's floor centre in the world: where spot positions and aims are measured from. */
+  private floorCentre(out: Vector3): Vector3 {
+    out.copy(this.aimCenter);
+    out.y = this.subjectBox.isEmpty() ? 0 : this.subjectBox.min.y;
+    return out;
+  }
+
+  /** The subject's height (its bounds), or its radius's double before there are any. */
+  private subjectHeight(): number {
+    return this.subjectBox.isEmpty() ? this.subjectRadius * 2 : Math.max(this.subjectBox.max.y - this.subjectBox.min.y, 1e-3);
+  }
+
+  /** How many spots there are. */
+  spotCount(): number {
+    return SPOT_IDS.filter((id) => this.spotConf[id]).length;
+  }
+
+  canAddSpot(): boolean {
+    return this.spotCount() < SPOT_IDS.length;
+  }
+
+  /** A new spot's values: above and in front of the subject at twice its height away, aimed at its centre; a second one a sixth of the way round. */
+  private newSpot(index: number): SpotConfig {
+    const d = 2 * this.subjectHeight();
+    const el = MathUtils.degToRad(45);
+    const az = MathUtils.degToRad(index === 0 ? 0 : 60);
+    const centre = this.spotCentre();
+    const position: Point3 = [d * Math.cos(el) * Math.sin(az), centre[1] + d * Math.sin(el), d * Math.cos(el) * Math.cos(az)];
+    return { enabled: true, intensity: 3, color: '#fff3e6', position, aim: null, angle: 30, penumbra: 0.3, castShadow: true, softness: DEFAULT_SOFTNESS };
+  }
+
+  /** Add a spot in the first free place; null when there are two already. */
+  addSpot(): SpotId | null {
+    const id = SPOT_IDS.find((i) => !this.spotConf[i]);
+    if (!id) return null;
+    this.spotConf[id] = this.newSpot(SPOT_IDS.indexOf(id));
+    this.refresh();
+    return id;
+  }
+
+  /** Take a spot out: its light and its shadow go with it, and no pass is drawn for it again. */
+  removeSpot(id: SpotId): void {
+    if (!this.spotConf[id]) return;
+    this.spotConf[id] = null;
+    this.refresh();
+  }
+
+  /** The spots a rig or a record names, each held to its limits; any it does not name are taken out. Call refresh after. */
+  private setSpots(list: ReadonlyArray<Partial<SpotConfig> & { id: SpotId }> | undefined): void {
+    for (const id of SPOT_IDS) {
+      const saved = list?.find((sp) => sp.id === id);
+      this.spotConf[id] = saved ? mergeSpot(this.newSpot(SPOT_IDS.indexOf(id)), saved) : null;
+    }
+  }
+
+  hasSpot(id: SpotId): boolean {
+    return !!this.spotConf[id];
+  }
+
+  /** Change a spot's values (each held to its limits); the rest stay. */
+  setSpot(id: SpotId, patch: Partial<SpotConfig>): void {
+    const c = this.spotConf[id];
+    if (!c) return;
+    this.spotConf[id] = mergeSpot(c, patch);
+    this.refresh();
+  }
+
+  spotState(): SpotStateView[] {
+    const out: SpotStateView[] = [];
+    for (const id of SPOT_IDS) {
+      const c = this.spotConf[id];
+      if (!c) continue;
+      out.push({ ...c, position: [...c.position], aim: c.aim ? [...c.aim] : null, id, label: SPOT_LABELS[id], aimNow: c.aim ? [...c.aim] : this.spotCentre(), canShadow: this.tier.spot > 0 });
+    }
+    return out;
+  }
+
+  /** Where a spot is and what it aims at (world, the rig's turn included), and its half angle in radians: what the drawn lamp is made from. */
+  spotPlacement(id: SpotId, pos: Vector3, aim: Vector3): { angle: number; enabled: boolean } | null {
+    const c = this.spotConf[id];
+    const light = this.spotLights[id];
+    if (!c || !light) return null;
+    pos.copy(light.position);
+    aim.copy(light.target.position);
+    return { angle: light.angle, enabled: c.enabled };
+  }
+
+  /** The subject's floor centre in the world, for the tests to turn a world point into a spot's own. */
+  subjectFloorForTests(): Vector3 {
+    return this.floorCentre(new Vector3());
+  }
+
+  /** Swing a spot around its aim at its distance, and raise or lower it, by degrees: hold-L in Present. The aim stays. */
+  private nudgeSpot(id: SpotId, deltaAzimuth: number, deltaElevation: number): void {
+    const c = this.spotConf[id];
+    if (!c) return;
+    const aim = c.aim ?? this.spotCentre();
+    const x = c.position[0] - aim[0];
+    const y = c.position[1] - aim[1];
+    const z = c.position[2] - aim[2];
+    const r = Math.hypot(x, y, z);
+    if (r < 1e-6) return;
+    const az = MathUtils.radToDeg(Math.atan2(x, z)) + deltaAzimuth;
+    const el = Math.max(-20, Math.min(90, MathUtils.radToDeg(Math.asin(y / r)) + deltaElevation));
+    const a = MathUtils.degToRad(az);
+    const e = MathUtils.degToRad(el);
+    this.spotConf[id] = { ...c, position: [aim[0] + r * Math.cos(e) * Math.sin(a), aim[1] + r * Math.sin(e), aim[2] + r * Math.cos(e) * Math.cos(a)] };
+    this.refresh();
+  }
+
+  /** The subject's centre, in centimetres from its floor centre. */
+  private spotCentre(): Point3 {
+    return [0, this.aimCenter.y - (this.subjectBox.isEmpty() ? 0 : this.subjectBox.min.y), 0];
+  }
+
+  /** Make the lights for the spots there are, take out those that are gone, and set each from its values. */
+  private placeSpots(): void {
+    const fc = this.floorCentre(this.spotFloor);
+    for (const id of SPOT_IDS) {
+      const c = this.spotConf[id];
+      let light = this.spotLights[id];
+      if (!c) {
+        if (light) {
+          this.scene.remove(light, light.target);
+          light.dispose();
+          this.spotLights[id] = null;
+          this.spotDrawn[id] = null;
+        }
+        continue;
+      }
+      if (!light) {
+        light = new SpotLight();
+        light.decay = 0;
+        light.distance = 0;
+        light.shadow.autoUpdate = false;
+        this.scene.add(light, light.target);
+        this.spotLights[id] = light;
+        this.spotDrawn[id] = null;
+      }
+      // The rig slider's turn, about the subject: the view's own turn (Sculpt's and Present's lights ride the view) is not, so a spot stays where it is as the view turns.
+      const q = this.spotQuat.setFromAxisAngle(UP_AXIS, MathUtils.degToRad(this.rigRotationDeg));
+      light.position.set(c.position[0], c.position[1], c.position[2]).applyQuaternion(q).add(fc);
+      const aim = c.aim ?? this.spotCentre();
+      light.target.position.set(aim[0], aim[1], aim[2]).applyQuaternion(q).add(fc);
+      light.target.updateMatrixWorld();
+      light.updateMatrixWorld();
+      light.intensity = c.intensity;
+      light.color = new Color(c.color);
+      light.angle = MathUtils.degToRad(c.angle);
+      light.penumbra = c.penumbra;
+      light.visible = c.enabled;
+      const wants = this.tier.spot > 0 && c.castShadow && c.enabled && this.shadowsMaster;
+      if (light.castShadow !== wants) {
+        light.castShadow = wants;
+        this.spotDrawn[id] = null;
+      }
+      if (wants) this.fitSpotShadow(light, c);
+    }
+  }
+
+  /** A spot's shadow camera, map, blur and bias, as the directional lights' are set (applyBlur), for its cone and distance. */
+  private fitSpotShadow(light: SpotLight, c: SpotConfig): void {
+    const shadow = light.shadow;
+    const size = Math.max(1, Math.round(Math.min(this.tier.spot, this.maxMap()) * this.mapScale));
+    if (shadow.mapSize.x !== size) shadow.mapSize.set(size, size);
+    const reach = Math.max(light.position.distanceTo(light.target.position), 1e-3);
+    const r = this.subjectRadius;
+    shadow.camera.near = Math.max(reach - 2.5 * r, reach * 0.05);
+    shadow.camera.far = reach + 4 * r;
+    shadow.focus = 1;
+    const ref = this.softnessRef();
+    const width = 2 * reach * Math.tan(light.angle);
+    shadow.radius = width > 0 ? (c.softness * this.mapScale * ref) / width : c.softness;
+    shadow.blurSamples = this.blurSamplesFor(shadow.radius);
+    const range = shadow.camera.far - shadow.camera.near;
+    shadow.bias = range > 0 ? (this.userBias * ref) / range : this.userBias;
+    shadow.normalBias = this.normalBiasShare * r;
+  }
+
+  private mix(h: number, x: number): number {
+    this.hashF[0] = x;
+    return Math.imul(h ^ this.hashI[0], 16777619) >>> 0;
+  }
+
+  /** What the shadow casters in view amount to: their geometry's versions and ranges, their matrices, which are shown. Not the camera. */
+  private castersHash(): number {
+    let h = 2166136261;
+    this.scene.updateMatrixWorld();
+    this.scene.traverseVisible((o: Object3D) => {
+      const m = o as Mesh;
+      if (!m.isMesh || !m.castShadow) return;
+      const g = m.geometry;
+      h = this.mix(h, m.id);
+      h = this.mix(h, g.id);
+      const pos = g.attributes.position;
+      if (pos) {
+        h = this.mix(h, (pos as { version?: number }).version ?? 0);
+        h = this.mix(h, pos.count);
+      }
+      if (g.index) {
+        h = this.mix(h, g.index.version);
+        h = this.mix(h, g.index.count);
+      }
+      h = this.mix(h, g.drawRange.start);
+      h = this.mix(h, g.drawRange.count);
+      const e = m.matrixWorld.elements;
+      for (let i = 0; i < 16; i++) h = this.mix(h, e[i]);
+      const skeleton = (m as SkinnedMesh).skeleton;
+      if (skeleton) {
+        for (const bone of skeleton.bones) {
+          const b = bone.matrixWorld.elements;
+          for (let i = 0; i < 16; i++) h = this.mix(h, b[i]);
+        }
+      }
+    });
+    return h;
+  }
+
+  /**
+   * Once per render: put the spots where the Rotate rig turn and the subject now
+   * have them, and draw each spot's shadow map only when what it sees has
+   * changed, as a fill's and a rim's are held (scheduleShadows): the model's
+   * geometry or matrix, the spot's own place, aim, cone or softness, the
+   * subject's visibility. The camera is not part of it, so a turntable of
+   * the view draws no spot shadow. `reduced` (a stroke or a move under Fast
+   * frames) lets a changed map wait for every other frame; it is drawn
+   * when it comes. A map is drawn through its own needsUpdate flag, which
+   * builds and allocates nothing.
+   */
+  updateSpotShadows(frame: number, reduced: boolean): void {
+    if (this.spotCount() === 0 && !this.spotLights.spot1 && !this.spotLights.spot2) return;
+    this.placeSpots();
+    let casters: number | null = null;
+    for (let i = 0; i < SPOT_IDS.length; i++) {
+      const id = SPOT_IDS[i];
+      const light = this.spotLights[id];
+      if (!light || !light.castShadow) continue;
+      casters ??= this.castersHash();
+      const sh = light.shadow;
+      const parts = [
+        light.position.x, light.position.y, light.position.z, light.target.position.x, light.target.position.y, light.target.position.z,
+        light.angle, sh.mapSize.x, sh.radius, sh.blurSamples, sh.bias, sh.normalBias, sh.camera.near, sh.camera.far, casters,
+      ];
+      const sig = parts.join(',');
+      if (sig === this.spotDrawn[id]) continue;
+      if (reduced && frame % 2 !== i) continue;
+      sh.needsUpdate = true;
+      this.spotDrawn[id] = sig;
+    }
+  }
+
+  /** Which of the rig's lights a shadow camera is the camera of, for counting the passes drawn. */
+  shadowIdOf(camera: object): AnyLightId | undefined {
+    for (const id of ALL) if (this.lights[id].shadow.camera === camera) return id;
+    for (const id of SPOT_IDS) if (this.spotLights[id]?.shadow.camera === camera) return id;
+    return undefined;
   }
 
   presets(): { id: string; label: string }[] {
@@ -368,6 +729,19 @@ export class Lighting {
           near(a.elevation, b.elevation)));
     const of = (id: LightId): RigLight | undefined => rig.lights.find((l) => l.id === id);
     if (!same(this.config.key, of('key')) || !same(this.config.fill, of('fill')) || !same(this.config.rim, of('rim'))) return false;
+    for (const id of SPOT_IDS) {
+      const mine = this.spotConf[id];
+      const theirs = rig.spots?.find((sp) => sp.id === id);
+      if (!mine || !theirs) {
+        if (mine || theirs) return false;
+        continue;
+      }
+      const pt = (a: Point3, b: Point3): boolean => near(a[0], b[0]) && near(a[1], b[1]) && near(a[2], b[2]);
+      if (mine.enabled !== theirs.enabled) return false;
+      if (!mine.enabled) continue;
+      const aimed = mine.aim && theirs.aim ? pt(mine.aim, theirs.aim) : mine.aim === theirs.aim;
+      if (!near(mine.intensity, theirs.intensity) || mine.color.toLowerCase() !== theirs.color.toLowerCase() || !pt(mine.position, theirs.position) || !aimed || !near(mine.angle, theirs.angle) || !near(mine.penumbra, theirs.penumbra)) return false;
+    }
     const hemi = this.hemi;
     return (
       near(hemi.intensity, rig.ambient.intensity) &&
@@ -392,8 +766,14 @@ export class Lighting {
         softness: c.softness ?? DEFAULT_SOFTNESS,
       };
     };
+    const spots: RigSpot[] = [];
+    for (const id of SPOT_IDS) {
+      const c = this.spotConf[id];
+      if (c) spots.push({ ...c, position: [...c.position], aim: c.aim ? [...c.aim] : null, type: 'spot', id });
+    }
     return {
       lights: ALL.map(light),
+      ...(spots.length ? { spots } : {}),
       ambient: {
         intensity: this.hemi.intensity,
         sky: `#${this.hemi.color.getHexString()}`,
@@ -409,6 +789,7 @@ export class Lighting {
       this.config[l.id] = { enabled: l.enabled, intensity: l.intensity, color: l.color, azimuth: l.azimuth, elevation: l.elevation, castShadow: l.castShadow, softness: l.softness };
     }
     if (this.keyOnlyShadows) this.config.fill.castShadow = this.config.rim.castShadow = false;
+    this.setSpots(rig.spots);
     this.hemi.intensity = rig.ambient.intensity;
     this.hemi.color = new Color(rig.ambient.sky);
     this.hemi.groundColor = new Color(rig.ambient.ground);
@@ -421,6 +802,7 @@ export class Lighting {
     this.config.fill = { ...preset.fill };
     this.config.rim = { ...preset.rim };
     if (this.keyOnlyShadows) this.config.fill.castShadow = this.config.rim.castShadow = false;
+    this.setSpots(undefined);
     this.hemi.intensity = preset.ambient.intensity;
     this.hemi.color = new Color(preset.ambient.sky);
     this.hemi.groundColor = new Color(preset.ambient.ground);
@@ -460,7 +842,11 @@ export class Lighting {
   }
 
   /** nudgeKey for any light (Present's hold-L moves the one picked with 1, 2 and 3). */
-  nudge(id: LightId, deltaAzimuth: number, deltaElevation: number): void {
+  nudge(id: AnyLightId, deltaAzimuth: number, deltaElevation: number): void {
+    if (id === 'spot1' || id === 'spot2') {
+      this.nudgeSpot(id, deltaAzimuth, deltaElevation);
+      return;
+    }
     const light = this.config[id];
     let az = (light.azimuth + deltaAzimuth) % 360;
     if (az > 180) az -= 360;
@@ -687,6 +1073,7 @@ export class Lighting {
         ground: `#${this.hemi.groundColor.getHexString()}`,
       },
       rigRotation: this.rigRotationDeg,
+      ...(this.spotCount() ? { spots: Object.fromEntries(SPOT_IDS.filter((id) => this.spotConf[id]).map((id) => [id, { ...this.spotConf[id]! }])) } : {}),
       shadowsMaster: this.shadowsMaster,
     };
   }
@@ -711,6 +1098,8 @@ export class Lighting {
       if (ambient.sky) this.hemi.color = new Color(hexColor(ambient.sky, sky));
       if (ambient.ground) this.hemi.groundColor = new Color(hexColor(ambient.ground, ground));
     }
+    const saved = state.spots && typeof state.spots === 'object' ? state.spots : {};
+    this.setSpots(SPOT_IDS.filter((id) => saved[id] && typeof saved[id] === 'object').map((id) => ({ ...(saved[id] as SpotConfig), id })));
     if (finite(state.rigRotation)) this.setRigRotation(state.rigRotation);
     if (typeof state.shadowsMaster === 'boolean') this.shadowsMaster = state.shadowsMaster;
     this.refresh();
@@ -1140,6 +1529,7 @@ export class Lighting {
     // Softness and map sizes set the smallest fit: the next one starts fresh.
     this.fitDirty = true;
     for (const id of ALL) this.apply(id, this.aimCenter);
+    this.placeSpots();
     this.onChange?.();
   }
 

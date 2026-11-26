@@ -108,8 +108,10 @@ export interface InputShellHooks {
   toggleArrangeReferences(): void;
   /** l + drag: move the key light (in Present, the light 1, 2 or 3 picked) by azimuth/elevation degree deltas. */
   moveKeyLight(deltaAzimuth: number, deltaElevation: number): void;
-  /** Present: 1, 2 and 3 pick which light L moves (0 key, 1 fill, 2 rim). */
+  /** Present: 1 to 5 pick which light L moves (0 key, 1 fill, 2 rim, 3 and 4 the spots). */
   pickLight(index: number): void;
+  /** Present: a press at this point (client pixels) is on a spot light's drawn lamp; true picks that light for the drag. */
+  lampAt(x: number, y: number): boolean;
   /** Arrow keys: turntable step around the subject (degrees). */
   orbitY(deltaDeg: number): void;
   /**
@@ -479,6 +481,10 @@ export class InputShell {
    */
   private lightArmed = false;
   private lightPointer = -1;
+  /** The pointer dragging a spot light's lamp in Present, and where it was last. */
+  private lampPointer = -1;
+  private lampX = 0;
+  private lampY = 0;
   /** Where the light drag measures from: set by the press (or the first move after L went down), NaN until then. */
   private lightFromX = NaN;
   private lightFromY = NaN;
@@ -1855,6 +1861,16 @@ export class InputShell {
    * the model does.
    */
   private presentPress(e: PointerEvent): void {
+    // A press on a spot light's lamp drags that light (the same swing as hold-L), whatever the pointer.
+    if (!this.lKeyHeld && this.lampPointer === -1 && this.hooks.lampAt(e.clientX, e.clientY)) {
+      this.lampPointer = e.pointerId;
+      this.lampX = e.clientX;
+      this.lampY = e.clientY;
+      this.verdict?.(`lamp drag ${e.pointerType}`);
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (e.pointerType === 'touch') {
       this.touchesDown.add(e.pointerId);
       this.fingerDown(e);
@@ -1873,6 +1889,14 @@ export class InputShell {
   private readonly onPointerMove = (e: PointerEvent): void => {
     if (this.held) return;
     if (e.pointerType === 'pen') this.lastPenAt = performance.now();
+    if (this.lampPointer === e.pointerId) {
+      this.hooks.moveKeyLight((e.clientX - this.lampX) * KEY_DRAG_DEG_PER_PX, -(e.clientY - this.lampY) * KEY_DRAG_DEG_PER_PX);
+      this.lampX = e.clientX;
+      this.lampY = e.clientY;
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (this.measureDrag?.pointerId === e.pointerId) {
       this.measureTool.move(e.clientX, e.clientY);
       this.cursor.hide();
@@ -2059,6 +2083,12 @@ export class InputShell {
   private readonly onPointerUp = (e: PointerEvent): void => {
     if (this.held) return;
     if (e.pointerType === 'pen') this.lastPenAt = performance.now();
+    if (this.lampPointer === e.pointerId) {
+      this.lampPointer = -1;
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     // Our own cancel, on its way to OrbitControls (the pen took over).
     if (this.handingToOrbit) return;
     const s = this.session;
@@ -2751,6 +2781,8 @@ export class InputShell {
       case 'present.light1':
       case 'present.light2':
       case 'present.light3':
+      case 'present.light4':
+      case 'present.light5':
         this.hooks.pickLight(Number(action.id.slice(-1)) - 1);
         return this.claim(e);
       case 'light.move':

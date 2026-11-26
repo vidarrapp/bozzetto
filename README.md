@@ -179,6 +179,11 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### v0.7.32
+
+- **Spot lights.** The Lighting tab has **Add spot light**, for up to two spots beside the key, fill and rim. Each has a position, an aim, a cone angle and a penumbra from a hard edge to a soft one, and casts a shadow with the same softness as the other lights. They are kept in a rig and in the look.
+- **Spot lights are drawn in Present.** A small lamp and the outline of its cone show where each spot is and what it points at, hidden where the model is in front and never in a saved picture, a turntable or a thumbnail. **4** and **5** pick Spot 1 and Spot 2 for **L**, and a drag on the lamp moves the spot.
+
 ### v0.7.31
 
 - **Hold Shift while orbiting to snap the view.** The view turns to the nearest straight view (Front, Back, Left, Right, Top or Bottom) and stays there, moving to the next as you turn past halfway. A small label names the view while you drag, and letting go of Shift turns freely again from where the view is. It works with the mouse, the Pencil and a finger, in every workspace.

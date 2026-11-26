@@ -30,7 +30,7 @@ async function go(page, to, name) {
 }
 
 /** What the keys of Present are by default: the keys that did something there before, and the light keys. */
-const PRESENT_DEFAULT_KEYS = ['Space', 'Shift+1', 'Shift+2', 'Shift+3', 'Shift+4', 'Ctrl+S', 'Tab', 'Esc', 'H', 'P', 'Shift+P', 'Ctrl+,', 'F', 'A', '←', '→', 'Shift+S', 'Shift+W', 'L', '1', '2', '3'];
+const PRESENT_DEFAULT_KEYS = ['Space', 'Shift+1', 'Shift+2', 'Shift+3', 'Shift+4', 'Ctrl+S', 'Tab', 'Esc', 'H', 'P', 'Shift+P', 'Ctrl+,', 'F', 'A', '←', '→', 'Shift+S', 'Shift+W', 'L', '1', '2', '3', '4', '5'];
 
 export const suites = {
   async guidePerWorkspace(page, base, t) {
@@ -76,7 +76,7 @@ export const suites = {
     t.eq([...keys].sort().join(' '), [...PRESENT_DEFAULT_KEYS].sort().join(' '), `it lists the keys that work in Present and no others (${keys.join(' ')})`);
     t.ok(fromSculpt.rows.some((r) => /^Drag: Orbit/.test(r)) && fromSculpt.rows.some((r) => /^Scroll \/ pinch: Zoom/.test(r)), 'with the navigation gestures');
     t.ok(fromSculpt.rows.includes('Space: Turntable: start and stop') && fromSculpt.rows.some((r) => r.startsWith('L: Move the picked light')), 'Space is the turntable and L moves the picked light there');
-    t.ok(['1: Pick the key light for L', '2: Pick the fill light for L', '3: Pick the rim light for L'].every((r) => fromSculpt.rows.includes(r)), '1, 2 and 3 pick the lights there');
+    t.ok(['1: Pick the key light for L', '2: Pick the fill light for L', '3: Pick the rim light for L', '4: Pick spot light 1 for L', '5: Pick spot light 2 for L'].every((r) => fromSculpt.rows.includes(r)), '1 to 5 pick the lights there');
     t.ok(!fromSculpt.rows.some((r) => /Tool bar|Brush|Mask|Undo|gizmo/i.test(r)), 'and no tool, brush, mask, undo or gizmo row');
 
     // --- a rebind shows ----------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { type Viewer, type LookState, type GroundMode, type ToneMappingId } from '../viewer/Viewer';
-import { PRESETS, presetRig, type LightId, type RigValues } from '../viewer/Lighting';
+import { PRESETS, presetRig, SPOT_LIMITS, type Lighting, type LightId, type Point3, type RigValues, type SpotId, type SpotStateView } from '../viewer/Lighting';
 import { div, labelRow, selectEl } from './dom';
 import { colorPicker, type ColorPickerHandle } from './ColorPicker';
 import { installSwatchPick } from './swatchPick';
@@ -119,7 +119,7 @@ interface Shared {
   openedLook: LookState;
   bgPicker?: ColorPickerHandle;
   stagePicker?: ColorPickerHandle;
-  lightPickers: Map<LightId, ColorPickerHandle>;
+  lightPickers: Map<LightId | SpotId, ColorPickerHandle>;
 }
 
 abstract class LookPanel extends SidePanel {
@@ -534,6 +534,121 @@ class LightingPanel extends LookPanel {
         }
       }
       this.lightControls.appendChild(box);
+    }
+    this.buildSpots(this.lightControls, pickers);
+  }
+
+  // --- spot lights ---------------------------------------------------------------
+
+  /** Under the three lights: each spot as a section of its own, and "Add spot light" while there is room for one. */
+  private buildSpots(into: HTMLElement, pickers: Map<LightId | SpotId, ColorPickerHandle>): void {
+    const lighting = this.viewer.lighting;
+    const patch = (id: SpotId, p: Parameters<typeof lighting.setSpot>[1]): void => {
+      lighting.setSpot(id, p);
+      this.syncRig();
+    };
+    for (const spot of lighting.spotState()) {
+      const box = div('light light--spot');
+      box.dataset.light = spot.id;
+      const head = div('light__head');
+      head.appendChild(
+        checkbox(spot.label, spot.enabled, (on) => {
+          patch(spot.id, { enabled: on });
+          this.rebuildLightControls();
+        }),
+      );
+      const remove = button('Remove', () => {
+        pickers.get(spot.id)?.dispose();
+        pickers.delete(spot.id);
+        lighting.removeSpot(spot.id);
+        this.rebuildLightControls();
+      });
+      remove.className = 'btn btn--small light__remove';
+      remove.dataset.role = 'spot-remove';
+      remove.setAttribute('aria-label', `Remove ${spot.label}`);
+      head.appendChild(remove);
+      box.appendChild(head);
+      if (!spot.enabled) {
+        pickers.get(spot.id)?.close();
+      } else {
+        this.spotRows(box, spot, pickers, patch);
+      }
+      into.appendChild(box);
+    }
+    if (lighting.canAddSpot()) {
+      const add = button('Add spot light', () => {
+        const id = lighting.addSpot();
+        if (id) this.rebuildLightControls();
+      });
+      add.className = 'btn btn--small spot-add';
+      add.dataset.role = 'spot-add';
+      into.appendChild(add);
+    }
+  }
+
+  private spotRows(
+    box: HTMLElement,
+    spot: SpotStateView,
+    pickers: Map<LightId | SpotId, ColorPickerHandle>,
+    patch: (id: SpotId, p: Parameters<Lighting['setSpot']>[1]) => void,
+  ): void {
+    const id = spot.id;
+    box.appendChild(compactRange('Intensity', 0, SPOT_LIMITS.intensity[1], 0.1, spot.intensity, (v) => patch(id, { intensity: v }), { limits: AMOUNT }));
+    let picker = pickers.get(id);
+    if (!picker) {
+      const setColor = (hex: string): void => patch(id, { color: hex });
+      picker = colorPicker(spot.color, setColor);
+      installSwatchPick(picker, this.viewer, setColor);
+      pickers.set(id, picker);
+    } else if (!picker.isOpen()) {
+      picker.set(spot.color);
+    }
+    box.appendChild(labelRow('Colour', picker.root));
+    // Position and aim: centimetres from the subject's floor centre. The sliders travel a few metres; a number typed goes further.
+    const axes = ['X', 'Y', 'Z'] as const;
+    const place = (which: 'position' | 'aim', title: string): void => {
+      axes.forEach((axis, i) => {
+        const current = (): Point3 => {
+          const now = this.viewer.lighting.spotState().find((sp) => sp.id === id);
+          return [...((which === 'position' ? now?.position : now?.aimNow) ?? [0, 0, 0])] as Point3;
+        };
+        box.appendChild(
+          compactRange(`${title} ${axis}`, -400, 400, 1, spot[which === 'position' ? 'position' : 'aimNow'][i], (v) => {
+            const p = current();
+            p[i] = v;
+            patch(id, which === 'position' ? { position: p } : { aim: p });
+          }, { unit: 'cm', limits: { min: SPOT_LIMITS.coordinate[0], max: SPOT_LIMITS.coordinate[1] } }),
+        );
+      });
+    };
+    place('position', 'Position');
+    place('aim', 'Aim');
+    box.appendChild(
+      compactRange('Cone angle', SPOT_LIMITS.angle[0], SPOT_LIMITS.angle[1], 1, spot.angle, (v) => patch(id, { angle: v }), {
+        unit: '°',
+        limits: { min: SPOT_LIMITS.angle[0], max: SPOT_LIMITS.angle[1] },
+      }),
+    );
+    box.appendChild(compactRange('Penumbra', 0, 1, 0.01, spot.penumbra, (v) => patch(id, { penumbra: v }), { limits: FRACTION }));
+    if (spot.canShadow) {
+      box.appendChild(
+        checkbox('Casts shadow', spot.castShadow, (on) => {
+          patch(id, { castShadow: on });
+          this.rebuildLightControls();
+        }),
+      );
+      if (spot.castShadow) {
+        box.appendChild(compactRange('Softness', 0, 16, 0.5, spot.softness, (v) => patch(id, { softness: v }), { limits: AMOUNT }));
+      }
+    } else {
+      // The tier gives no map to a spot: it lights without a shadow, and the row says why.
+      const note = checkbox('Casts shadow', false, () => undefined);
+      note.querySelector('input')!.disabled = true;
+      note.classList.add('is-disabled');
+      box.appendChild(note);
+      const why = div('light__note');
+      why.textContent = 'This device draws no spot light shadows.';
+      box.appendChild(why);
     }
   }
 

@@ -17,6 +17,8 @@ export interface ShadowTier {
    * enough to keep the samples about two texels apart, up to this.
    */
   maxBlurSamples: number;
+  /** A spot light's shadow map (0: a spot lights without a shadow on this tier). */
+  spot: number;
   /** GTAO sample count (AO quality vs cost). */
   aoSamples: number;
   /** GTAO render-target scale (1 = full-res; <1 trims AO cost on weaker GPUs). */
@@ -31,9 +33,9 @@ export interface ShadowTier {
 // blurSamples up to maxBlurSamples, so they stay about two texels apart. Every tier gives the rim a map, so its shadow (on by default)
 // keeps it from lighting the far side through the model; low's is small.
 export const SHADOW_TIERS: Record<Quality, ShadowTier> = {
-  high: { key: 2048, fill: 1024, rim: 1024, blurSamples: 12, maxBlurSamples: 32, aoSamples: 16, aoResolutionScale: 1 },
-  medium: { key: 2048, fill: 1024, rim: 1024, blurSamples: 8, maxBlurSamples: 24, aoSamples: 8, aoResolutionScale: 1 },
-  low: { key: 1024, fill: 0, rim: 512, blurSamples: 4, maxBlurSamples: 12, aoSamples: 8, aoResolutionScale: 0.5 },
+  high: { key: 2048, fill: 1024, rim: 1024, spot: 1024, blurSamples: 12, maxBlurSamples: 32, aoSamples: 16, aoResolutionScale: 1 },
+  medium: { key: 2048, fill: 1024, rim: 1024, spot: 1024, blurSamples: 8, maxBlurSamples: 24, aoSamples: 8, aoResolutionScale: 1 },
+  low: { key: 1024, fill: 0, rim: 512, spot: 0, blurSamples: 4, maxBlurSamples: 12, aoSamples: 8, aoResolutionScale: 0.5 },
 };
 
 /** The tier the page's `?q=` asks for, if it names one. */
