@@ -146,6 +146,7 @@
 
 ## Later
 
+- `armatureAddress` fails now and then under load on the project case (the default mannequin instead of the project's), and passes alone; seen in the 0.7.14 and 0.7.29 passes. Not reproduced on its own; the likely cause is the test's replace question or mock route timing out. Check the question and the routes first if it recurs.
 - After Remesh to a figure, the mannequin stays away after a reload because the armature record is marked and an object named "Figure" is in the scene (0.7.29). Renaming that object would bring the mannequin back beside it; a firmer tie (the figure's own id) belongs with the scene format on the Rust core.
 - GitHub Actions minutes are used up for November (Vidar, 2026-11-25); CI runs again from 1 December. Until then each release is checked locally with the same steps CI runs (typecheck, function checks, both builds, the CI's e2e suites) plus the suites the change touches, before `main` moves.
 - Import your own matcap into a scene (2026-11-25, Vidar): the picker would get an Import option; the picture has to be kept with the scene and carried by a published project.
