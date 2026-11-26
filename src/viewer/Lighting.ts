@@ -12,6 +12,7 @@ import {
   Quaternion,
   Scene,
   Sphere,
+  SpotLight,
   Vector3,
   VSMShadowMap,
 } from 'three';
@@ -285,6 +286,7 @@ export function presetRig(p: LightingPreset): RigValues {
  * device quality tier so the public viewer stays performant on mobile.
  */
 export class Lighting {
+  private readonly scene: Scene;
   private readonly rig = new Group();
   private readonly key = new DirectionalLight();
   private readonly fill = new DirectionalLight();
@@ -312,6 +314,7 @@ export class Lighting {
     scene: Scene,
     private readonly renderer: WebGPURenderer,
   ) {
+    this.scene = scene;
     this.tier = SHADOW_TIERS[detectQuality()];
     this.sizes = { key: this.tier.key, fill: this.tier.fill, rim: this.tier.rim };
     // Soft, variance-based (VSM) shadows — the renderer's only shadow filter.
@@ -338,6 +341,49 @@ export class Lighting {
     scene.add(this.rig, this.hemi);
 
     this.applyPreset(preset.id);
+  }
+
+  /** TRIAL (spotlights, step 1): one spot light beside the rig, through the key's shadow settings. */
+  private trial: SpotLight | null = null;
+  trialSpot(o: { on: boolean; angle?: number; penumbra?: number; softness?: number; shadow?: boolean; dist?: number; decay?: number }): void {
+    if (!o.on) {
+      if (this.trial) {
+        this.scene.remove(this.trial, this.trial.target);
+        this.trial.dispose();
+        this.trial = null;
+        this.onChange?.();
+      }
+      return;
+    }
+    const s = (this.trial ??= new SpotLight());
+    if (!s.parent) this.scene.add(s, s.target);
+    const c = this.aimCenter;
+    const r = this.subjectRadius;
+    const d = (o.dist ?? 4) * r;
+    const angle = MathUtils.degToRad(o.angle ?? 20);
+    s.color.set('#fff3e6');
+    s.angle = angle;
+    s.penumbra = o.penumbra ?? 0.3;
+    s.decay = o.decay ?? 0;
+    s.distance = 0;
+    s.intensity = s.decay === 0 ? this.config.key.intensity : this.config.key.intensity * d * d * 4;
+    s.position.set(c.x, c.y + d * 0.8, c.z + d * 0.6);
+    s.target.position.copy(c);
+    s.target.updateMatrixWorld();
+    s.castShadow = o.shadow !== false && this.shadowsMaster;
+    const sh = s.shadow;
+    const size = this.sizes.key;
+    sh.mapSize.set(size, size);
+    sh.camera.near = Math.max(d * 0.1, 0.01);
+    sh.camera.far = d + r * 4;
+    sh.focus = 1;
+    const width = 2 * d * Math.tan(angle);
+    sh.radius = ((o.softness ?? DEFAULT_SOFTNESS) * this.softnessRef()) / width;
+    sh.blurSamples = this.blurSamplesFor(sh.radius);
+    const range = sh.camera.far - sh.camera.near;
+    sh.bias = range > 0 ? (this.userBias * this.softnessRef()) / range : this.userBias;
+    sh.normalBias = this.normalBiasShare * r;
+    this.onChange?.();
   }
 
   presets(): { id: string; label: string }[] {
