@@ -49,6 +49,8 @@ export interface ManifestCamera {
   target?: number[];
   /** Lens focal length in 35mm-equivalent mm (drives the perspective). */
   focalLength?: number;
+  /** Absent is perspective; orthographic stands in as a very long lens from far away. */
+  projection?: 'orthographic';
   /** Depth-of-field: on/off, aperture (f-stop), and focus across the subject. */
   dof?: {
     enabled: boolean;

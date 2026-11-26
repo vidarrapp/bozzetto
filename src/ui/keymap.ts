@@ -105,6 +105,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'gesture.zoom', label: 'Zoom', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Scroll / pinch' },
   { id: 'view.frame', present: true, label: 'Frame the model', group: 'Navigation', mode: 'both', chord: 'f' },
   { id: 'view.frameAll', present: true, label: 'Frame the whole scene', group: 'Navigation', mode: 'both', chord: 'a' },
+  { id: 'view.projection', present: true, label: 'Perspective / orthographic', group: 'Navigation', mode: 'both', chord: 'p' },
   { id: 'view.turnLeft', present: true, label: 'Turntable left (accelerates with the wheel)', group: 'Navigation', mode: 'sculpt', chord: 'arrowleft', repeat: true },
   { id: 'view.turnRight', present: true, label: 'Turntable right', group: 'Navigation', mode: 'sculpt', chord: 'arrowright', repeat: true },
   // Present's navigation, with no stroke to be had: a finger orbits anywhere.
@@ -207,7 +208,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'file.save', present: true, label: 'Save', group: 'Interface', mode: 'sculpt', chord: 'ctrl+s' },
   { id: 'arm.save', label: 'Save', group: 'Interface', mode: 'armature', chord: 'ctrl+s', sameKeyAs: 'file.save' },
   { id: 'ui.help', present: true, label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
-  { id: 'ui.fps', present: true, label: 'Frame meter', group: 'Interface', mode: 'both', chord: 'p' },
+  { id: 'ui.fps', present: true, label: 'Frame meter', group: 'Interface', mode: 'both', chord: 'shift+p' },
   { id: 'ui.preferences', present: true, label: 'Preferences (fingers, hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },
 ];
 

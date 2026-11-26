@@ -2829,7 +2829,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         const ratio = stillRatio(viewer);
         return { w: Math.floor(w * ratio), h: Math.floor(h * ratio) };
       },
-      lens: () => (presenting ? viewer.getFocalLength() : null),
+      lens: () => (presenting ? (viewer.isOrthographic() ? 'orthographic' : viewer.getFocalLength()) : null),
     },
     isPaint: () => paintOn,
     frameModel,

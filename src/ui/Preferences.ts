@@ -140,7 +140,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
   const meter = toggleRow(
     'meter',
     'Frame meter',
-    "Frame rate, where each frame's time goes (CPU, GPU and the display's budget) and which side is short. P shows and hides it.",
+    "Frame rate, where each frame's time goes (CPU, GPU and the display's budget) and which side is short. Shift+P shows and hides it.",
   );
   const stallLog = toggleRow(
     'stallLog',
