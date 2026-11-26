@@ -176,6 +176,10 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **The Weight slider follows your finger at lower subdivision levels too.** It no longer waits for you to pause: the level on screen moves with every drag, a close approximation, and the exact result lands when you let go. The first drag on a layer at a dense level waits a moment while it works out the layer's effect.
+
 ### v0.7.23
 
 - **A layer's Weight slider shows its effect as you drag it.** The surface follows the slider while you hold it, for a layer and for a group. When a lower subdivision level is showing, it follows when you pause for a moment and again when you let go; on a very dense object it waits for the release after the first pause.

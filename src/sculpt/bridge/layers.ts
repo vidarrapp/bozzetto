@@ -192,25 +192,57 @@ interface Snap {
   eff: Map<SculptLayer, Eff>;
 }
 
+/**
+ * What one unit of a layer's (or group's) weight does to the level on screen, per vertex: the level's positions
+ * are linear in the weight, so a drag from a lower level scales this instead of updating every level.
+ */
+interface Effect {
+  mesh: SculptMesh;
+  layer: SculptLayer;
+  /** What it was taken against: anything that differs later makes it stale. */
+  key: unknown[];
+  levels: number;
+  sel: number;
+  n: number;
+  /** Per vertex (x3). */
+  d: Float32Array;
+  /** The vertices it moves, and the faces around them (null: nearly all, update the whole level). */
+  ids: Uint32Array;
+  faces: Uint32Array | null;
+}
+
+/** A drag's preview on the level on screen: where it stood at weight `wb`, and the effect scaled from there. */
+interface Preview {
+  wb: number;
+  base: Float32Array;
+  sel: number;
+  n: number;
+  fx: Effect | null;
+  /** One real update has been made: the level has settled (a level that was sculpted on moves once, by itself, on its first). */
+  settled: boolean;
+  dirty: boolean;
+}
+
 interface Drag {
   mesh: SculptMesh;
   layer: SculptLayer;
   before: Snap;
   shown: Map<SculptLayer, Eff>;
-  /** A lower-level update took too long to repeat while the slider is held: the rest of this drag shows on the release. */
-  slow?: boolean;
+  /** The weight the surface shows (the last real update's). */
+  shownW: number;
+  pv: Preview | null;
 }
 
-/** How long a weight slider is still before a lower level shows it. */
-const STILL_MS = 120;
-/** A lower-level update slower than this stalls the slider: one is enough for a drag. */
-const SLOW_MS = 250;
+/** A first real update from a lower level is taken for the effect once the weight is this far from the shown one. */
+const FX_STEP = 0.05;
 
 export class SculptLayers {
   private readonly per = new WeakMap<SculptMesh, PerMesh>();
+  /** The last effect taken for a weight preview (one: another layer's weight or any edit makes it stale). */
+  private fx: Effect | null = null;
+  /** Counts what is written into a layer's delta, so an effect taken before a stroke is not used after it. */
+  private writes = 0;
   /** A weight drag in progress: where it began, so the release is one undo step. */
-  /** The timer of a weight update from a lower level, waiting for the slider to be still. */
-  private still = 0;
   private drag: Drag | null = null;
 
   /** Anything about the layers changed (list, active, weight, an undo): the panel and the autosave follow. */
@@ -338,6 +370,8 @@ export class SculptLayers {
   sync(mesh: SculptMesh | null): void {
     const p = mesh ? this.per.get(mesh) : undefined;
     if (!mesh || !p || !p.active) return;
+    // A weight preview on the level on screen is not a stroke (the autosave syncs mid-drag): put the level back first.
+    if (this.drag && this.drag.mesh === mesh) this.unfollow(mesh, this.drag);
     if (!p.ref) {
       this.arm(mesh);
       return;
@@ -398,6 +432,7 @@ export class SculptLayers {
         }
         const inv = 1 / (w * f);
         if (!d) d = layer.delta = new Float32Array(n * 3);
+        this.writes++;
         d[i] += dx * inv;
         d[i + 1] += dy * inv;
         d[i + 2] += dz * inv;
@@ -575,6 +610,7 @@ export class SculptLayers {
    * their effect staying on the surface (flatten).
    */
   private run(mesh: SculptMesh, mutate: (p: PerMesh) => void, keep: SculptLayer[] = []): boolean {
+    this.fx = null;
     const p = this.per.get(mesh);
     if (!p) return false;
     this.sync(mesh);
@@ -690,9 +726,9 @@ export class SculptLayers {
   /**
    * Set a layer's or a group's weight (1 is 100%). `live` while a slider is
    * dragged: shown at once where the highest level is on screen; from a lower
-   * level (an update costs a second or more at a million triangles) when the
-   * slider has been still for STILL_MS, and on the release. The release (`commit`) is one undo step for the whole drag. A
-   * group's weight multiplies its layers'.
+   * level the level on screen follows by scaling the layer's effect on it
+   * (`follow`). The release (`commit`) does the real update and is one undo
+   * step for the whole drag. A group's weight multiplies its layers'.
    */
   setWeight(mesh: SculptMesh, layer: SculptLayer, weight: number, phase: 'live' | 'commit'): void {
     if (!Number.isFinite(weight)) return;
@@ -702,28 +738,22 @@ export class SculptLayers {
     if (!this.drag || this.drag.layer !== layer) {
       this.sync(mesh); // what was sculpted so far is the active layer's, at the weight it had
       const before = this.snapshot(p);
-      this.drag = { mesh, layer, before, shown: before.eff };
+      this.drag = { mesh, layer, before, shown: before.eff, shownW: layer.weight, pv: null };
     }
+    const d = this.drag;
     layer.weight = w;
-    if (this.still) clearTimeout(this.still);
-    this.still = 0;
     const st = stackOf(mesh);
     if (phase === 'live' && st && st._sel !== st._meshes.length - 1) {
-      const d = this.drag;
-      if (d.slow) return;
-      this.still = window.setTimeout(() => {
-        this.still = 0;
-        if (this.drag !== d) return;
-        const t0 = performance.now();
-        this.show(mesh, p, d);
-        if (performance.now() - t0 > SLOW_MS) d.slow = true;
-      }, STILL_MS);
+      this.follow(mesh, p, d, w);
       return;
     }
-    this.show(mesh, p, this.drag);
+    this.unfollow(mesh, d);
+    this.show(mesh, p, d);
     if (phase === 'live') return;
-    const from = this.drag.before;
+    const from = d.before;
     this.drag = null;
+    // Another layer's weight changes what this effect is made of (a group's is its layers').
+    if (this.fx && this.fx.layer !== layer) this.fx = null;
     const was = from.props.find((x) => x.l === layer);
     if (was && was.weight === w) return;
     this.pushPair(mesh, p, from, this.snapshot(p));
@@ -735,7 +765,124 @@ export class SculptLayers {
     const now = this.effs(p);
     this.transition(mesh, d.shown, now);
     d.shown = now;
+    d.shownW = d.layer.weight;
     this.settle(p);
+  }
+
+  /** What a cached effect must still match: every layer's data and state, but the target's weight. */
+  private keyOf(p: PerMesh, layer: SculptLayer): unknown[] {
+    const out: unknown[] = [this.writes];
+    for (const l of p.list) out.push(l, l.delta, l.mask, l.maskOn, l.visible, l.parent, l === layer ? 0 : l.weight);
+    return out;
+  }
+
+  private fits(fx: Effect, mesh: SculptMesh, p: PerMesh, layer: SculptLayer, st: Stack): boolean {
+    if (fx.mesh !== mesh || fx.layer !== layer || fx.sel !== st._sel || fx.levels !== st._meshes.length || fx.n !== mesh.getNbVertices()) return false;
+    const key = this.keyOf(p, layer);
+    return key.length === fx.key.length && key.every((x, i) => x === fx.key[i]);
+  }
+
+  /**
+   * A lower level on screen while a weight slider is dragged: the level's
+   * positions are linear in the weight, so each move writes
+   * base + (w - wb) * effect into the level on screen alone (no other level,
+   * no undo, no layer state). The effect comes from the cache of an earlier
+   * drag, else from ONE real update at the first value that is FX_STEP away
+   * from where the drag began, then a second one FX_STEP further on (the first settles the level): effect = (after - before) / (w - wb). The
+   * release puts the level back (`unfollow`) and does the real update.
+   */
+  private follow(mesh: SculptMesh, p: PerMesh, d: Drag, w: number): void {
+    const st = stackOf(mesh);
+    if (!st) return;
+    const n = mesh.getNbVertices();
+    if (d.pv && (d.pv.sel !== st._sel || d.pv.n !== n)) this.unfollow(mesh, d);
+    let pv = d.pv;
+    if (!pv) {
+      pv = d.pv = { wb: d.shownW, base: new Float32Array(mesh.getVertices().subarray(0, n * 3)), sel: st._sel, n, fx: null, settled: false, dirty: false };
+      if (this.fx && this.fits(this.fx, mesh, p, d.layer, st)) pv.fx = this.fx;
+    }
+    if (!pv.fx) {
+      if (Math.abs(w - pv.wb) < FX_STEP) return;
+      this.show(mesh, p, d);
+      const v = mesh.getVertices();
+      if (!pv.settled) {
+        // A level sculpted on moves a little on its first real update (analysis after synthesis), whatever the weight:
+        // the effect is taken between two real updates, so that this does not go into it.
+        pv.settled = true;
+        pv.base.set(v.subarray(0, n * 3));
+        pv.wb = d.shownW;
+        return;
+      }
+      const k = 1 / (d.shownW - pv.wb);
+      const fx = new Float32Array(n * 3);
+      let count = 0;
+      for (let i = 0; i < n * 3; i += 3) {
+        const x = (v[i] - pv.base[i]) * k;
+        const y = (v[i + 1] - pv.base[i + 1]) * k;
+        const z = (v[i + 2] - pv.base[i + 2]) * k;
+        fx[i] = x;
+        fx[i + 1] = y;
+        fx[i + 2] = z;
+        if (x !== 0 || y !== 0 || z !== 0) count++;
+      }
+      const ids = new Uint32Array(count);
+      let c = 0;
+      for (let i = 0; i < n; i++) if (fx[i * 3] !== 0 || fx[i * 3 + 1] !== 0 || fx[i * 3 + 2] !== 0) ids[c++] = i;
+      const effect: Effect = {
+        mesh,
+        layer: d.layer,
+        key: this.keyOf(p, d.layer),
+        levels: st._meshes.length,
+        sel: st._sel,
+        n,
+        d: fx,
+        ids,
+        faces: count > n * 0.3 ? null : mesh.getFacesFromVertices(ids),
+      };
+      this.fx = pv.fx = effect;
+      // The real update is what the level shows now: the next scaling starts from it.
+      pv.base.set(v.subarray(0, n * 3));
+      pv.wb = d.shownW;
+      return;
+    }
+    const fx = pv.fx;
+    if (!fx.ids.length) return;
+    const v = mesh.getVertices();
+    const k = w - pv.wb;
+    const { ids, d: e } = fx;
+    for (let a = 0; a < ids.length; a++) {
+      const j = ids[a] * 3;
+      v[j] = pv.base[j] + k * e[j];
+      v[j + 1] = pv.base[j + 1] + k * e[j + 1];
+      v[j + 2] = pv.base[j + 2] + k * e[j + 2];
+    }
+    this.refresh(mesh, fx);
+    pv.dirty = true;
+  }
+
+  private refresh(mesh: SculptMesh, fx: Effect): void {
+    if (fx.faces) mesh.updateGeometry(fx.faces, fx.ids);
+    else mesh.updateGeometry();
+    mesh.updateGeometryBuffers();
+    this.host.render();
+  }
+
+  /** The level on screen goes back to what the real code expects before the real update: the preview leaves no trace. */
+  private unfollow(mesh: SculptMesh, d: Drag): void {
+    const pv = d.pv;
+    d.pv = null;
+    if (!pv || !pv.dirty || !pv.fx) return;
+    const st = stackOf(mesh);
+    if (!st || st._sel !== pv.sel || mesh.getNbVertices() !== pv.n) return;
+    const v = mesh.getVertices();
+    const { ids } = pv.fx;
+    for (let a = 0; a < ids.length; a++) {
+      const j = ids[a] * 3;
+      v[j] = pv.base[j];
+      v[j + 1] = pv.base[j + 1];
+      v[j + 2] = pv.base[j + 2];
+    }
+    this.refresh(mesh, pv.fx);
   }
 
   /** Show or hide a layer or a group: its weight is kept, its effect leaves the surface or comes back. */
