@@ -4,6 +4,7 @@ import type { SculptSession } from '../bridge/SculptSession';
 import type { MeasureTool } from '../bridge/measureTool';
 import { lengthText, toWorld, type Measure, type Vec3 } from '../bridge/measure';
 import { onTap } from '../../ui/dom';
+import { drawGuide } from './GuideLayer';
 
 /** One measurement's line, as drawn: its end points on the page and its label. */
 interface Drawn {
@@ -29,11 +30,14 @@ const HALO = 'rgba(0, 0, 0, 0.35)';
  * Pinned measurements show while their object does; the one being made
  * shows with a Pin button on its label. All of it is interface: Tab and
  * Present hide it (style.css), as they hide the panels.
+ *
+ * The proportion guide is drawn here too (GuideLayer.ts): the same canvas
+ * and the same boxes, so it is out of every capture the same way.
  */
 export class MeasureOverlay {
   private readonly root: HTMLDivElement;
   private readonly canvas: HTMLCanvasElement;
-  private readonly labels = new Map<string, HTMLDivElement>();
+  private readonly labels = new Map<string, HTMLElement>();
   private seen = '';
 
   constructor(
@@ -75,7 +79,9 @@ export class MeasureOverlay {
     this.session.measure.settleArmature();
     const items = this.items();
     for (const mesh of new Set(items.map((i) => i.mesh))) if (mesh) this.session.measure.settle(mesh);
-    if (!items.length) {
+    const guide = this.session.guide;
+    const guideBox = guide.on && this.session.getUnits() ? guide.bounds() : null;
+    if (!items.length && !guideBox) {
       if (this.seen !== '') this.clear();
       return;
     }
@@ -88,6 +94,8 @@ export class MeasureOverlay {
       this.tool.dragging() ?? '',
       this.inHand() ? 1 : 0,
       this.session.measure.selected?.id ?? 0,
+      guide.version,
+      guideBox ? guideBox.min.join('/') + guideBox.max.join('/') : '',
       ...cam.matrixWorld.elements,
       ...cam.projectionMatrix.elements,
     ];
@@ -98,7 +106,7 @@ export class MeasureOverlay {
     const sig = parts.join(',');
     if (sig === this.seen) return;
     this.seen = sig;
-    this.draw(items);
+    this.draw(items, !!guideBox);
   }
 
   private clear(): void {
@@ -109,7 +117,7 @@ export class MeasureOverlay {
     this.labels.clear();
   }
 
-  private draw(items: Array<{ mesh: SculptMesh | null; m: Measure; working: boolean }>): void {
+  private draw(items: Array<{ mesh: SculptMesh | null; m: Measure; working: boolean }>, guideOn: boolean): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -155,14 +163,39 @@ export class MeasureOverlay {
         if (mb) this.dot(ctx, mb, color, false, true);
       }
     }
+    // For the tests: what is drawn.
+    this.root.dataset.lines = String(live.size);
+    if (guideOn) {
+      const cam = this.viewer.camera.matrixWorld.elements;
+      const n = Math.hypot(cam[0], cam[2]);
+      drawGuide(this.session.guide, {
+        ctx,
+        width: w,
+        height: h,
+        screenOf: (p) => this.tool.screenOf(p),
+        right: () => (n > 1e-3 ? [cam[0] / n, cam[2] / n] : [1, 0]),
+        box: (key, tag, className) => {
+          live.add(key);
+          let el = this.labels.get(key);
+          if (!el) {
+            el = document.createElement(tag);
+            el.className = className;
+            this.root.appendChild(el);
+            this.labels.set(key, el);
+          }
+          return el;
+        },
+        orange: this.orange(),
+        halo: HALO,
+        grey: PINNED,
+      });
+    }
     for (const [key, el] of this.labels) {
       if (!live.has(key)) {
         el.remove();
         this.labels.delete(key);
       }
     }
-    // For the tests: what is drawn.
-    this.root.dataset.lines = String(live.size);
   }
 
   /** The interface's orange (a picked caliper, an end in hand). */

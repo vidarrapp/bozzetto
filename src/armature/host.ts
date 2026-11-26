@@ -26,6 +26,8 @@ export interface ArmatureHost {
   mannequinSurface(): { albedo: string; roughness: number; metalness: number };
   /** The mannequin's name, eye or material changed in a way the page's panels show (the Scene row, the Material tab). */
   changed(): void;
+  /** The proportion guide's switch, for the View menu (it stands beside the mannequin here). */
+  proportionGuide: { get(): boolean; toggle(): void };
   /** Whether a figure has been made from the mannequin (it then shows only in Armature). */
   figureMade(): boolean;
   /** The Resolution both Remesh to a figure controls (the Armature tab's and the Model tab's) read and write. */

@@ -703,6 +703,40 @@ Tool, with Material before it.
   trash. A mirrored one shows a line under it with the other length and
   the difference. A delete is an undo step (Edit > Undo), as a pin, a
   rename and the eye are.
+- **Proportion guide** (built 0.7.25; `src/sculpt/bridge/guide.ts` for its
+  state, `ui/GuideLayer.ts` for its drawing on the calipers' canvas). The
+  top of the Measure section, and View > Proportion guide in Sculpt and
+  Armature. The section: the switch "Proportion guide"; with it on, Canon (a
+  select: 7½ heads, 8 heads, 8½ heads, Custom, and for Custom a Heads
+  slider, 3 to 12), Head height (a slider with typed entry, in centimetres,
+  0 meaning none yet), the buttons Pick head (Cancel pick while it runs) and,
+  for the mannequin only, From the head, the switch Landmarks, and a quiet
+  line when the head height is missing or there is nothing to measure. In a
+  scene without real units the block is left out and the section's Set
+  scale line stands instead. The guide is on the interface's canvas, in the
+  grey of the calipers' pinned lines: a line from the subject's bottom to
+  its top, a short foot across its bottom, "180 cm" in the mono face at the
+  top with "8 heads" quieter beside it, and a numbered tick to the left of
+  the line for each head counted from the top (the last at the floor when
+  the heads come out even). It stands on the floor at the subject's side
+  that the camera's right-hand side points to, a gap of 8% of its height
+  off the subject's box, so it turns with the view and always reads. The
+  canon's target line is a short dashed line across it, fainter, at head
+  height times the canon's count, with that count beside it as a button.
+  Landmarks (chin 1, nipples 2, navel 3, crotch half the canon, knees two
+  heads above the floor, counted in heads from the top) are short ticks to
+  the right, each a 44px hit area; its name shows on hover and stays once
+  tapped, a second tap lets go. Orange only for the tick that was tapped.
+  Pick head puts the Calipers tool in hand: the Tool panel asks "Tap the
+  crown of the head", then "Tap the chin", and the head height is the
+  height between the two points (rounded to 0.1 cm); leaving the tool
+  gives it up. The subject is the active object, or the mannequin in
+  Armature, with its Scene row selected, or when it is the only thing in
+  the scene and shown; its height is its exact box, read again when its
+  pose, proportions, matrix or bounds change (not during a stroke). Tab and
+  Present hide it, no capture or picture holds it, and it is kept with the
+  scene record (`guide`: on, head height, canon, the Custom count,
+  landmarks).
 - **Calipers in the Scene panel.** A group "Calipers" under the object
   rows (and under Cameras when that group exists), shown only with a
   pinned caliper: a small mono heading, then a row each. A row is the

@@ -110,6 +110,11 @@ for it.
 
 ### Proportion guide
 
+**Built (0.7.25).** The canons and the landmarks are as decided on 2026-11-17;
+the subject is the active object, or the mannequin (see docs/ui-spec.md,
+"Proportion guide"). Not built: ticks driven by the armature's own joints
+(still under Later).
+
 A guide drawn in the view beside the active object, in **View > Proportion
 guide** and in a **Measure** section of the Model panel:
 

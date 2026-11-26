@@ -59,6 +59,10 @@ export interface ArmatureSlot {
   setSurface(patch: Partial<{ albedo: string; roughness: number; metalness: number }>): void;
   /** The mannequin's mesh while it is drawn outside Armature (no figure yet), for a press that may land on it; null otherwise. */
   mannequin(): Mesh | null;
+  /** What the proportion guide stands beside while the mannequin is the subject; null before the load. */
+  guideSubject(): ReturnType<ArmatureMount['guideSubject']> | null;
+  /** The mannequin's head part's height, in centimetres (the guide's From the head); null without one. */
+  headHeight(): number | null;
   /** The posed mannequin's parts, for the calipers; null before the load. */
   frames(): BoneFrames | null;
   /** The part of the shown mannequin a ray lands on (calipers), or null. */
@@ -156,6 +160,8 @@ export function armatureWorkspace(page: ArmaturePage): ArmatureSlot {
     mannequin: () => mount?.outside() ?? null,
     shadowBox: (out) => mount?.shadowBox(out) ?? false,
     frames: () => mount?.frames() ?? null,
+    guideSubject: () => mount?.guideSubject() ?? null,
+    headHeight: () => mount?.headHeight() ?? null,
     partHit: (ray) => (mount?.outside() ? mount.partHit(ray) : null),
     figureChanged: () => {
       if (!mount) return;

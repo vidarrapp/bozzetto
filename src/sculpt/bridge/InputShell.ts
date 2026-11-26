@@ -1054,6 +1054,8 @@ export class InputShell {
     this.session.measure.clearWorking();
     this.syncCursorBrush();
     this.onMeasureModeChange?.(false);
+    // Pick head is two taps of this tool: leaving it gives that up.
+    this.session.guide.cancelPick();
   }
 
   toggleMeasure(): void {

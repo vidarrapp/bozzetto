@@ -93,6 +93,8 @@ export class MeasureTool {
    */
   begin(x: number, y: number, touch: boolean): 'drag' | 'miss' {
     if (!this.available()) return 'miss';
+    // Pick head (the proportion guide): the taps give heights, not a measurement.
+    if (this.session.guide.picking) return this.pickHead(x, y) ? 'drag' : 'miss';
     const store = this.session.measure;
     const end = this.endAt(x, y, touch);
     if (end) {
@@ -125,6 +127,17 @@ export class MeasureTool {
       this.drag = 'a';
     }
     return 'drag';
+  }
+
+  /** A tap of Pick head: the nearer of the object and the mannequin under it gives the point. */
+  private pickHead(x: number, y: number): boolean {
+    const [dx, dy] = this.device(x, y);
+    const found = this.session.surfaceHitAt(dx, dy);
+    const man = this.mannequin?.hit(x, y) ?? null;
+    const world = man && !(found && this.fromEye(found.world) <= man.distance) ? man.world : (found?.world ?? null);
+    if (!world) return false;
+    this.session.guide.pickPoint(world);
+    return true;
   }
 
   private fromEye(p: Vec3): number {

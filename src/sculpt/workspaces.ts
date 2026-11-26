@@ -204,6 +204,7 @@ export function sculptWorkspaces(p: SculptPage): Workspace[] {
         },
       },
       groupColors: { get: () => session.groups.isShowing(), toggle: () => p.setGroupColors(!session.groups.isShowing()) },
+      proportionGuide: id === 'sculpt' ? { get: () => session.guide.on, toggle: () => session.guide.setOn(!session.guide.on) } : undefined,
       referenceShow: { get: () => view.isShown(), toggle: () => view.setShown(!view.isShown()) },
       referenceArrange: { get: () => board.isArranging(), toggle: () => board.setArranging(!board.isArranging()), key: true },
       toolKeys: true,

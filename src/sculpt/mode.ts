@@ -1514,6 +1514,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     syncHighlights();
   };
   session.measure.onPersist = () => persist.markDirty();
+  // The proportion guide: kept with the scene; Pick head puts the Calipers tool in hand for its two taps.
+  session.guide.onPersist = () => persist.markDirty();
+  session.guide.onPickChange = (on) => {
+    if (on) input.enterMeasure();
+    else input.exitMeasure();
+  };
   measureOverlay = new MeasureOverlay(viewer, session, input.measureTool, () => input.isMeasuring());
   lightMarkers = new LightMarkers(viewer, { presenting: () => presenting, moving: () => input.isMovingLight(), picked: () => presentLight });
   chrome.onChange = studio.chromeChanged;
@@ -1944,7 +1950,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   scenePanel.onSolo = (on) => setSolo(on);
   // The Model panel's Merge (under Remesh) is the Edit menu's, and greys
   // out with it until two objects are selected.
-  scenePanel.onRefresh = () => modelPanel?.setMergeEnabled(!!scenePanel?.canMerge());
+  scenePanel.onRefresh = () => {
+    modelPanel?.setMergeEnabled(!!scenePanel?.canMerge());
+    modelPanel?.refreshGuide();
+  };
   sculptPanel = new SculptPanel(session, input, viewer);
   // The Asset library's Tools tab reads the tool bar (the tool in hand, the dock), and the Tool panel's heading opens it.
   studio.library.register(
@@ -2486,6 +2495,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
     figureMade,
     figure: figureSettings,
+    proportionGuide: { get: () => session.guide.on, toggle: () => session.guide.setOn(!session.guide.on) },
     leaveForGallery: () => leaveForGallery(),
   };
   /** Which workspace the address names: a reload opens the page on the one it was in. */
@@ -2550,6 +2560,45 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   });
   /** The mannequin stands in the scene: Armature is loaded and no figure has been made from it. */
   const mannequinStands = (): boolean => !!armatureSlot?.present() && !figureMade();
+  // The proportion guide stands beside the active object, or the mannequin: in Armature, with its row selected,
+  // or alone in the scene (shown, outside Armature).
+  const guideMannequin = (): boolean =>
+    !!armatureSlot &&
+    mannequinStands() &&
+    (inArmatureWorkspace || armatureSlot.mannequin() !== null) &&
+    (inArmatureWorkspace || armatureSelected || session.getMeshes().length === 0);
+  {
+    const ids = new WeakMap<object, number>();
+    let seq = 0;
+    let kept: { mesh: SculptMesh; key: string } | null = null;
+    session.guide.subject = () => {
+      if (guideMannequin()) {
+        const s = armatureSlot!.guideSubject();
+        return s ? { mannequin: true, key: `m:${s.key}`, box: s.box } : null;
+      }
+      const mesh = session.getMesh();
+      if (!mesh || !mesh.isVisible()) return null;
+      let id = ids.get(mesh);
+      if (id === undefined) ids.set(mesh, (id = ++seq));
+      // A stroke is not read: its box is taken once it has ended.
+      let key = kept && kept.mesh === mesh && session._action !== Enums.Action.NOTHING ? kept.key : '';
+      if (!key) {
+        const m = mesh.getMatrix();
+        const b = mesh.computeWorldBound();
+        key = `o:${id}:${Array.from(m, (v) => v.toFixed(3)).join()}:${Array.from(b, (v) => v.toFixed(3)).join()}`;
+        kept = { mesh, key };
+      }
+      return {
+        mannequin: false,
+        key,
+        box: () => {
+          const b = exactWorldBox(mesh);
+          return { min: b.min.toArray() as [number, number, number], max: b.max.toArray() as [number, number, number] };
+        },
+      };
+    };
+    modelPanel!.guideSubject = { mannequin: guideMannequin, headHeight: () => armatureSlot?.headHeight() ?? null };
+  }
   // The calipers on the mannequin: their ends are in its parts' frames, and a press of the tool can land on it.
   session.measure.frames = () => (armatureSlot?.present() ? (figureMade() ? 'gone' : armatureSlot.frames()) : null);
   {
@@ -2801,6 +2850,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     lightMarkers?.dispose();
     lightMarkers = null;
     session.measure.onPersist = null;
+    session.guide.onPersist = null;
+    session.guide.onPickChange = null;
+    session.guide.subject = null;
     input.onMeasureModeChange = null;
     viewer.tapToFocus = true;
     viewer.onTick = null;
