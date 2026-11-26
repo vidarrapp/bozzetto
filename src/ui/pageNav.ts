@@ -13,7 +13,7 @@ import { chooseObj, startArmature, startSculpt } from './startWork';
  * The one main menu of the pages (docs/ui-spec.md, section 5b): the title
  * strip the workspaces have, with the same height, look and behaviour.
  *
- * At the left File (New sculpt, New armature, Import OBJ…, what the gallery's
+ * At the left File (New scene, New armature, Import model…, what the gallery's
  * Create card offers), View (Gallery, Community, My projects, Review with its
  * count, Owner tools: each only for whoever may see it, the page one is on
  * checked) and Help (the same three items as everywhere). In the middle the
@@ -76,9 +76,9 @@ export function pageNav(current: PageId | null, name: string): PageNav {
   const file = new TopMenu(
     'File',
     [
-      { label: 'New sculpt', action: () => startSculpt() },
+      { label: 'New scene', action: () => startSculpt() },
       { label: 'New armature', action: () => startArmature() },
-      { label: 'Import OBJ…', action: () => chooseObj() },
+      { label: 'Import model…', action: () => chooseObj() },
     ],
     'file-menu--file',
     strip.menus,

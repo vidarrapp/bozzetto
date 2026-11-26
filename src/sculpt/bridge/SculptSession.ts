@@ -56,6 +56,7 @@ import { CM_PER_M, UNITS, type Units } from '../../viewer/units';
 import { bakeScale, transformLocal } from './bakeScale';
 import { sceneOnCentimetres } from './sceneUnits';
 import type { ParsedObjPolygons } from '../../admin/glb';
+import type { ModelFormat } from './modelImport';
 import {
   bakedBase,
   buildFromObj,
@@ -1349,7 +1350,20 @@ export class SculptSession {
     // Lazily: a static sculpt-chunk -> admin-chunk import gave the bundle a
     // circular init order ("cannot access before initialization" at boot).
     const { parseObjPolygons } = await import('../../admin/glb');
-    const parsed = parseObjPolygons(text);
+    return this.importParsed(parseObjPolygons(text), zUp, name);
+  }
+
+  /**
+   * A model file of any format Import model reads (bridge/modelImport) as
+   * a new scene object, placed as importOBJ places an OBJ. A file that
+   * cannot be read throws, saying why, with the scene as it was.
+   */
+  async importModel(format: ModelFormat, data: ArrayBuffer, zUp: boolean, name: string): Promise<ImportFit> {
+    const { parseModel } = await import('./modelImport');
+    return this.importParsed(await parseModel(format, data), zUp, name);
+  }
+
+  private importParsed(parsed: ParsedObjPolygons, zUp: boolean, name: string): ImportFit {
     const largest = largestSide(parsed.positions);
     const keep = !!this.units && largest >= IMPORT_KEEP.min && largest <= IMPORT_KEEP.max;
     const mesh = this.addParsedOBJ(parsed, zUp, name, keep ? null : { size: IMPORT_SIZE, along: 'largest' });

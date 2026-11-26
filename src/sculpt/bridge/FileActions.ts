@@ -16,6 +16,7 @@ import {
   type LibraryEntry,
 } from './SceneLibrary';
 import { uploadScene } from './SceneProjects';
+import type { ModelFormat } from './modelImport';
 import { libraryProjects, uploadFailure, type UploadFailure } from '../../admin/api';
 
 /** What a save says in an empty scene (owner call, 2026-11-01: saving refuses rather than write a scene with nothing in it). */
@@ -484,7 +485,15 @@ export class FileActions {
    * null when it was.
    */
   async importObj(text: string, zUp: boolean, name: string): Promise<string | null> {
-    const { fitted, largest } = await this.session.importOBJ(text, zUp, name);
+    return this.fitNote(await this.session.importOBJ(text, zUp, name), name);
+  }
+
+  /** Import model: any format modelImport reads, as importObj does an OBJ. */
+  async importModel(format: ModelFormat, data: ArrayBuffer, zUp: boolean, name: string): Promise<string | null> {
+    return this.fitNote(await this.session.importModel(format, data, zUp, name), name);
+  }
+
+  private fitNote({ fitted, largest }: { fitted: boolean; largest: number }, name: string): string | null {
     if (!fitted || !this.session.getUnits()) return null;
     return `"${name}" is ${formatLength(largest)} across read as centimetres, outside 1 cm to 10 m, so it was fitted to ${formatLength(IMPORT_SIZE)}.`;
   }

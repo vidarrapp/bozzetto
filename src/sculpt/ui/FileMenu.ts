@@ -11,6 +11,7 @@ import { DEVICE_ONLY_NOTE } from '../../ui/deviceOnly';
 import { signInAgain, signInButton } from '../../ui/signIn';
 import { mayStore } from '../../ui/deviceStorage';
 import { askText, askWindow, tellWindow } from '../../ui/askWindow';
+import { MODEL_ACCEPT, modelFormat, modelUsesZUp } from '../bridge/modelImport';
 
 /** What a disabled device action says while the person has turned saving off. */
 const SAVING_OFF = 'Saving is off. Turn it on in Edit > Preferences.';
@@ -70,7 +71,7 @@ export class FileMenu {
   ) {
     // Hidden inputs are how a web page asks for a file.
     this.openInput = fileInput('.bozz', (file) => void this.openFile(file));
-    this.importInput = fileInput('.obj', (file) => void this.importFile(file));
+    this.importInput = fileInput(MODEL_ACCEPT, (file) => void this.importFile(file));
     // They stand outside the list, which the shell rebuilds.
     document.body.append(this.openInput, this.importInput);
   }
@@ -86,12 +87,12 @@ export class FileMenu {
     return fileMenuItems({
       start: [
         {
-          label: 'New sculpt',
+          label: 'New scene',
           action: async () => {
             if (
               this.actions.hasWork() &&
               !(await askWindow({
-                title: 'Start a new sculpt?',
+                title: 'Start a new scene?',
                 text: 'The current objects will be lost.',
                 yes: 'Start new',
                 danger: true,
@@ -141,7 +142,7 @@ export class FileMenu {
         },
       ],
       transfer: [
-        { label: 'Import OBJ…', action: () => this.importInput.click() },
+        { label: 'Import model…', action: () => this.importInput.click() },
         { label: 'Z-up OBJ import', checked: () => this.zUp, toggle: (on) => (this.zUp = on) },
         {
           // The active object's level 0 in the imported file's own vertex
@@ -360,11 +361,17 @@ export class FileMenu {
     }
   }
 
-  /** Import an OBJ as a new object, named after the file. */
+  /** Import a model (.obj, .glb, .gltf, .stl, .ply) as a new object, named after the file. */
   async importFile(file: File): Promise<void> {
     try {
-      const name = file.name.replace(/\.obj$/i, '').trim() || 'Imported';
-      const note = await this.actions.importObj(await file.text(), this.zUp, name);
+      const format = modelFormat(file.name);
+      if (!format) throw new Error(`"${file.name}" is not a model Sculpt reads. Use .obj, .glb, .stl or .ply.`);
+      const name = file.name.replace(/\.(obj|glb|gltf|stl|ply)$/i, '').trim() || 'Imported';
+      const zUp = this.zUp && modelUsesZUp(format);
+      const note =
+        format === 'obj'
+          ? await this.actions.importObj(await file.text(), zUp, name)
+          : await this.actions.importModel(format, await file.arrayBuffer(), zUp, name);
       if (note) statusToast('').done(note);
     } catch (err) {
       void tellWindow({ title: 'That file did not import', text: err instanceof Error ? err.message : String(err) });
