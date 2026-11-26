@@ -49,6 +49,7 @@ import { suites as docScroll } from './docScroll.mjs';
 import { suites as loopMask } from './loopMask.mjs';
 import { suites as material } from './material.mjs';
 import { suites as objNumbering } from './objNumbering.mjs';
+import { suites as importModel } from './importModel.mjs';
 import { suites as paint } from './paint.mjs';
 import { suites as paintMath } from './paintMath.mjs';
 import { suites as passkeyCheck } from './passkeyCheck.mjs';
@@ -114,6 +115,7 @@ const suites = {
   ...presentLights,
   ...guidePerWorkspace,
   ...objNumbering,
+  ...importModel,
   ...brushCaps,
   ...clayTabPen,
   ...channelBox,

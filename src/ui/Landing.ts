@@ -188,12 +188,12 @@ function createCard(savesTo: string | null, owner: boolean): HTMLElement {
 
 /**
  * The ways to start, in a small dialog over the gallery, stacked buttons of
- * the same width: a new sculpt, a new armature, an OBJ from another app
+ * the same width: a new scene, a new armature, a model from another app
  * opened in Sculpt as a new scene, and the uploader for frames made
- * elsewhere (owner call). Import OBJ is everyone's, as File > Import OBJ
+ * elsewhere (owner call). Import model is everyone's, as File > Import model
  * is in Sculpt: nothing about it needs an account. Create timelapse is
  * the owner's alone for now (timelapses are not offered to users, see
- * PRODUCT.md); everyone else sees the other three. New Sculpt is the one
+ * PRODUCT.md); everyone else sees the other three. New scene is the one
  * recommended choice, in lime.
  */
 function openCreateChooser(savesTo: string | null, owner: boolean): void {
@@ -208,23 +208,23 @@ function openCreateChooser(savesTo: string | null, owner: boolean): void {
       <h2>Create</h2>
       <div class="create-choices">
         <button type="button" class="create-choice create-choice--recommended" data-kind="sculpt">
-          <span class="create-choice__title">New Sculpt</span>
+          <span class="create-choice__title">New scene</span>
           <span class="create-choice__hint">A sphere of clay, brushes and paint.</span>
         </button>
         <button type="button" class="create-choice" data-kind="armature">
-          <span class="create-choice__title">New Armature</span>
+          <span class="create-choice__title">New armature</span>
           <span class="create-choice__hint">A posable figure to reference, or to send to Sculpt as a base.</span>
         </button>
         <button type="button" class="create-choice" data-kind="obj">
-          <span class="create-choice__title">Import OBJ</span>
-          <span class="create-choice__hint">One .obj file from another app, opened in Sculpt as a new scene.</span>
+          <span class="create-choice__title">Import model</span>
+          <span class="create-choice__hint">One .obj, .glb, .stl or .ply file from another app, opened in Sculpt as a new scene.</span>
         </button>
         ${owner ? `<button type="button" class="create-choice" data-kind="timelapse">
           <span class="create-choice__title">Create timelapse</span>
           <span class="create-choice__hint"></span>
         </button>` : ''}
       </div>
-      <input type="file" class="create-obj-input" accept=".obj" hidden />
+      <input type="file" class="create-obj-input" accept=".obj,.glb,.gltf,.stl,.ply" hidden />
     </div>`;
   const tlHint = overlay.querySelector<HTMLElement>('[data-kind="timelapse"] .create-choice__hint');
   if (tlHint) tlHint.textContent = timelapseHint;

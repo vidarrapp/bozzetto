@@ -6,7 +6,7 @@
 //   panel's list and Create button come back; deleting the last object brings the choices back;
 //   undo of the first add brings them back and redo the object;
 // - the Create menu and the empty state list the same choices, and every tile has a picture that loads;
-// - File > New sculpt gives the empty scene (asking first when there is work), and it reloads empty;
+// - File > New scene gives the empty scene (asking first when there is work), and it reloads empty;
 // - an armature tile loads Armature, sets that mannequin and goes to the Armature workspace; a second
 //   tile on a posed armature asks, Cancel keeps it and Replace changes it;
 // - in an empty scene a stroke, Paint, Present, Save file, undo and the panels throw nothing;
@@ -241,17 +241,17 @@ export const suites = {
     t.eq((await names(page)).length, 0, 'a stroke on nothing adds nothing');
     t.eq(errors.length, 0, `an empty scene throws nothing: Paint, Present, Save file, undo, the panels and a stroke (${errors.join(' | ')})`);
 
-    // --- File > New sculpt -----------------------------------------------------------------------------
+    // --- File > New scene -----------------------------------------------------------------------------
     await page.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
     await page.evaluate(() => window.__sculpt.persist.markDirty());
     await page.waitForTimeout(300);
     asked.length = 0;
     answer = false;
-    await menu(page, 'File', 'New sculpt');
+    await menu(page, 'File', 'New scene');
     await page.waitForTimeout(600);
-    t.ok(asked.length === 1 && (await names(page)).length === 1, `File > New sculpt asks when there is work, and Cancel keeps it (${asked[0]})`);
+    t.ok(asked.length === 1 && (await names(page)).length === 1, `File > New scene asks when there is work, and Cancel keeps it (${asked[0]})`);
     answer = true;
-    await menu(page, 'File', 'New sculpt');
+    await menu(page, 'File', 'New scene');
     await page.waitForFunction(() => window.__sculpt.session.getMeshes().length === 0, null, { timeout: 10_000 });
     // The panel stays as the person has it (the panels opened above closed it): opened, it shows the choices.
     s = await panelState(page);
@@ -262,7 +262,7 @@ export const suites = {
     t.ok(s.empty && s.open, 'Start new gives the empty scene with the Create choices');
     await page.waitForTimeout(600);
     asked.length = 0;
-    await menu(page, 'File', 'New sculpt');
+    await menu(page, 'File', 'New scene');
     await page.waitForTimeout(500);
     t.eq(asked.length, 0, 'and with nothing to lose it asks nothing');
 

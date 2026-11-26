@@ -5,32 +5,35 @@ import { askWindow } from './askWindow';
 
 /**
  * The ways to start work, as the gallery's Create card and the pages' File
- * menu both offer them: a new sculpt, a new armature, an OBJ opened in Sculpt.
+ * menu both offer them: a new scene, a new armature, a model opened in Sculpt.
  */
 
 /**
- * Create > Import OBJ: the picked file opens in Sculpt as a new scene, its
- * one object imported as File > Import OBJ imports one (welded, sized as
- * every import is). The file goes over in IndexedDB (bridge/objHandoff),
- * since Sculpt is another page load. Like New Sculpt it replaces the work
+ * Create > Import model: the picked file (.obj, .glb, .gltf, .stl, .ply) opens
+ * in Sculpt as a new scene, its one object imported as File > Import model
+ * imports one (welded, sized as every import is). The file goes over in
+ * IndexedDB (bridge/objHandoff), as bytes, since Sculpt is another page
+ * load. Like New scene it replaces the work
  * in progress, so it asks first when there is some to lose, and tells the
  * tab it asked (ui/openToken), or Sculpt would ask again.
  */
 export async function importObj(file: File): Promise<void> {
-  if (!/\.obj$/i.test(file.name)) {
-    failNotice(`"${file.name}" is not an .obj file.`);
+  const { modelFormat } = await import('../sculpt/bridge/modelImport');
+  const format = modelFormat(file.name);
+  if (!format) {
+    failNotice(`"${file.name}" is not a model Sculpt reads. Use .obj, .glb, .stl or .ply.`);
     return;
   }
   const [store, handoffs] = await Promise.all([import('../sculpt/bridge/ScenePersist'), import('../sculpt/bridge/objHandoff')]);
   const name = handoffs.objName(file.name);
   // The file crosses to Sculpt through the device's storage, so it needs saving on.
-  if (!(await requireSaving('Import OBJ needs to keep the file on this device.'))) return;
+  if (!(await requireSaving('Import model needs to keep the file on this device.'))) return;
   const hasWork = await store.hasSavedScene().catch(() => false);
   const atRisk = hasWork && !(await inProject(store));
   if (
     atRisk &&
     !(await askWindow({
-      title: `Open "${name}" as a new sculpt?`,
+      title: `Open "${name}" as a new scene?`,
       text: 'The work in progress on this device will be replaced.',
       yes: 'Replace',
       danger: true,
@@ -40,7 +43,7 @@ export async function importObj(file: File): Promise<void> {
   }
   let id: string;
   try {
-    id = (await handoffs.saveObjHandoff({ name: file.name, text: await file.text() })).id;
+    id = (await handoffs.saveObjHandoff(format === 'obj' ? { name: file.name, text: await file.text() } : { name: file.name, bytes: await file.arrayBuffer(), format })).id;
   } catch (err) {
     failNotice(`Could not open "${name}": this browser would not hold the file (${err instanceof Error ? err.message : String(err)}).`);
     return;
@@ -68,7 +71,7 @@ export async function startSculpt(): Promise<void> {
   if (
     atRisk &&
     !(await askWindow({
-      title: 'Start a new sculpt?',
+      title: 'Start a new scene?',
       text: 'The work in progress on this device will be replaced.',
       yes: 'Start new',
       danger: true,
@@ -120,11 +123,11 @@ export async function inProject(store: typeof import('../sculpt/bridge/ScenePers
 }
 
 
-/** Ask for one .obj file and open it as a new sculpt (the pages' File > Import OBJ…). */
+/** Ask for one model file and open it as a new scene (the pages' File > Import model…). */
 export function chooseObj(): void {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = '.obj';
+  input.accept = '.obj,.glb,.gltf,.stl,.ply';
   input.hidden = true;
   input.className = 'create-obj-input';
   input.addEventListener('change', () => {

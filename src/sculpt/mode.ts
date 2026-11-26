@@ -285,7 +285,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       openedExplicitly = false;
     }
   }
-  // An OBJ picked in the gallery's Create > Import OBJ (?obj=1, the file
+  // A model picked in the gallery's Create > Import model (?obj=1, the file
   // carried in IndexedDB: bridge/objHandoff): a new scene, the file its
   // object. It is parsed before anything is replaced, so a file with no
   // geometry in it costs nothing but its notice; and it replaces the work
@@ -299,21 +299,23 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const { takeObjHandoff } = await import('./bridge/objHandoff');
     const handoff = await takeObjHandoff();
     if (handoff) {
-      const { parseObjPolygons } = await import('../admin/glb');
-      let parsed: ReturnType<typeof parseObjPolygons> | null = null;
+      const { parseModel } = await import('./bridge/modelImport');
+      let parsed: Awaited<ReturnType<typeof parseModel>> | null = null;
+      let why = 'no geometry found in that OBJ file';
       try {
-        parsed = parseObjPolygons(handoff.text);
-      } catch {
+        parsed = await parseModel(handoff.format ?? 'obj', handoff.bytes ?? new TextEncoder().encode(handoff.text).buffer);
+      } catch (err) {
         parsed = null;
+        if (handoff.format && err instanceof Error) why = err.message.replace(/^That/, 'that');
       }
       const atStake = await hasSavedScene();
       if (!parsed || !parsed.positions.length || !parsed.faceSizes.length) {
-        bootFailure ??= `Could not import "${handoff.name}": no geometry found in that OBJ file`;
+        bootFailure ??= `Could not import "${handoff.name}": ${why}`;
       } else if (
         !atStake ||
         sentHere === `obj:${handoff.id}` ||
         (await askWindow({
-          title: `Open "${handoff.name}" as a new sculpt?`,
+          title: `Open "${handoff.name}" as a new scene?`,
           text: 'The work in progress on this device will be replaced.',
           yes: 'Replace',
           danger: true,
@@ -325,7 +327,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         } catch (err) {
           bootFailure ??= `Could not import "${handoff.name}": ${err instanceof Error ? err.message.replace(/\.$/, '') : String(err)}`;
         }
-        // A new scene: the autosave and its look go, as New Sculpt's do -
+        // A new scene: the autosave and its look go, as New scene's do -
         // once the object stands, so a file that would not build leaves
         // the work where it was.
         if (objMesh) await Promise.all([clearSavedScene(true), clearSculptLook()]);

@@ -232,11 +232,11 @@ is left out, not shown greyed out; the same item has the same label, hint
 style and key wherever it shows. The groups below are the order in every
 place, each only where the place has it.
 
-- **File:** New (New sculpt, New armature), Open…, Open recent (Sculpt, Armature and the Present workspace; not the viewer); Rename… (Sculpt and
+- **File:** New (New scene, New armature), Open…, Open recent (Sculpt, Armature and the Present workspace; not the viewer); Rename… (Sculpt and
   Armature), Save file, Save to library (for whoever can save to one; a
   guest sees **Sign in to save to library** instead where the site has
   accounts, and nothing extra where it has none), Keep on this device
-  (the Present workspace has one Save, or Save to its place); Import OBJ…, Z-up OBJ import, Load model…, Export
+  (the Present workspace has one Save, or Save to its place); Import model…, Z-up OBJ import, Load model…, Export
   OBJ, Remesh to a figure (Armature's File menu: the posed mannequin made into a figure, in this scene), New sculpt from this, Edit in Present; Publish…;
   Close, always last, with the page it returns to as its hint.
 - **Open recent** is a row with a chevron that opens a second list beside
@@ -267,7 +267,7 @@ place, each only where the place has it.
 
 **File**
 
-- New sculpt
+- New scene
 - Open…
 - Open recent ›
 - Close (returns to the gallery)
@@ -347,11 +347,13 @@ from `TitleStrip` with its `page` option: no hide button, no workspace path.
 There are no corner chips and no logotype in the row (the gallery keeps its
 big logotype and tagline in the page).
 
-- **File:** New sculpt, New armature, Import OBJ…. What the gallery's
+- **File:** New scene, New armature, Import model…. What the gallery's
   Create card offers, with the same question about saving on this device
-  that Import OBJ asks.
-  The Create window lists New Sculpt (the one recommended, lime choice),
-  New Armature and Import OBJ; Create timelapse is added for the owner only
+  that Import model asks. Import model reads .obj, .glb, .gltf (self-contained),
+  .stl and .ply, geometry only: every mesh is one object's poly group, vertices
+  that share a place are welded, and the file is sized and turned as an OBJ is.
+  The Create window lists New scene (the one recommended, lime choice),
+  New armature and Import model; Create timelapse is added for the owner only
   (timelapses are not offered to users, PRODUCT.md).
 - **View:** Gallery, Community (with accounts), My projects (signed in, not
   suspended), Review with what waits in its name (owner and moderators),
@@ -1266,7 +1268,7 @@ path's Sculpt step and View, Sculpt come out. The page's address has `paint=1` w
 ## New scene (0.7.19)
 
 A new scene has no object (owner, 2026-11-25: the default sphere felt like Blender's default cube). A first visit with
-nothing kept, File, New sculpt and the gallery's new sculpt all give an empty scene; a kept or opened scene opens as it
+nothing kept, File, New scene and the gallery's new scene all give an empty scene; a kept or opened scene opens as it
 was. The address option `?start=sphere` begins a new scene with the default sphere (the tests use it; it does nothing to a
 kept or opened scene).
 
@@ -1283,5 +1285,5 @@ kept or opened scene).
   loading Armature first (the "Loading Armature…" notice). One armature a scene for now: when the current one has been posed
   or had its proportions changed, the tile asks first, "Replace the armature?", text "Its pose and proportions will be
   lost.", buttons Replace (danger) and Cancel.
-- An empty scene is not written to the autosave (ScenePersist), and File, New sculpt clears the kept record so a reload stays
+- An empty scene is not written to the autosave (ScenePersist), and File, New scene clears the kept record so a reload stays
   empty.

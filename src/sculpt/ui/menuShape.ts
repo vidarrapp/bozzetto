@@ -24,11 +24,11 @@ export function joinGroups(...groups: Array<MenuItem[] | undefined>): MenuItem[]
 
 /** What File holds, in its order. Close is always last, with where it goes. */
 export interface FileGroups {
-  /** New sculpt / New armature, Open…. */
+  /** New scene / New armature, Open…. */
   start?: MenuItem[];
   /** Save file, Save to library, Keep on this device (Present's one Save). */
   save?: MenuItem[];
-  /** Import OBJ…, Z-up OBJ import, Load model…, Export OBJ, then the ways to another place: Send to Sculpt, New sculpt from this, Edit in Present. */
+  /** Import model…, Z-up OBJ import, Load model…, Export OBJ, then the ways to another place: Send to Sculpt, New sculpt from this, Edit in Present. */
   transfer?: MenuItem[];
   /** Publish…. */
   publish?: MenuItem[];

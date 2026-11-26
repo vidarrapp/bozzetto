@@ -1958,9 +1958,9 @@ export const suites = {
     // account); Create timelapse is the owner's alone (timelapses are not
     // offered to users), so the uploader is opened by its address here.
     const stack = await menu(page);
-    t.eq(stack.titles, 'New Sculpt, New Armature, Import OBJ', "a guest's Create menu offers New Sculpt, New Armature and Import OBJ, in that order, and no timelapse");
+    t.eq(stack.titles, 'New scene, New armature, Import model', "a guest's Create menu offers New scene, New armature and Import model, in that order, and no timelapse");
     t.ok(stack.kinds === 'sculpt,armature,obj' && stack.sameWidth && stack.stacked, `three buttons stacked, each the menu's width (${JSON.stringify(stack)})`);
-    t.ok(stack.picker === '.obj', 'Import OBJ picks an .obj');
+    t.ok(stack.picker === '.obj,.glb,.gltf,.stl,.ply', 'Import model picks a model file');
     await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
     t.eq(new URL(page.url()).pathname, '/create/', 'the uploader still opens by its address');
     await page.waitForSelector('.panel--frames input[type="file"]', { state: 'attached', timeout: 30_000 });
@@ -1993,8 +1993,8 @@ export const suites = {
       await owner.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
       const ownerMenu = await menu(owner);
       t.ok(
-        ownerMenu.titles === 'New Sculpt, New Armature, Import OBJ, Create timelapse' && ownerMenu.kinds === 'sculpt,armature,obj,timelapse' && ownerMenu.stacked,
-        `signed in, the menu is New Sculpt, New Armature, Import OBJ and Create timelapse (${ownerMenu.titles})`,
+        ownerMenu.titles === 'New scene, New armature, Import model, Create timelapse' && ownerMenu.kinds === 'sculpt,armature,obj,timelapse' && ownerMenu.stacked,
+        `signed in, the menu is New scene, New armature, Import model and Create timelapse (${ownerMenu.titles})`,
       );
       t.eq(ownerMenu.timelapse, 'OBJ or GLB frames from another app, as a timelapse or a model, saved to Projects.', 'and Create timelapse says it saves to the library');
       await Promise.all([
@@ -2162,7 +2162,7 @@ export const suites = {
       await pick(page, cube);
       await page.waitForTimeout(500);
       t.ok(
-        asked.at(-1) === 'Open "box" as a new sculpt? The work in progress on this device will be replaced.' && new URL(page.url()).pathname === '/' && !new URL(page.url()).searchParams.has('sculpt'),
+        asked.at(-1) === 'Open "box" as a new scene? The work in progress on this device will be replaced.' && new URL(page.url()).pathname === '/' && !new URL(page.url()).searchParams.has('sculpt'),
         `with work on the device the gallery asks first, and declined it stays (${JSON.stringify(asked.at(-1))})`,
       );
       // Accepted, the cube is the new scene, and Sculpt does not ask again.
@@ -2254,7 +2254,7 @@ export const suites = {
       await booted(other);
       now = await scene(other);
       t.ok(
-        otherAsked[0] === 'Open "Tetra piece" as a new sculpt? The work in progress on this device will be replaced.' && JSON.stringify(now.names) === '["box"]',
+        otherAsked[0] === 'Open "Tetra piece" as a new scene? The work in progress on this device will be replaced.' && JSON.stringify(now.names) === '["box"]',
         `a link from elsewhere is asked about at boot; declined, the work stays (${JSON.stringify({ otherAsked, now })})`,
       );
       await other.close();
@@ -2281,7 +2281,7 @@ export const suites = {
     t.ok(gallery.first && gallery.label === 'Create', `the gallery leads with the Create tile (${gallery.label || 'none'})`);
     await page.click('#landing-grid .card--new');
     const choices = await page.evaluate(() => [...document.querySelectorAll('.create-overlay .create-choice__title')].map((c) => c.textContent));
-    t.eq(choices.join(', '), 'New Sculpt, New Armature, Import OBJ', 'which offers a new sculpt, a new armature or an OBJ');
+    t.eq(choices.join(', '), 'New scene, New armature, Import model', 'which offers a new sculpt, a new armature or an OBJ');
     t.ok(!gallery.chips.some((c) => /upload/i.test(c)), 'and the top row no longer carries the uploader');
     await Promise.all([
       page.waitForURL((u) => u.searchParams.get('armature') === '1', { timeout: 30_000 }),

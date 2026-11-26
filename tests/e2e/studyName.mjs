@@ -104,7 +104,7 @@ export const suites = {
     await page.evaluate((n) => window.__sculpt.fileActions.rename(n), today);
     await chooseFile(page, 'Keep on this device');
     await page.waitForFunction(() => [...document.querySelectorAll('.file-menu__note')].some((n) => n.textContent === 'Kept on this device'), null, { timeout: 30_000 });
-    await chooseFile(page, 'New sculpt');
+    await chooseFile(page, 'New scene');
     t.eq(await settles(page, nameText, `${today} 2`), `${today} 2`, `a new scene on a day that has a study is "${today} 2"`);
   },
 

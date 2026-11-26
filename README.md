@@ -40,7 +40,7 @@ A posable mannequin, for reference or as the start of a sculpt, and the first of
 
 <img width="1180" height="820" alt="Bozzetto Screenshot - Sculpt mode" src="docs/screenshots/sculpt.jpg" />
 
-Pick **Create → New Sculpt** in the gallery. No sign-in needed, and nothing leaves your device unless you sign in and save or publish.
+Pick **Create → New scene** in the gallery. No sign-in needed, and nothing leaves your device unless you sign in and save or publish.
 
 - **Brushes.** Nine on `1` to `9`: Crease, Move, Standard clay, Inflate, Pinch, Flatten, Rake, Drag and Polish. `Shift` smooths and `Alt` carves from any brush. Each brush keeps its own size and settings.
 - **Pencil pressure.** Apple Pencil pressure drives the strength of the stroke. Strength is set in centimetres for the brushes that push the surface.
@@ -84,7 +84,7 @@ Light the piece, render it and publish it. Open **Present** from the path at the
 
 ## Gallery and viewer
 
-- **Gallery.** The site's templates as cards, led by a **Create** tile with **New Sculpt**, **New Armature**, **Import OBJ** and **Create timelapse**. Your work in progress and the scenes kept on your device show here too.
+- **Gallery.** The site's templates as cards, led by a **Create** tile with **New scene**, **New armature**, **Import model** and **Create timelapse**. Your work in progress and the scenes kept on your device show here too.
 - **Viewer.** A published model or timelapse plays as real geometry, not a video. Orbit it, relight it, change the material, and scrub a timelapse stage by stage.
 
 ## Accounts and Community
@@ -176,6 +176,11 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 | `1`, `2`, `3` in Present | Pick the key, fill or rim light for `L` |
 
 ## Changelog
+
+### Unreleased
+
+- **Import model reads more than OBJ.** In the gallery's Create window and in Sculpt's File menu, Import model opens .obj, .glb, .stl and .ply files (and a .gltf that holds everything in itself), every mesh in the file as one object with a group for each mesh. Colours, materials, textures, rigs and animations are left out. A file that cannot be read says why and leaves the scene as it was.
+- **The Create choices are renamed.** The gallery offers New scene, New armature, Import model and, for the owner, Create timelapse. In Sculpt, File, New sculpt is now New scene, and Import OBJ is now Import model.
 
 ### v0.7.27
 
