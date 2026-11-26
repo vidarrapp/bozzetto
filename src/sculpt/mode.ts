@@ -101,6 +101,8 @@ import { defaultSceneName, newSceneName } from './bridge/SceneLibrary';
 const SPIN_COAST_MIN_DEG = 3;
 const SPIN_COAST_AFTER_MS = 90;
 const SPIN_TAU_S = 0.15;
+/** A locked camera tells why it will not move no more often than this. */
+const CAMERA_HINT_GAP_MS = 4000;
 const SPIN_COAST_TURNS = 1.75;
 const SPIN_STOP_DEG_S = 2;
 /**
@@ -577,6 +579,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let modelPanel: ModelPanel | null = null;
   let layersPanel: LayersPanel | null = null;
   let materialPanel: MaterialPanel | null = null;
+  // Cameras (Scene panel): the viewer's one camera is set from a camera, and read back into it.
+  session.cameras.host = {
+    read: () => viewer.readView(),
+    place: (pose, locked) => viewer.placeView(pose, locked),
+    unlock: () => viewer.setViewLocked(false),
+    size: (pose) => viewer.viewHeight(pose),
+  };
   const applyLookSafely = async (look: Parameters<Viewer['applyLook']>[0]): Promise<void> => {
     syncingPanel = true;
     try {
@@ -584,6 +593,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     } finally {
       syncingPanel = false;
     }
+    // A look carries the view it was saved at: the camera looked through is where it stands.
+    session.cameras.settle();
     syncPanelMaterial();
   };
   const syncPanelMaterial = (): void => {
@@ -743,6 +754,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   session.onSelectionChange = () => {
     armatureSelected = false;
     session.measure.select(null);
+    session.cameras.select(null);
     scenePanel?.refresh();
     materialPanel?.refreshSurface();
     syncHighlights();
@@ -1518,6 +1530,22 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     syncHighlights();
   };
   session.measure.onPersist = () => persist.markDirty();
+  // Cameras: kept with the scene; looking through one (or back) puts the panels and the pictures tied to it right.
+  session.cameras.onPersist = () => persist.markDirty();
+  session.cameras.onUse = () => {
+    referenceView.refresh();
+    window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+  };
+  {
+    // A try to move a locked camera says why, once, and not again for a few seconds.
+    let toldAt = -Infinity;
+    viewer.onViewBlocked = () => {
+      const now = performance.now();
+      if (now - toldAt < CAMERA_HINT_GAP_MS) return;
+      toldAt = now;
+      statusToast('').done('This camera is locked. Tap Working view to look around.');
+    };
+  }
   // The proportion guide: kept with the scene; Pick head puts the Calipers tool in hand for its two taps.
   session.guide.onPersist = () => persist.markDirty();
   session.guide.onPickChange = (on) => {
@@ -1672,6 +1700,35 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const referenceBoard = studio.reference.board;
   const referencePanel = studio.reference.panel;
   const referenceView = studio.reference.view;
+  // A picture can be tied to a camera: it shows in the view only through it, and Match view goes there.
+  referenceBoard.bindCameras({
+    cameraOf: (id) => session.cameras.cameraOf(id),
+    inUse: () => session.cameras.inUse(),
+    look: (id) => {
+      session.cameras.select(id);
+      session.cameras.look(id);
+    },
+  });
+  referencePanel.setCameras({
+    list: () => session.cameras.list().map((c) => ({ id: c.id, name: c.name })),
+    tied: (ref) => session.cameras.cameraOf(ref),
+    tie: (ref, id) => {
+      if (id) session.cameras.setReference(id, ref);
+      else session.cameras.untie(ref);
+    },
+    makeFrom: (item) => {
+      const c = item.camera;
+      if (!c) return;
+      const made = session.cameras.makeFrom(
+        { position: [...c.position], target: [...c.target], lens: c.focalLength, projection: c.projection ?? 'perspective' },
+        true,
+        item.id,
+      );
+      if (made) session.cameras.select(made.id);
+    },
+    subscribe: (fn) => session.cameras.subscribe(fn),
+  });
+  session.cameras.subscribe(() => referenceView.refresh());
   // One implementation of File, behind the web menu and the console
   // handle alike.
   const fileActions = new FileActions(session, {
@@ -1924,6 +1981,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   present = new PresentMode(
     {
       canEnter: () => !input.isStroking() && !gizmo.isDragging(),
+      // A locked camera does not turn: the person is told, as for any try to move it.
+      turnBlocked: () => viewer.refuseMove(),
       enter: () => enterPresent(),
       turn: (deg) => {
         // About the visible scene's vertical axis, as the arrow keys turn
@@ -2712,6 +2771,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     toggle: () => armatureSlot?.setShown(!armatureSlot.shown()),
     select: () => {
       session.measure.select(null);
+      session.cameras.select(null);
       armatureSelected = true;
       scenePanel?.refresh();
       studio.material.refreshSurface();
@@ -2919,6 +2979,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     lightMarkers?.dispose();
     lightMarkers = null;
     session.measure.onPersist = null;
+    session.cameras.onPersist = null;
+    session.cameras.onUse = null;
+    session.cameras.host = null;
+    viewer.onViewBlocked = null;
+    viewer.setViewLocked(false);
     session.guide.onPersist = null;
     session.guide.onPickChange = null;
     session.guide.subject = null;

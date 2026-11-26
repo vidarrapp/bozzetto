@@ -1273,13 +1273,15 @@ body.bz-shell.armature-ws:not(.presenting) :is(.panel--scene, .panel--model, .pa
 }
 
 /* The pinned calipers, a group under the objects: a ruler mark, the name, its length as a quiet second text. */
-.outliner__calipers {
+.outliner__calipers,
+.outliner__cameras {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.outliner__calipers[hidden] {
+.outliner__calipers[hidden],
+.outliner__cameras[hidden] {
   display: none;
 }
 
@@ -1301,6 +1303,7 @@ body.bz-shell.armature-ws:not(.presenting) :is(.panel--scene, .panel--model, .pa
 }
 
 .outliner__row--armature .outliner__mark,
+.outliner__row--camera .outliner__mark,
 .outliner__row--caliper .outliner__mark {
   flex: none;
   width: 27px;
@@ -1308,6 +1311,36 @@ body.bz-shell.armature-ws:not(.presenting) :is(.panel--scene, .panel--model, .pa
   font-size: 12px;
   line-height: 1;
   color: var(--bz-text-3);
+}
+
+/* Cameras: the row looked through carries the orange, on its mark; the camera's padlock stands where an object's does. */
+.outliner__row--camera.outliner__row--active .outliner__mark {
+  color: var(--bz-orange);
+}
+
+/* Create's one small row, above the primitives: a camera is made from the view, not placed. */
+.outliner__menu-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  color: var(--bz-text);
+  font: 13px/16px var(--bz-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.outliner__menu-action:hover {
+  background: var(--bz-control);
+}
+
+.outliner__menu-action .fi {
+  color: var(--bz-text-2);
+  font-size: 14px;
 }
 
 /* --- Present, the third workspace (sculpt/ui/Present.ts) -----------------------
@@ -2202,6 +2235,22 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
   white-space: nowrap;
   font: 400 11px/14px var(--bz-font-mono);
   color: var(--bz-text-2);
+}
+
+/* The camera a picture is tied to, and the button that makes one of a saved view: under the blend mode. */
+.panel--reference .ref-card__camera {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: 4px;
+}
+
+.panel--reference .ref-card__make {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: 4px;
+  min-height: 44px;
 }
 
 /* The blend mode, under the name and size: how the picture is laid over the view. */

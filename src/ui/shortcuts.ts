@@ -109,6 +109,8 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
         viewer.focusSubject();
         return;
       case 'view.projection':
+        // A locked camera keeps its projection.
+        if (viewer.refuseMove()) return;
         viewer.setOrthographic(!viewer.isOrthographic());
         handlers.refresh?.();
         return;

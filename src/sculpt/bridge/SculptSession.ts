@@ -48,6 +48,7 @@ import type { CameraAdapter } from './CameraAdapter';
 import type { SavedLevel, SavedMesh, SavedScene } from './ScenePersist';
 import { SymmetryStore, type SymmetryAxis } from './symmetry';
 import { Measurements } from './measure';
+import { Cameras, type SavedCameras } from './cameras';
 import { ProportionGuide } from './guide';
 import { perfLog } from '../../viewer/perfLog';
 import { boxOfPositions, checkRemesh, REMESH_LIMITS } from './remeshBudget';
@@ -345,6 +346,8 @@ export class SculptSession {
   );
   /** The proportion guide: a ruler in heads beside the subject (guide.ts). Never in the sculpt history. */
   readonly guide = new ProportionGuide();
+  /** The scene's cameras, and which one is looked through (cameras.ts). Making, deleting, renaming, locking and tying are history steps. */
+  readonly cameras = new Cameras();
   private readonly sculptManager: SculptManager;
   private readonly picking: Picking;
   private readonly pickingSym: Picking;
@@ -380,6 +383,7 @@ export class SculptSession {
     this.sizeObserver.observe(canvas);
     // Pinning, deleting, renaming and hiding a caliper are steps of the history.
     this.measure.history = (undo, redo) => this.stateManager.pushStateCustom(undo, redo);
+    this.cameras.history = (undo, redo) => this.stateManager.pushStateCustom(undo, redo);
     // Deeper than upstream's 15: the WS2 fuzz exercises 50-deep undo, and
     // history is worth keeping (a stroke state holds only the touched
     // vertices).
@@ -2380,7 +2384,14 @@ export class SculptSession {
       ...(this.measure.serializeArmature() ? { armatureMeasures: this.measure.serializeArmature() } : {}),
       // The proportion guide: on, head height, canon.
       ...(this.guide.serialize() ? { guide: this.guide.serialize() } : {}),
+      // The cameras, and the one in use (a scene without any writes none).
+      ...this.camerasRecord(),
     };
+  }
+
+  private camerasRecord(): { cameras?: SavedCameras } {
+    const cameras = this.cameras.serialize();
+    return cameras ? { cameras } : {};
   }
 
   private serializeMesh(mesh: SculptMesh): SavedMesh | null {
@@ -2441,6 +2452,7 @@ export class SculptSession {
     this.measure.reset();
     this.measure.restore(null, saved.armatureMeasures);
     this.guide.restore(saved.guide);
+    this.cameras.restore(saved.cameras);
     const built: Multimesh[] = [];
     for (const savedMesh of saved.meshes) {
       const mesh = this.buildRestoredMesh(savedMesh);
@@ -2595,6 +2607,7 @@ export class SculptSession {
     this.setSolo(false); // a new scene is not the one that was soloed
     this.measure.reset();
     this.guide.reset();
+    this.cameras.reset();
     this.meshes.length = 0;
     this.selectMeshes.length = 0;
     this.mesh = null;

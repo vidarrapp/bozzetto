@@ -87,6 +87,7 @@ import { suites as smoothMask } from './smoothMask.mjs';
 import { suites as assetLibrary } from './assetLibrary.mjs';
 import { suites as workspaceTabs } from './workspaceTabs.mjs';
 import { suites as viewSnap } from './viewSnap.mjs';
+import { suites as cameras } from './cameras.mjs';
 
 // One suite file per line, so two branches adding a file do not collide.
 const suites = {
@@ -161,6 +162,7 @@ const suites = {
   ...assetLibrary,
   ...workspaceTabs,
   ...viewSnap,
+  ...cameras,
   ...detailsOverlay,
 };
 

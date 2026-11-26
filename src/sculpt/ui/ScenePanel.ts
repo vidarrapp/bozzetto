@@ -56,6 +56,11 @@ export class ScenePanel extends SidePanel {
   /** The caliper whose name is being edited. */
   private renamingCaliper: Measure | null = null;
   private readonly offMeasure: () => void;
+  /** The Cameras group, between the objects and the calipers: Working view, then a row for each camera. */
+  private readonly camEl: HTMLDivElement;
+  /** The camera whose name is being edited. */
+  private renamingCamera: string | null = null;
+  private readonly offCameras: () => void;
 
   /**
    * Fired after any panel-driven scene edit that bypasses the undo stack
@@ -159,6 +164,10 @@ export class ScenePanel extends SidePanel {
     this.calEl = div('outliner__calipers');
     this.calEl.dataset.role = 'calipers-group';
     this.offMeasure = this.session.measure.subscribe(() => this.refreshCalipers());
+    // The Cameras group sits before it.
+    this.camEl = div('outliner__cameras');
+    this.camEl.dataset.role = 'cameras-group';
+    this.offCameras = this.session.cameras.subscribe(() => this.refreshCameras());
     // The selection's material, directly under the list (owner call).
     this.matRow = div('outliner__material');
     this.body.appendChild(this.matRow);
@@ -214,6 +223,23 @@ export class ScenePanel extends SidePanel {
       }
       into.appendChild(h);
     };
+    // A camera is made from the view, not added to the scene's objects: its own small row, above them.
+    const cam = document.createElement('button');
+    cam.type = 'button';
+    cam.className = 'outliner__menu-action';
+    cam.dataset.role = 'create-camera';
+    cam.title = 'Keep the view as a camera in the Scene panel';
+    const camMark = document.createElement('i');
+    camMark.className = 'fi fi-ss-camera';
+    camMark.setAttribute('aria-hidden', 'true');
+    const camName = document.createElement('span');
+    camName.textContent = 'Camera';
+    cam.append(camMark, camName);
+    cam.addEventListener('click', () => {
+      this.closeMenus();
+      this.createCamera();
+    });
+    into.appendChild(cam);
     head('Primitives');
     const prims = div('outliner__menu-grid');
     for (const choice of modelGroups().find((g) => g.id === 'primitives')?.items ?? []) prims.appendChild(this.primitiveTile(choice));
@@ -302,6 +328,14 @@ export class ScenePanel extends SidePanel {
       this.onArmature?.(choice.id);
     });
     return tile;
+  }
+
+  /** A camera made from the view as it is, looked through at once; its row is then the one in use. */
+  createCamera(): void {
+    this.armatureActions?.deselect();
+    this.session.measure.select(null);
+    const cam = this.session.cameras.make();
+    if (cam) this.session.cameras.select(cam.id);
   }
 
   /** A primitive added, as the Create choice and the Asset library's Models tab do it. */
@@ -641,6 +675,7 @@ export class ScenePanel extends SidePanel {
   private pick(mesh: SculptMesh, shift: boolean, ctrl: boolean): void {
     this.armatureActions?.deselect();
     this.session.measure.select(null);
+    this.session.cameras.select(null);
     const list = this.session.getMeshes();
     if (shift) {
       const from = list.indexOf(this.session.getMesh() as SculptMesh);
@@ -855,7 +890,9 @@ export class ScenePanel extends SidePanel {
       row.addEventListener('click', () => this.armatureActions?.select());
       this.listEl.appendChild(row);
     }
+    this.listEl.appendChild(this.camEl);
     this.listEl.appendChild(this.calEl);
+    this.refreshCameras();
     this.refreshCalipers();
     this.refreshMaterial();
     if (this.floorRow) this.refreshFloor();
@@ -913,11 +950,121 @@ export class ScenePanel extends SidePanel {
       }
       row.addEventListener('click', () => {
         this.armatureActions?.deselect();
+        this.session.cameras.select(null);
         store.select(measure);
       });
       rows.push(row);
     }
     this.calEl.replaceChildren(...rows);
+  }
+
+  /**
+   * The Cameras group: "Working view" first, then a row for each camera with a camera mark, a
+   * padlock (the same one an object's row has) and the name (double-click renames). The one looked
+   * through is marked as the active object's row is. A tap looks through it and picks it: Delete
+   * takes the picked row, and its trash can does the same.
+   */
+  private refreshCameras(): void {
+    // A name being typed keeps its field through the changes the typing itself makes.
+    if (this.renamingCamera && this.camEl.contains(document.activeElement)) return;
+    this.renamingCamera = null;
+    const cams = this.session.cameras;
+    const items = cams.list();
+    this.camEl.hidden = items.length === 0;
+    const rows: HTMLElement[] = [];
+    if (items.length) {
+      const head = div('outliner__group');
+      head.textContent = 'Cameras';
+      rows.push(head);
+      const mark = (icon: string): HTMLElement => {
+        const m = document.createElement('i');
+        m.className = `fi ${icon} outliner__mark`;
+        m.setAttribute('aria-hidden', 'true');
+        return m;
+      };
+      const free = div('outliner__row outliner__row--camera outliner__row--working');
+      free.dataset.role = 'camera-working';
+      if (cams.inUse() === null) free.classList.add('outliner__row--active');
+      free.title = 'The view you move freely';
+      const freeName = document.createElement('span');
+      freeName.className = 'outliner__name';
+      freeName.textContent = 'Working view';
+      free.append(mark('fi-ss-arrows'), freeName);
+      free.addEventListener('click', () => {
+        this.armatureActions?.deselect();
+        cams.select(null);
+        cams.look(null);
+      });
+      rows.push(free);
+      for (const cam of items) {
+        const row = div('outliner__row outliner__row--camera');
+        row.dataset.role = 'camera-row';
+        row.dataset.camera = cam.id;
+        const inUse = cams.inUse() === cam.id;
+        const picked = cams.selected === cam.id;
+        if (inUse) row.classList.add('outliner__row--active');
+        else if (picked) row.classList.add('outliner__row--picked');
+        const lockBtn = this.iconBtn(cam.locked ? 'fi-ss-lock' : 'fi-ss-unlock', cam.locked ? 'Unlock camera' : 'Lock camera', () => cams.setLocked(cam.id, !cam.locked));
+        lockBtn.dataset.role = 'camera-lock';
+        if (cam.locked) lockBtn.classList.add('outliner__icon--on');
+        row.append(mark('fi-ss-camera'), lockBtn);
+        if (this.renamingCamera === cam.id) {
+          const placeholder = document.createElement('span');
+          row.appendChild(placeholder);
+          this.renameCamera(cam.id, placeholder);
+        } else {
+          const name = document.createElement('span');
+          name.className = 'outliner__name';
+          name.dataset.role = 'camera-name';
+          name.textContent = cam.name;
+          name.addEventListener('dblclick', () => this.renameCamera(cam.id, name));
+          row.appendChild(name);
+        }
+        if (picked) {
+          const del = this.iconBtn('fi-ss-trash', 'Delete camera', () => cams.remove(cam.id));
+          del.classList.add('outliner__icon--danger');
+          del.dataset.role = 'camera-delete';
+          row.appendChild(del);
+        }
+        row.addEventListener('click', () => {
+          this.armatureActions?.deselect();
+          this.session.measure.select(null);
+          cams.select(cam.id);
+          cams.look(cam.id);
+        });
+        rows.push(row);
+      }
+    }
+    this.camEl.replaceChildren(...rows);
+  }
+
+  private renameCamera(id: string, nameEl: HTMLElement): void {
+    const cam = this.session.cameras.get(id);
+    if (!cam) return;
+    this.renamingCamera = id;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'outliner__rename';
+    input.dataset.role = 'camera-rename';
+    input.value = cam.name;
+    input.maxLength = 200;
+    let done = false;
+    const finish = (commit: boolean): void => {
+      if (done) return;
+      done = true;
+      this.renamingCamera = null;
+      if (commit) this.session.cameras.rename(id, input.value);
+      this.refreshCameras();
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // typing must not trigger sculpt hotkeys
+      if (e.key === 'Enter') finish(true);
+      else if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', () => finish(true));
+    nameEl.replaceWith(input);
+    input.focus();
+    input.select();
   }
 
   private renameCaliper(m: Measure, nameEl: HTMLElement): void {
@@ -1012,6 +1159,7 @@ export class ScenePanel extends SidePanel {
 
   override dispose(): void {
     this.offMeasure();
+    this.offCameras();
     clearInterval(this.floorTimer);
     window.removeEventListener(CONTROLS_REFRESH_EVENT, this.onViewChange);
     window.removeEventListener('bozzetto:look-restored', this.onViewChange);

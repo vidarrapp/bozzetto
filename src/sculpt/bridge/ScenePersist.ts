@@ -14,6 +14,7 @@ import type { SavedLayers } from './layers';
 import type { SavedPaintLayers } from './paintLayersRecord';
 import type { SavedMeasure } from './measure';
 import type { SavedGuide } from './guide';
+import type { SavedCameras } from './cameras';
 import type { SavedToolTable } from '../tools/toolSettings';
 import type { FileReferences } from '../../reference/board';
 import { deviceStore, mayStore, onDeviceChoice, DeviceStorageOff } from '../../ui/deviceStorage';
@@ -286,6 +287,13 @@ export interface SavedScene {
   armatureMeasures?: SavedMeasure[];
   /** The proportion guide (guide.ts): whether it is on, the head height in centimetres, the canon. */
   guide?: SavedGuide;
+  /**
+   * The scene's cameras (cameras.ts): per camera its name, place, target, lens, projection and lock, the
+   * reference picture tied to it (by id only: pictures are never uploaded), and which one is looked through.
+   * Optional, with a version of its own: a scene without it opens with none, and a build from before it
+   * leaves the field behind.
+   */
+  cameras?: SavedCameras;
   /**
    * The server project this scene was opened from or last saved to, which
    * is where Save to library writes again. It rides the autosave record so

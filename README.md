@@ -179,6 +179,14 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ## Changelog
 
+### Unreleased
+
+- **Cameras in the Scene panel.** Create, Camera keeps the view you are looking through as a named camera, and a new group under the objects lists them with a Working view row first: a tap looks through one, a double tap renames it, Delete removes it, and undo brings it back. A camera you move keeps where you left it.
+- **A padlock on a camera.** Through a locked camera orbit, pan, zoom, pinch, F, A, P, the Shift snap and Present's turntable leave the view alone, and the first try says why. Sculpting and painting work as always, and Working view lets you look around again.
+- **A camera has its own lens and projection.** Present's Camera tab edits the camera you look through, and greys the two rows for a locked one.
+- **Cameras tied to references.** A picture's card has a Camera choice: tied, the picture shows only through that camera, and Match view goes there. A picture with a saved view can make a locked camera of it with one tap.
+- **Cameras are kept with the scene.** The autosave, Save file, Save to library and a published project carry them with their locks, ties and the one in use; a scene from before opens with none.
+
 ### v0.7.31
 
 - **Hold Shift while orbiting to snap the view.** The view turns to the nearest straight view (Front, Back, Left, Right, Top or Bottom) and stays there, moving to the next as you turn past halfway. A small label names the view while you drag, and letting go of Shift turns freely again from where the view is. It works with the mouse, the Pencil and a finger, in every workspace.

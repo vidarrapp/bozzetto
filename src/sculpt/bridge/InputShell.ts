@@ -2548,6 +2548,11 @@ export class InputShell {
       s.measure.removeSelected();
       return this.claim(e);
     }
+    // A camera whose row was the last thing tapped: Delete takes it, and not an object.
+    if ((e.key === 'Delete' || e.key === 'Backspace') && !e.ctrlKey && !e.metaKey && !e.altKey && !this.held && s.cameras.selected) {
+      s.cameras.removeSelected();
+      return this.claim(e);
+    }
 
     // Esc lets go of an armed Move light.
     if (this.lightArmed && e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.bz-menuname.is-open')) {

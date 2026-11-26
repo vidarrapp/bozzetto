@@ -155,6 +155,11 @@ export class ReferenceView {
     void this.render();
   }
 
+  /** The pictures shown are read again (a camera was looked through, or tied). */
+  refresh(): void {
+    void this.render();
+  }
+
   // --- what the menus and tests ask --------------------------------------
 
   /** The View menu's "References": the pictures in the view shown or hidden, all at once. */
@@ -225,7 +230,7 @@ export class ReferenceView {
 
   /** The pictures in the view, lowest first, if the view shows them at all. */
   private visibleItems(): RefItem[] {
-    return this.showAll && !this.presenting ? this.board.inView() : [];
+    return this.showAll && !this.presenting ? this.board.inView().filter((i) => this.board.shownNow(i.id)) : [];
   }
 
   /**
@@ -294,10 +299,12 @@ export class ReferenceView {
     const c = this.viewer.getCameraState();
     const p = c.position;
     const t = c.target;
-    return { position: [p[0], p[1], p[2]], target: [t[0], t[1], t[2]], focalLength: c.focalLength };
+    return { position: [p[0], p[1], p[2]], target: [t[0], t[1], t[2]], focalLength: c.focalLength, ...(c.projection ? { projection: c.projection } : {}) };
   }
 
   private cameraSet(c: StoredCamera): void {
+    // A locked camera in use keeps its view: the person is told, as for any move.
+    if (this.viewer.refuseMove()) return;
     this.viewer.setFocalLength(c.focalLength);
     this.viewer.setCameraState(new Vector3(...c.position), new Vector3(...c.target));
   }

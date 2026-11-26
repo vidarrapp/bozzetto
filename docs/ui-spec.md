@@ -607,7 +607,8 @@ Tool, with Material before it.
 - **Locked.** No outlines or icons, and every picture is `pointer-events:
   none`: the Pencil, fingers and mouse reach the model as if nothing were
   there. Locking keeps the camera (position, target, lens) with each picture
-  in the view; **Match view** in a tile's menu puts the camera back.
+  in the view; **Match view** in a tile's menu puts the camera back (or looks through the camera the picture is tied to; see
+  Cameras, below).
 - **Arrange button.** A lock in the left edge column with Solo, Undo, Redo and
   Negative (in Armature, beside Undo and Redo), shown only while a picture is
   in the view: neutral when locked, an orange icon (no square) while
@@ -1321,3 +1322,71 @@ kept or opened scene).
   lost.", buttons Replace (danger) and Cancel.
 - An empty scene is not written to the autosave (ScenePersist), and File, New scene clears the kept record so a reload stays
   empty.
+
+## Cameras (0.7.32)
+
+A scene has a list of **cameras**: named, kept views. Besides them there is always the **working view**, the free camera
+the person moves, which is not in the list and cannot be deleted. At any moment the person looks through the working view
+or through one camera. A camera is data: the viewer still has the one camera, and a camera row is what it is set from
+(`src/sculpt/bridge/cameras.ts`). Switching builds no shader or pipeline.
+
+- **Rows.** Under the objects and the armature's row the Scene panel has a group **Cameras** (shown once there is a camera):
+  a row **Working view** first, then one row per camera with the camera mark, a padlock (the object rows' own, on to lock)
+  and the name; double-click renames, as an object's. The row looked through is marked as the active object's row is,
+  and its mark is orange (orange is only for the row in use). A tap on a row looks through it at once and picks it: Delete
+  or Backspace deletes the row last tapped, the trash can on the picked row does the same. No eye, no material, no
+  drag into groups.
+- **Making one.** Create has a small row **Camera** above Primitives (Models in the Asset library does not list it). It keeps
+  the view as it is as "Camera 1", "Camera 2" (a deleted number is not reused) and looks through it; nothing moves.
+- **Moving and the lock.** Through an unlocked camera the person navigates as always and the camera goes with them (read
+  back when it is left or saved). Through a locked camera orbit, pan, zoom, a pinch, the Shift snap, F, A, P, the arrow
+  keys and Present's turntable leave the view where it is, and the first blocked try says "This camera is locked. Tap
+  Working view to look around." in the quiet status place, then not again for four seconds. Sculpting, painting, posing
+  and selecting work as always. Working view is the way out. The Camera tab edits what is looked through: the lens and the
+  projection are the camera's own, and a locked camera's two rows are greyed.
+- **References.** A picture's card has a select **Camera**: none, or one of the cameras. Tied, the picture shows in the view only
+  while that camera is looked through, and the card's Match view goes to that camera. A picture can have a view of
+  its own (Match view's saved view): then the card offers **Make a camera of this view**, a locked camera at that view, tied to
+  the picture, and the picture's saved view stays as it was. A picture belongs to one camera and a camera to one picture.
+  Pictures are never uploaded: a camera names its picture by id only, and a file opened where the picture is not holds the
+  tie without the picture. A .bozz file saved with its pictures keeps each picture's id, so the tie finds it again.
+- **Undo.** Making, deleting, renaming, locking and tying are steps of the sculpt history. Undoing a make goes back to
+  where the person was (the working view or the camera before); undoing a delete brings the camera back and looks through
+  it again if it was in use. Looking through a camera, and moving an unlocked one, are not steps.
+- **Keeping.** The cameras are part of the scene's record: the autosave, Save file, Save to library and a published project
+  carry them, and opening any brings back the cameras, the locks, the ties and the one in use. A scene from before has none.
+  The upload's check (`shared/bozz.ts`, `checkCameras`) takes the record below and refuses a broken one with a reason
+  ("the scene has bad cameras (...)"). The hover picture of a camera (a small preview beside its row) is not built.
+
+### The cameras record (`SavedScene.cameras`, version 1)
+
+Optional, absent in a scene with no camera. All lengths are in the scene's units (centimetres in a scene on real units).
+
+```
+cameras: {
+  v: 1,
+  active: string | null,            // id of the camera looked through, null: the working view
+  working?: View,                   // the working view, kept only while a camera is looked through
+  items: Camera[],                  // 1 to 64
+}
+View = {
+  position: [x, y, z],              // where it stands
+  target: [x, y, z],                // what it looks at (never equal to position)
+  up: [0, 1, 0],                    // the view has no roll, so this is always the world's up
+  lens: number,                     // focal length in mm, 35mm equivalent (8 to 1200 in the app; kept for orthographic too)
+  projection: 'perspective' | 'orthographic',
+  orthoSize: number,                // how tall the view is at the target: 2 * distance * tan(fov / 2); read by an
+                                    // orthographic reader; the app takes the view from position and target
+}
+Camera = View & {
+  id: string,                       // 1 to 64 characters, unique in the list
+  name: string,                     // up to 200 characters
+  locked: boolean,
+  reference: string | null,         // the id of the reference picture tied to it, or null
+}
+```
+
+In the app an orthographic view is a very long lens (0.5 degrees) from far away, so `position` is far from `target` there;
+a reader with a true orthographic camera uses `orthoSize` (the visible height, the width following the window's aspect) and
+looks along `target - position`. `lens` is kept in an orthographic camera so that going back to perspective restores it.
+`up` is written for readers that roll; the app always writes [0, 1, 0] and ignores it.

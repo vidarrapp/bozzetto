@@ -597,6 +597,10 @@ class CameraPanel extends LookPanel {
     );
     projection.setAttribute('aria-label', 'Projection');
     projection.addEventListener('change', () => {
+      if (this.viewer.isViewLocked()) {
+        this.syncProjection();
+        return;
+      }
       this.viewer.setOrthographic(projection.value === 'orthographic');
       this.syncProjection();
     });
@@ -611,12 +615,19 @@ class CameraPanel extends LookPanel {
   /** The select as the viewer has it (the P key changes it too); the lens means nothing in orthographic. */
   private syncProjection(): void {
     const ortho = this.viewer.isOrthographic();
-    if (this.projection) this.projection.value = ortho ? 'orthographic' : 'perspective';
+    // A locked camera keeps its lens and projection: both rows are greyed.
+    const locked = this.viewer.isViewLocked();
+    if (this.projection) {
+      this.projection.value = ortho ? 'orthographic' : 'perspective';
+      this.projection.disabled = locked;
+      this.projection.title = locked ? 'This camera is locked' : '';
+    }
     const lens = this.lensRow;
     if (!lens) return;
-    lens.classList.toggle('is-off', ortho);
+    lens.classList.toggle('is-off', ortho || locked);
+    lens.title = locked ? 'This camera is locked' : '';
     const slider = lens.querySelector('input');
-    if (slider) slider.disabled = ortho;
+    if (slider) slider.disabled = ortho || locked;
   }
 
   protected sync(): void {
