@@ -613,11 +613,11 @@ class LightingPanel extends LookPanel {
           return [...((which === 'position' ? now?.position : now?.aimNow) ?? [0, 0, 0])] as Point3;
         };
         box.appendChild(
-          compactRange(`${title} ${axis}`, -400, 400, 1, spot[which === 'position' ? 'position' : 'aimNow'][i], (v) => {
+          compactRange(`${title} ${axis}`, -400, 400, 1, Math.round(spot[which === 'position' ? 'position' : 'aimNow'][i] * 10) / 10, (v) => {
             const p = current();
             p[i] = v;
             patch(id, which === 'position' ? { position: p } : { aim: p });
-          }, { unit: 'cm', limits: { min: SPOT_LIMITS.coordinate[0], max: SPOT_LIMITS.coordinate[1] } }),
+          }, { unit: ' cm', limits: { min: SPOT_LIMITS.coordinate[0], max: SPOT_LIMITS.coordinate[1] } }),
         );
       });
     };
