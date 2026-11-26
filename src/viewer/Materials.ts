@@ -26,6 +26,11 @@ export interface MaterialState {
   flatShading: boolean;
   matcapIndex: number;
   /**
+   * The ids of the matcaps this scene holds (the picker lists these, and Browse… adds from the
+   * Asset library). A look without the list has the default matcap and the one in use.
+   */
+  sceneMatcaps?: string[];
+  /**
    * A model that carries painted vertex colours (a sculpt published from
    * Sculpt mode) shows them - "Sculpt colours", true - or the albedo over
    * the whole of it - "Plain colour", false. Absent from looks saved
@@ -74,6 +79,8 @@ export class Materials {
   private readonly registry = new Map<string, Material>();
   private readonly matcapTextures: Texture[];
   private matcapIndex = 0;
+  /** The matcaps this scene holds, by id, in the order they came (always the one in use among them). */
+  private sceneMatcapIds: string[] = [MATCAP_ASSETS[0].id];
   private flatShading = false;
 
   readonly modes: MaterialModeInfo[] = [
@@ -442,6 +449,31 @@ export class Materials {
     return MATCAP_ASSETS.map((m) => ({ id: m.id, label: m.label }));
   }
 
+  /** The scene's own matcaps: the picker's list. */
+  sceneMatcaps(): MatcapInfo[] {
+    return this.sceneMatcapIds.flatMap((id) => MATCAP_ASSETS.filter((m) => m.id === id).map((m) => ({ id: m.id, label: m.label })));
+  }
+
+  /** Where the matcap in use stands in the scene's list. */
+  sceneMatcapIndex(): number {
+    return this.sceneMatcaps().findIndex((m) => m.id === MATCAP_ASSETS[this.matcapIndex]?.id);
+  }
+
+  /** Uses the scene's n-th matcap. */
+  useSceneMatcap(n: number): void {
+    const id = this.sceneMatcaps()[n]?.id;
+    const at = MATCAP_ASSETS.findIndex((m) => m.id === id);
+    if (at >= 0) this.setMatcapIndex(at);
+  }
+
+  /** Takes a matcap out of the scene's list; false for the last one, or one that is not there. The one in use passes to the first left. */
+  removeSceneMatcap(id: string): boolean {
+    if (this.sceneMatcapIds.length <= 1 || !this.sceneMatcapIds.includes(id)) return false;
+    this.sceneMatcapIds = this.sceneMatcapIds.filter((x) => x !== id);
+    if (MATCAP_ASSETS[this.matcapIndex]?.id === id) this.setMatcapIndex(MATCAP_ASSETS.findIndex((m) => m.id === this.sceneMatcapIds[0]));
+    return true;
+  }
+
   setMatcapIndex(index: number): void {
     // Clamp rather than ignore: a look saved before the house matcaps were
     // retired carries an index past the end, and silently keeping whatever
@@ -449,6 +481,8 @@ export class Materials {
     index = Math.min(this.matcapTextures.length - 1, Math.max(0, Math.round(index)));
     if (!Number.isFinite(index)) return;
     this.matcapIndex = index;
+    const used = MATCAP_ASSETS[index].id;
+    if (!this.sceneMatcapIds.includes(used)) this.sceneMatcapIds.push(used);
     const mat = this.registry.get('matcap') as MeshMatcapNodeMaterial;
     mat.matcap = this.matcapTextures[index];
     mat.needsUpdate = true;
@@ -518,6 +552,7 @@ export class Materials {
       metalness: lit.metalness,
       flatShading: this.flatShading,
       matcapIndex: this.matcapIndex,
+      sceneMatcaps: [...this.sceneMatcapIds],
       vertexColors: this.source !== 'albedo',
       colourSource: this.source,
     };
@@ -530,7 +565,12 @@ export class Materials {
     if (state.albedo) this.setAlbedo(state.albedo);
     if (finite(state.roughness)) this.setRoughness(Math.min(1, Math.max(0, state.roughness)));
     if (finite(state.metalness)) this.setMetalness(Math.min(1, Math.max(0, state.metalness)));
-    if (typeof state.matcapIndex === 'number') this.setMatcapIndex(state.matcapIndex);
+    if (typeof state.matcapIndex === 'number') {
+      // The scene's matcaps come with the look; an older look has the default and the one in use.
+      const known = Array.isArray(state.sceneMatcaps) ? state.sceneMatcaps.filter((id, i, all) => MATCAP_ASSETS.some((m) => m.id === id) && all.indexOf(id) === i) : [];
+      this.sceneMatcapIds = known.length ? known : [MATCAP_ASSETS[0].id];
+      this.setMatcapIndex(state.matcapIndex);
+    }
     if (typeof state.flatShading === 'boolean') this.setFlatShading(state.flatShading);
     // The third choice where the look has it; an older look has the boolean alone.
     if (isColourSource(state.colourSource)) this.setColourSource(state.colourSource);

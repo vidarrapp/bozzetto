@@ -18,6 +18,13 @@ export interface MatcapPickerHandle {
   dispose(): void;
 }
 
+let browse: (() => void) | null = null;
+
+/** The Asset library's window gives the picker its Browse… (the viewer has no library: its picker has none). */
+export function setMatcapBrowse(fn: (() => void) | null): void {
+  browse = fn;
+}
+
 export interface MatcapEntry {
   id: string;
   label: string;
@@ -82,6 +89,17 @@ export function matcapPicker(
       });
       grid.appendChild(btn);
     });
+    if (browse) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'matcap-browse';
+      more.textContent = 'Browse…';
+      more.addEventListener('click', () => {
+        close();
+        browse?.();
+      });
+      grid.appendChild(more);
+    }
   };
 
   const close = (): void => {

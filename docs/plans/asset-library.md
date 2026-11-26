@@ -319,6 +319,8 @@ Recorded in `docs/HANDOFF.md` as well.
    beside Carve that arm them for the next strokes, tools for the bar, or
    both.
 
+The Materials tab also lists preset materials (clays, casts and metals, rendered balls) above the matcaps; the scene keeps its own short list of matcaps beside its materials, and the pickers show only what the scene holds, with Browse… into this window (2026-11-25).
+
 ## Where assets live (2026-11-25)
 
 Assets are kept either on Bozzetto, as shared community assets a person subscribes to or likes and as what they save to their own library (which is online too), or in the scene itself. **Library** is the button for the first, **Scene** for the second (on every tab). Saving your own tools and presets online, subscribing and liking wait for the Rust core.

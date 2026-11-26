@@ -73,6 +73,8 @@ export class ScenePanel extends SidePanel {
    * workspace (asking first when the current one has been posed).
    */
   onArmature: ((id: string) => void) | null = null;
+  /** "Browse…" in the Material select: the Asset library on its Materials tab. */
+  onBrowse: (() => void) | null = null;
   /** A Create choice added an object to a scene that had none: the page frames it. */
   onCreatedFirst: (() => void) | null = null;
 
@@ -864,9 +866,10 @@ export class ScenePanel extends SidePanel {
     // The trailing "New*" entry IS the create button (owner call): picking
     // it prompts for a name, makes the material and assigns it here.
     const NEW_ID = '__new__';
+    const BROWSE_ID = '__browse__';
     const options: [string, string][] = [];
     if (inMatcap) options.push([MATCAP_ID, `Matcap: ${this.view!.matcapName()}`]);
-    options.push(...this.library.list().map((m) => [m.id, m.name] as [string, string]), [NEW_ID, 'New*']);
+    options.push(...this.library.list().map((m) => [m.id, m.name] as [string, string]), [NEW_ID, 'New*'], [BROWSE_ID, 'Browse…']);
     const select = selectEl(options, inMatcap ? MATCAP_ID : current.id);
     // The padlock means "not edited": a locked object's material is read-only with it.
     select.disabled = this.session.isLocked(active);
@@ -879,6 +882,11 @@ export class ScenePanel extends SidePanel {
         const picked = select.value;
         if (picked === MATCAP_ID) {
           select.value = MATCAP_ID;
+          return;
+        }
+        if (picked === BROWSE_ID) {
+          select.value = inMatcap ? MATCAP_ID : current.id;
+          this.onBrowse?.();
           return;
         }
         if (picked === NEW_ID) {

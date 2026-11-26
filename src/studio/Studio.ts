@@ -11,6 +11,7 @@ import { ReferencePanel } from '../reference/ReferencePanel';
 import { ReferenceView } from '../reference/ReferenceView';
 import { ArrangeButton } from '../reference/ArrangeButton';
 import { AssetLibrary } from '../library/AssetLibrary';
+import { setMatcapBrowse } from '../ui/MatcapPicker';
 import { HdrisView, LightingView, MaterialsView } from '../library/TileViews';
 import { installIntake } from '../reference/intake';
 import { TitleStrip, type PathStep, type Readout, type Workspace as WorkspaceId } from '../sculpt/ui/TitleStrip';
@@ -177,6 +178,8 @@ export class Studio {
     this.reference = { board, panel, view, arrange };
     this.material = new MaterialPanel(viewer, opts.material);
     this.library = new AssetLibrary();
+    // The Material panel's matcap picker ends with Browse…, which opens the library on the Materials tab.
+    setMatcapBrowse(() => this.library.open('materials', 'bozzetto'));
     // The look tabs read the viewer: the matcaps, the light rigs and the environments, as the panels' pickers do.
     const look = { viewer, workspace: (): string | null => this.now() };
     this.materialsTab = new MaterialsView(look);
@@ -415,6 +418,7 @@ export class Studio {
     this.reference.panel.dispose();
     this.reference.board.dispose();
     this.material.dispose();
+    setMatcapBrowse(null);
     this.library.dispose();
     this.details.dispose();
     for (const m of Object.values(this.menus)) m.dispose();

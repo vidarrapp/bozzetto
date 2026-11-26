@@ -35,6 +35,56 @@ export function matcapThumbUrl(id: string): string {
   return `/assets/matcaps/thumbs/${id}.png`;
 }
 
+// --- material presets ----------------------------------------------------------------------------
+
+export interface MaterialPreset extends Asset {
+  /** sRGB hex, as a scene material holds it. */
+  albedo: string;
+  roughness: number;
+  metalness: number;
+  thumb: string;
+  group: 'clays' | 'metals';
+}
+
+/** A preset's picture (tools/render-library-thumbs.mjs makes them): a ball of it under the Three-point rig. */
+export function materialThumbUrl(id: string): string {
+  return `/assets/materials/${id}.png`;
+}
+
+const preset = (group: MaterialPreset['group'], id: string, label: string, albedo: string, roughness: number, metalness: number): MaterialPreset => ({
+  id,
+  label,
+  albedo,
+  roughness,
+  metalness,
+  group,
+  thumb: materialThumbUrl(id),
+});
+
+/**
+ * The preset materials. Measured-reflectance style values: the albedo of a dielectric stays inside the
+ * usual PBR range (about 0.04 to 0.9 linear), and for a metal it is the specular colour (its reflectance
+ * at normal incidence). They may be tuned; a preset once in a scene is an ordinary scene material.
+ */
+export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
+  preset('clays', 'wax-clay', 'Wax clay', '#a8794f', 0.45, 0),
+  preset('clays', 'wet-clay', 'Wet clay', '#7d766b', 0.22, 0),
+  preset('clays', 'dry-clay', 'Dry clay', '#b3a797', 0.85, 0),
+  preset('clays', 'plasteline', 'Plasteline', '#8b917c', 0.55, 0),
+  preset('clays', 'terracotta', 'Terracotta', '#b0634a', 0.75, 0),
+  preset('clays', 'plaster', 'Plaster', '#e4e0d6', 0.9, 0),
+  preset('clays', 'porcelain', 'Porcelain', '#f0eee8', 0.15, 0),
+  preset('clays', 'plastic', 'Plastic', '#c9c9c9', 0.35, 0),
+  preset('clays', 'rubber', 'Rubber', '#2b2b2b', 0.8, 0),
+  preset('metals', 'steel', 'Steel', '#c4c7c7', 0.35, 1),
+  preset('metals', 'aluminium', 'Aluminium', '#f5f6f6', 0.3, 1),
+  preset('metals', 'silver', 'Silver', '#fcfaf5', 0.2, 1),
+  preset('metals', 'gold', 'Gold', '#ffe29b', 0.25, 1),
+  preset('metals', 'copper', 'Copper', '#fad0c0', 0.3, 1),
+  preset('metals', 'brass', 'Brass', '#f4e4ad', 0.3, 1),
+  preset('metals', 'bronze', 'Bronze', '#cd9a6a', 0.4, 1),
+];
+
 // --- light rigs ----------------------------------------------------------------------------------
 
 export interface RigAsset extends Asset {

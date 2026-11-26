@@ -387,6 +387,47 @@ body.chrome-hidden .lib-window {
 }
 
 /* Nothing is lifted from these tiles, so a finger that drags on one scrolls the window; only a tap uses it. */
+.lib-tile-wrap {
+  position: relative;
+  display: flex;
+}
+
+.lib-tile-wrap > .lib-tile {
+  flex: 1 1 auto;
+}
+
+.lib-tile__remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--bz-text-3);
+  cursor: pointer;
+}
+
+.lib-tile__remove .fi {
+  font-size: 18px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.lib-tile__remove:hover {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+}
+
+.lib-tile__remove:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
+}
+
 .lib-tile--pic {
   min-height: 76px;
   touch-action: pan-y;

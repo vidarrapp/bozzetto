@@ -31,14 +31,16 @@ export const suites = {
     t.eq((await options(page))[0], first, 'and that option comes first');
 
     // The Material panel's picker: a different matcap is followed at once.
+    // The picker lists the scene's own matcaps: VR08 comes into the scene, VR01 is back in use.
+    await page.evaluate(() => { const m = window.__sculpt.viewer.materials; m.setMatcapIndex(7); m.setMatcapIndex(0); });
     await page.evaluate(() => document.querySelector('.mcpick__trigger').click());
     await page.waitForFunction(() => document.querySelector('.matcap-grid--pop .matcap-swatch'), null, { timeout: 5000 });
-    await page.evaluate(() => document.querySelectorAll('.matcap-grid--pop .matcap-swatch')[7].click());
+    await page.evaluate(() => document.querySelectorAll('.matcap-grid--pop .matcap-swatch')[1].click());
     await page.waitForFunction(() => document.querySelector('.outliner__material select')?.selectedOptions[0]?.textContent === 'Matcap: VR08', null, { timeout: 5000 });
     t.eq(await chosen(page), 'Matcap: VR08', 'a matcap picked in the Material panel is followed');
 
     // Choosing a scene material assigns it and returns the view to Lit.
-    const ids = await page.evaluate((s) => [...document.querySelector(s).options].map((o) => o.value).filter((v) => v !== '__matcap__' && v !== '__new__'), SEL);
+    const ids = await page.evaluate((s) => [...document.querySelector(s).options].map((o) => o.value).filter((v) => v !== '__matcap__' && v !== '__new__' && v !== '__browse__'), SEL);
     t.ok(ids.length >= 1, `the scene's materials stay listed under it (${ids.join(', ')})`);
     await page.selectOption(SEL, ids[0]);
     await page.waitForFunction(() => window.__sculpt.viewer.getMaterial() === 'lit', null, { timeout: 5000 });

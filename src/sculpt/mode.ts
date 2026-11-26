@@ -1942,6 +1942,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   );
   // Rename, eye and padlock bypass the undo stack: sync the display side
   // (visibility, the stats corner name) and let the autosave know directly.
+  scenePanel.onBrowse = () => studio.library.open('materials', 'bozzetto');
   scenePanel.onSceneEdit = () => {
     reconcile();
     if (gizmo.isActive()) gizmo.attach(gizmoTarget());
@@ -1980,7 +1981,22 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   );
   // The Materials tab's Scene list: this scene's materials, assigned as the Scene panel's select assigns them.
   studio.materialsTab.setScene({
-    list: () => library.list().map((m) => ({ id: m.id, name: m.name, albedo: m.albedo })),
+    list: () => library.list().map((m) => ({ id: m.id, name: m.name, albedo: m.albedo, roughness: m.roughness, metalness: m.metalness })),
+    addPreset: (p) => {
+      const same = library.list().find((m) => m.name === p.name && m.albedo.toLowerCase() === p.albedo && Math.abs(m.roughness - p.roughness) < 1e-6 && Math.abs(m.metalness - p.metalness) < 1e-6);
+      let id = same?.id;
+      if (!id) {
+        id = library.create(p.name).id;
+        library.update(id, { albedo: p.albedo, roughness: p.roughness, metalness: p.metalness });
+      }
+      const mesh = session.getMesh();
+      if (!mesh) return false;
+      library.assign(mesh, id);
+      if (viewer.getMaterial() === 'matcap') viewer.setMaterial('lit');
+      session.render();
+      scenePanel?.refresh();
+      return true;
+    },
     active: () => {
       const mesh = session.getMesh();
       return mesh ? library.materialFor(mesh).id : null;

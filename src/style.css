@@ -451,6 +451,18 @@ h1,
   border-radius: 50%;
 }
 
+.matcap-browse {
+  grid-column: 1 / -1;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--bz-line, var(--panel-border));
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 .matcap-swatch:hover {
   border-color: var(--panel-border);
 }

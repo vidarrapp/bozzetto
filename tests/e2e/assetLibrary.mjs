@@ -209,6 +209,7 @@ async function between(page, a, b) {
   return [(ax + bx) / 2, ay];
 }
 
+const SHOTS_MAT = '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9835c4/scratchpad/app/matpresets';
 const SHOTS = '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9835c4/scratchpad/app/libtabs';
 const showTab = async (page, name) => {
   await page.click(`.lib-tab:text-is("${name}")`);
@@ -476,6 +477,193 @@ export const suites = {
     await wait(page, 250);
     const small = await winRect(page);
     t.ok(small.x >= 0 && small.y >= 0 && small.x + small.w <= 800 && small.y + small.h <= 600, `a smaller view keeps it inside (${JSON.stringify(small)})`);
+  },
+
+  // The preset materials on the Materials tab's Library side.
+  async libraryMaterials(page, base, t) {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await boot(page, base);
+    await openLib(page);
+    await showTab(page, 'Materials');
+    const GROUPS = await page.evaluate(() => [...document.querySelectorAll('.lib-body[data-tab="materials"] .lib-group')].filter((g) => g.querySelector('.lib-group__head')).map((g) => ({ head: g.querySelector('.lib-group__head')?.textContent, ids: [...g.querySelectorAll('.lib-tile')].map((b) => b.dataset.asset) })));
+    t.eq(GROUPS.map((g) => g.head).join(), 'Clays and casts,Metals,Matcaps', 'the Library side has Clays and casts, Metals, then Matcaps');
+    t.eq(GROUPS[0].ids.join(), 'wax-clay,wet-clay,dry-clay,plasteline,terracotta,plaster,porcelain,plastic,rubber', 'the clays in the order of the list');
+    t.eq(GROUPS[1].ids.join(), 'steel,aluminium,silver,gold,copper,brass,bronze', 'and the metals');
+    t.eq(GROUPS[2].ids.length, 10, 'then the ten matcaps');
+    t.eq(JSON.stringify(await thumbsLoad(page, 'materials')), '[]', 'every tile shows its picture');
+    const names = () => page.evaluate(() => [...document.querySelector('.outliner__material select').options].map((o) => o.value + ':' + o.textContent));
+    const state = () =>
+      page.evaluate(() => {
+        const { session, library, viewer } = window.__sculpt;
+        const mesh = session.getMesh();
+        const m = library.materialFor(mesh);
+        const arr = mesh.getMaterials();
+        const k = viewer.display.userData.albedo;
+        return { id: m.id, name: m.name, albedo: m.albedo, rough: arr[0], metal: arr[1], disp: [k.r, k.g, k.b], mode: viewer.getMaterial(), count: library.list().length };
+      });
+    const lin = (hex) => [1, 3, 5].map((i) => { const c = parseInt(hex.slice(i, i + 2), 16) / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+
+    // A tap adds the scene material and assigns it.
+    await tapAsset(page, 'materials', 'bronze');
+    await wait(page, 400);
+    let st = await state();
+    t.ok(st.name === 'Bronze' && st.albedo === '#cd9a6a' && Math.abs(st.rough - 0.4) < 1e-4 && st.metal === 1, `a tap assigns Bronze with its values (${JSON.stringify([st.name, st.albedo, st.rough, st.metal])})`);
+    t.ok(lin(st.albedo).every((v, i) => Math.abs(v - st.disp[i]) < 0.01), `and the display albedo is its albedo (${st.disp.map((v) => v.toFixed(3))})`);
+    t.eq(st.count, 2, 'the scene has Clay and Bronze');
+    const id1 = st.id;
+    await page.waitForFunction(() => document.querySelector('.lib-body[data-tab="materials"] .lib-tile[data-asset="bronze"]')?.dataset.state === 'use', null, { timeout: 5000 });
+    t.eq((await tabTiles(page, 'materials')).filter((c) => c.state === 'use').map((c) => c.id).join(), 'bronze', 'the Bronze tile is marked in use');
+    t.ok((await names()).includes(id1 + ':Bronze'), "the Scene panel's select lists it");
+    await page.click('.lib-where:text-is("Scene")');
+    t.ok(await page.evaluate((id) => !!document.querySelector('.lib-body[data-tab="materials"] .lib-tile[data-asset="' + id + '"]'), id1), 'the Scene side lists it');
+    await page.click('.lib-where:text-is("Library")');
+
+    // The same again adds no duplicate.
+    await tapAsset(page, 'materials', 'bronze');
+    await wait(page, 300);
+    st = await state();
+    t.ok(st.count === 2 && st.id === id1, `a second tap adds no duplicate (${st.count} materials)`);
+
+    // Edited, the mark goes and a tap makes a new one.
+    await page.evaluate((id) => window.__sculpt.library.update(id, { roughness: 0.7 }), id1);
+    await page.waitForFunction(() => !document.querySelector('.lib-body[data-tab="materials"] .lib-tile[data-state="use"]'), null, { timeout: 5000 });
+    t.ok(true, 'after an edit the preset tile is no longer marked');
+    await tapAsset(page, 'materials', 'bronze');
+    await wait(page, 300);
+    st = await state();
+    t.ok(st.count === 3 && st.id !== id1 && Math.abs(st.rough - 0.4) < 1e-4, `a tap after an edit adds a new Bronze (${st.count} materials)`);
+
+    // In Matcap a tap goes to Lit.
+    await page.evaluate(() => window.__sculpt.viewer.setMaterial('matcap'));
+    await wait(page, 300);
+    await tapAsset(page, 'materials', 'wet-clay');
+    await wait(page, 400);
+    st = await state();
+    t.ok(st.mode === 'lit' && st.name === 'Wet clay' && Math.abs(st.rough - 0.22) < 1e-4 && st.metal === 0, `in Matcap a tap goes to Lit with Wet clay (${st.mode}, ${st.name})`);
+
+    // The select lists only the scene's materials, New* and Browse...
+    const opts = await names();
+    t.ok(opts.length === 6 && opts[4] === '__new__:New*' && opts[5] === '__browse__:Browse…', `the select: the scene's materials, New*, Browse… (${opts.join(' | ')})`);
+    t.ok(!opts.some((o) => /Plaster|Gold|Steel/.test(o)), 'and no preset that is not in the scene');
+    await page.screenshot({ path: `${SHOTS_MAT}/select.png` });
+
+    // Browse... opens the library on the Materials tab, Library side.
+    await page.click('.lib-window [aria-label="Close"]');
+    await page.waitForSelector('.lib-window', { state: 'hidden' });
+    await page.evaluate(() => { const s = document.querySelector('.outliner__material select'); s.value = '__browse__'; s.dispatchEvent(new Event('change')); });
+    await page.waitForSelector('.lib-window:not([hidden])');
+    const where = await page.evaluate(() => ({ tab: document.querySelector('.lib-tab.is-on').textContent, side: document.querySelector('.lib-where.is-on').textContent, sel: document.querySelector('.outliner__material select').value, id: window.__sculpt.library.materialFor(window.__sculpt.session.getMesh()).id }));
+    t.ok(where.tab === 'Materials' && where.side === 'Library', `Browse… opens Materials, Library (${where.tab}, ${where.side})`);
+    t.eq(where.sel, where.id, "and the select shows the object's material again");
+
+    // A reload keeps the material (the scene is autosaved).
+    await wait(page, 4000);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!window.__sculpt && window.__sculpt.session.getMesh(), null, { timeout: 90_000 });
+    await wait(page, 600);
+    st = await state();
+    t.ok(st.name === 'Wet clay' && Math.abs(st.rough - 0.22) < 1e-4, `a reload keeps the object's material (${st.name}, ${st.rough})`);
+    await openLib(page);
+    await showTab(page, 'Materials');
+
+    // With no object: added, said so.
+    await page.evaluate(() => { const { session } = window.__sculpt; for (const m of [...session.getMeshes()]) session.deleteMesh(m); });
+    await wait(page, 400);
+    t.eq(await page.evaluate(() => window.__sculpt.session.getMeshes().length), 0, 'no object left');
+    const before = await page.evaluate(() => window.__sculpt.library.list().length);
+    await tapAsset(page, 'materials', 'plaster');
+    await wait(page, 300);
+    t.eq(await page.evaluate(() => window.__sculpt.library.list().some((m) => m.name === 'Plaster')), true, 'with no object the material is still added to the scene');
+    t.eq(await page.evaluate(() => window.__sculpt.library.list().length), before + 1, 'once');
+    t.eq(await foot(page), "Added to the scene's materials.", 'and the foot says so');
+    t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
+
+  // The scene's own matcaps: the Material panel's picker and the Materials tab's Scene side read one list.
+  async libraryMatcaps(page, base, t) {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await boot(page, base);
+    await openLib(page);
+    await page.evaluate(() => window.__sculpt.viewer.setMaterial('matcap'));
+    await page.evaluate(() => document.querySelector('.panel--material > .panel__handle').click());
+    await wait(page, 500);
+    const picker = async () => {
+      await page.evaluate(() => { const p = document.querySelector('.mcpick__pop'); if (p) p.hidden = true; document.querySelector('.mcpick__trigger').click(); });
+      await wait(page, 250);
+      return page.evaluate(() => ({ ids: [...document.querySelectorAll('.matcap-grid--pop .matcap-swatch')].map((b) => /thumbs\/(\w+)\.png/.exec(b.querySelector('img').src)[1]), browse: [...document.querySelectorAll('.matcap-grid--pop .matcap-browse')].map((b) => b.textContent) }));
+    };
+    const sceneSide = () =>
+      page.evaluate(() => [...document.querySelectorAll('.lib-body[data-tab="materials"] .lib-tile[data-asset^="matcap:"]')].filter((b) => !b.hidden).map((b) => ({ id: b.dataset.asset.slice(7), state: b.dataset.state || '', remove: b.parentElement.classList.contains('lib-tile-wrap') && !!b.parentElement.querySelector('.lib-tile__remove') })));
+    const toScene = async () => {
+      await showTab(page, 'Materials');
+      await page.click('.lib-where:text-is("Scene")');
+      await wait(page, 300);
+    };
+
+    let p = await picker();
+    t.ok(p.ids.join() === 'vr01' && p.browse.join() === 'Browse…', `a new scene's picker shows one matcap and Browse… (${p.ids}, ${p.browse})`);
+    await toScene();
+    t.eq((await sceneSide()).map((c) => c.id).join(), 'vr01', 'the Scene side shows the same one');
+    t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-body[data-tab="materials"] .lib-group__head')].filter((h) => !h.closest('.lib-group').hidden).map((h) => h.textContent).join()), 'Matcaps', 'under a Matcaps heading');
+
+    // A library tap adds and uses it.
+    await page.click('.lib-where:text-is("Library")');
+    await tapAsset(page, 'materials', 'vr04');
+    await wait(page, 400);
+    p = await picker();
+    t.eq(p.ids.join(), 'vr01,vr04', 'a library tap adds the matcap and the picker lists it');
+    t.eq(await page.evaluate(() => window.__sculpt.viewer.materials.getMaterialState().matcapIndex), 3, 'and uses it');
+    await tapAsset(page, 'materials', 'vr07');
+    await wait(page, 400);
+    await tapAsset(page, 'materials', 'vr04');
+    await wait(page, 400);
+    p = await picker();
+    t.eq(p.ids.join(), 'vr01,vr04,vr07', 'a matcap already in the scene is not added twice, and the order is the order they came');
+    await toScene();
+    let side = await sceneSide();
+    t.eq(side.map((c) => c.id).join(), p.ids.join(), 'the Scene side lists the same, in the same order');
+    t.eq(side.filter((c) => c.state === 'use').map((c) => c.id).join(), 'vr04', 'the one in use is marked');
+    t.ok(side.find((c) => c.id === 'vr04').remove === false && side.find((c) => c.id === 'vr01').remove && side.find((c) => c.id === 'vr07').remove, 'the one in use has no remove button in Matcap, the others have one');
+    const box = await page.evaluate(() => { const r = document.querySelector('.lib-tile__remove').getBoundingClientRect(); return [r.width, r.height, document.querySelector('.lib-tile__remove').getAttribute('aria-label')]; });
+    t.ok(box[0] >= 28 && box[1] >= 28 && box[2] === 'Remove from scene', `the button is at least 28 px and is named Remove from scene (${box})`);
+    await page.screenshot({ path: `${SHOTS_MAT}/scene-matcaps.png` });
+
+    // A tap on a Scene tile uses it.
+    await page.click('.lib-body[data-tab="materials"] .lib-tile[data-asset="matcap:vr07"]');
+    await wait(page, 400);
+    t.eq(await page.evaluate(() => window.__sculpt.viewer.materials.getMaterialState().matcapIndex), 6, 'a tap on a Scene tile uses that matcap');
+    t.eq((await picker()).ids.join(), 'vr01,vr04,vr07', 'and the picker has the same three');
+
+    // Removing takes it from both.
+    await page.evaluate(() => document.querySelector('.lib-body[data-tab="materials"] .lib-tile[data-asset="matcap:vr01"]').parentElement.querySelector('.lib-tile__remove').click());
+    await wait(page, 400);
+    t.eq((await sceneSide()).map((c) => c.id).join(), 'vr04,vr07', 'removing one takes it from the Scene side');
+    t.eq((await picker()).ids.join(), 'vr04,vr07', 'and from the picker');
+    t.eq(await page.evaluate(() => window.__sculpt.viewer.getMaterial()), 'matcap', 'the view stays in Matcap');
+
+    // The list is kept with the look: a saved look, and a reload.
+    const look = await page.evaluate(() => JSON.parse(JSON.stringify(window.__sculpt.viewer.getLook())));
+    t.eq(look.material.sceneMatcaps.join(), 'vr04,vr07', 'the look carries the list');
+    await page.evaluate(() => { const m = window.__sculpt.viewer.materials; m.setMatcapIndex(8); });
+    t.eq((await picker()).ids.join(), 'vr04,vr07,vr09', 'VR09 comes in');
+    await page.evaluate((l) => window.__sculpt.viewer.applyLook(l), look);
+    await wait(page, 400);
+    t.eq((await picker()).ids.join(), 'vr04,vr07', 'a saved look brings its list back');
+    await page.evaluate(() => window.__sculpt.viewer.applyLook({ material: { matcapIndex: 4 } }));
+    await wait(page, 400);
+    t.eq((await picker()).ids.join(), 'vr01,vr05', 'an old look without a list opens with the default and the one in use');
+    await page.evaluate((l) => window.__sculpt.viewer.applyLook(l), look);
+    // A change in a panel makes the session keep its look (as a pick in the panel would).
+    await page.evaluate(() => document.querySelector('.panel--material select').dispatchEvent(new Event('change', { bubbles: true })));
+    await wait(page, 2500);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
+    await wait(page, 800);
+    const kept = await page.evaluate(() => window.__sculpt.viewer.materials.sceneMatcaps().map((m) => m.id).join());
+    t.eq(kept, 'vr04,vr07', 'the list survives a reload');
+    t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   },
 
   async libraryTools(page, base, t) {
@@ -1178,11 +1366,11 @@ export const suites = {
     await page.evaluate(() => document.querySelector('.mcpick__trigger').click());
     await wait(page, 300);
     const panelCaps = await page.evaluate(() => [...document.querySelectorAll('.matcap-grid--pop .matcap-swatch')].map((b) => ({ id: /thumbs\/(\w+)\.png/.exec(b.querySelector('img').src)[1], label: b.title })));
-    const caps = await tabTiles(page, 'materials');
+    const caps = (await tabTiles(page, 'materials')).filter((c) => /^vr\d+$/.test(c.id));
     t.eq(caps.length, 10, 'Materials lists the ten matcaps');
-    t.eq(JSON.stringify(caps.map(({ id, label }) => ({ id, label }))), JSON.stringify(panelCaps), "the same ids, labels and order as the Material panel's picker");
+    t.eq(JSON.stringify(panelCaps.map((c) => c.id)), '["vr01"]', "the Material panel's picker lists only the scene's matcap");
     t.eq(JSON.stringify(await thumbsLoad(page, 'materials')), '[]', 'every matcap tile shows its picture');
-    t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="materials"] .lib-group__head').textContent), 'Matcaps', 'under the group Matcaps');
+    t.eq(await page.evaluate(() => [...document.querySelectorAll('.lib-body[data-tab="materials"] .lib-group__head')].map((h) => h.textContent).join()), 'Clays and casts,Metals,Matcaps', 'in the groups Clays and casts, Metals and Matcaps');
     t.eq(await page.evaluate(() => document.querySelector('.lib-body[data-tab="materials"] [data-role="library-tail"]').textContent), 'Lit shows the materials again (Material tab).', 'and the line about Lit');
     await page.evaluate(() => window.__sculpt.viewer.setMaterial('lit'));
     await tapAsset(page, 'materials', 'vr04');
@@ -1203,16 +1391,16 @@ export const suites = {
     await page.screenshot({ path: `${SHOTS}/materials-with-panel.png` });
     await page.evaluate(() => document.querySelector('.mcpick__trigger').click());
     await wait(page, 300);
-    await page.evaluate(() => document.querySelectorAll('.matcap-grid--pop .matcap-swatch')[7].click());
-    await page.waitForFunction(() => document.querySelector('.lib-body[data-tab="materials"] .lib-tile[data-asset="vr08"]')?.dataset.state === 'use', null, { timeout: 5000 });
-    t.eq((await tabTiles(page, 'materials')).filter((c) => c.state === 'use').map((c) => c.id).join(), 'vr08', 'picking in the panel moves the mark in the window');
+    await page.evaluate(() => document.querySelectorAll('.matcap-grid--pop .matcap-swatch')[0].click());
+    await page.waitForFunction(() => document.querySelector('.lib-body[data-tab="materials"] .lib-tile[data-asset="vr01"]')?.dataset.state === 'use', null, { timeout: 5000 });
+    t.eq((await tabTiles(page, 'materials')).filter((c) => c.state === 'use').map((c) => c.id).join(), 'vr01', 'picking in the panel moves the mark in the window');
     await page.evaluate(() => window.__sculpt.viewer.setMaterial('lit'));
     await page.waitForFunction(() => !document.querySelector('.lib-body[data-tab="materials"] .lib-tile[data-state="use"]'), null, { timeout: 5000 });
     t.ok(true, 'Lit takes the mark away');
     // --- Materials: Scene lists the scene's materials; a tap assigns them to the active object ---
     await page.click('.lib-where:text-is("Scene")');
-    const sceneList = await page.evaluate(() => [...document.querySelector('.outliner__material select').options].filter((o) => o.value !== '__new__' && o.value !== '__matcap__').map((o) => ({ id: o.value, name: o.textContent })));
-    const shownList = await page.evaluate(() => [...document.querySelectorAll('.lib-body[data-tab="materials"] .lib-tile:not([hidden])')].map((b) => `${b.dataset.asset}:${b.querySelector('.lib-tile__name').textContent}`));
+    const sceneList = await page.evaluate(() => [...document.querySelector('.outliner__material select').options].filter((o) => o.value !== '__new__' && o.value !== '__matcap__' && o.value !== '__browse__').map((o) => ({ id: o.value, name: o.textContent })));
+    const shownList = await page.evaluate(() => [...document.querySelectorAll('.lib-body[data-tab="materials"] .lib-tile:not([hidden])')].filter((b) => !b.dataset.asset.startsWith('matcap:')).map((b) => `${b.dataset.asset}:${b.querySelector('.lib-tile__name').textContent}`));
     t.eq(shownList.join(), sceneList.map((m) => `${m.id}:${m.name}`).join(), 'Scene lists the scene materials in the Scene panel select order');
     const target = sceneList[sceneList.length - 1].id;
     await page.evaluate(() => window.__sculpt.viewer.setMaterial('matcap'));

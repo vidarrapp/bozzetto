@@ -2,7 +2,7 @@ import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { RIGS_CHANGED_EVENT, myRigs } from '../ui/rigLibrary';
 import type { PrimitiveKind } from '../sculpt/bridge/SculptSession';
 import type { Viewer } from '../viewer/Viewer';
-import { ENVIRONMENT_ASSETS, MATCAP_ASSETS, rigAssets } from './assets';
+import { ENVIRONMENT_ASSETS, MATCAP_ASSETS, MATERIAL_PRESETS, matcapThumbUrl, rigAssets, type MaterialPreset } from './assets';
 import { modelGroups, type ModelAsset } from './modelAssets';
 import type { LibraryContext, LibraryView } from './AssetLibrary';
 
@@ -23,15 +23,21 @@ interface TileItem {
   /** A plain colour swatch in place of a picture (a scene's material). */
   swatch?: string;
   title?: string;
+  /** On the Scene side: a heading above this item and the ones after it, until another comes. */
+  section?: string;
+  /** On the Scene side: a small button on the tile that takes the thing out of the scene. */
+  onRemove?: () => void;
 }
 
 /** The scene's materials, as the Scene panel's select lists them (the library's own list, read where the panel reads it). */
 export interface SceneMaterialsHost {
-  list(): { id: string; name: string; albedo: string }[];
+  list(): { id: string; name: string; albedo: string; roughness: number; metalness: number }[];
   /** The id the active object uses, or null with no object active. */
   active(): string | null;
   /** Assigns a material to the active object, as choosing it in the Scene panel does. */
   assign(id: string): void;
+  /** Adds a preset as a scene material (the one with the same name and values if the scene has it) and assigns it to the active object; false when no object is active. */
+  addPreset(p: { name: string; albedo: string; roughness: number; metalness: number }): boolean;
 }
 
 interface TileGroup {
@@ -215,16 +221,24 @@ abstract class TileView implements LibraryView {
     this.mineBox?.replaceChildren();
     let mineShown = 0;
     if (mine && this.mineBox) {
-      const grid = document.createElement('div');
-      grid.className = 'lib-grid';
+      const parts: HTMLElement[] = [];
+      let grid: HTMLElement | null = null;
+      let section: string | undefined;
       for (const item of this.mine()) {
         if (!match(item)) continue;
+        if (!grid || item.section !== section) {
+          section = item.section;
+          if (section) parts.push(this.head(section, undefined, false));
+          grid = document.createElement('div');
+          grid.className = 'lib-grid';
+          parts.push(grid);
+        }
         const tile = this.makeTile(item, { id: 'mine', title: '', items: [] });
         this.mineTiles.push(tile);
-        grid.appendChild(tile.el);
+        grid.appendChild(item.onRemove ? this.removable(tile.el, item.onRemove) : tile.el);
         mineShown++;
       }
-      if (mineShown) this.mineBox.appendChild(grid);
+      if (mineShown) this.mineBox.append(...parts);
     }
     if (this.mineBox) this.mineBox.hidden = !mine || mineShown === 0;
     const kept = mine ? this.mine().length : 0;
@@ -234,6 +248,24 @@ abstract class TileView implements LibraryView {
     const tail = this.root.querySelector<HTMLElement>('.lib-pics__tail');
     if (tail) tail.hidden = mine;
     this.paint();
+  }
+
+  /** A tile with its small remove button beside it (a button cannot hold a button). */
+  private removable(tile: HTMLElement, remove: () => void): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'lib-tile-wrap';
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'lib-tile__remove';
+    x.setAttribute('aria-label', 'Remove from scene');
+    x.title = 'Remove from scene';
+    const icon = document.createElement('i');
+    icon.className = 'fi fi-ss-cross-small';
+    icon.setAttribute('aria-hidden', 'true');
+    x.appendChild(icon);
+    x.addEventListener('click', remove);
+    wrap.append(tile, x);
+    return wrap;
   }
 
   /** The marks: the one in use, and the ones coming. */
@@ -381,7 +413,13 @@ export function lightShows(host: LookHost): boolean {
 
 const refreshControls = (): void => void window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
 
-/** The Materials tab: the matcaps. */
+/** The prefix of the id of a matcap's tile on the Scene side (the Library side's tiles have the matcap's own id). */
+const SCENE_MATCAP = 'matcap:';
+
+const samePreset = (m: { name: string; albedo: string; roughness: number; metalness: number }, p: MaterialPreset): boolean =>
+  m.name === p.label && m.albedo.toLowerCase() === p.albedo && Math.abs(m.roughness - p.roughness) < 1e-6 && Math.abs(m.metalness - p.metalness) < 1e-6;
+
+/** The Materials tab: the preset materials, then the matcaps. */
 export class MaterialsView extends TileView {
   protected readonly tab = 'materials';
   /** The scene's materials, while a sculpt is open (set by the sculpt mode, cleared when it closes). */
@@ -397,11 +435,37 @@ export class MaterialsView extends TileView {
   }
 
   protected groups(): TileGroup[] {
-    return [{ id: 'matcaps', title: 'Matcaps', items: MATCAP_ASSETS.map((m) => ({ id: m.id, label: m.label, thumb: m.thumb })) }];
+    const preset = (g: MaterialPreset['group']) => MATERIAL_PRESETS.filter((p) => p.group === g).map((p) => ({ id: p.id, label: p.label, thumb: p.thumb }));
+    return [
+      { id: 'clays', title: 'Clays and casts', items: preset('clays') },
+      { id: 'metals', title: 'Metals', items: preset('metals') },
+      { id: 'matcaps', title: 'Matcaps', items: MATCAP_ASSETS.map((m) => ({ id: m.id, label: m.label, thumb: m.thumb })) },
+    ];
   }
 
   protected override mine(): TileItem[] {
-    return (this.scene?.list() ?? []).map((m) => ({ id: m.id, label: m.name, swatch: m.albedo, title: m.name }));
+    const mats = this.host.viewer.materials;
+    const inMatcap = this.host.viewer.getMaterial() === 'matcap';
+    const using = mats.sceneMatcapIndex();
+    const caps = mats.sceneMatcaps();
+    return [
+      ...(this.scene?.list() ?? []).map((m) => ({ id: m.id, label: m.name, swatch: m.albedo, title: m.name })),
+      ...caps.map((c, i) => ({
+        id: SCENE_MATCAP + c.id,
+        label: c.label,
+        thumb: matcapThumbUrl(c.id),
+        title: c.label,
+        section: 'Matcaps',
+        // The one showing in Matcap stays; the last one cannot go.
+        onRemove: caps.length > 1 && !(inMatcap && i === using) ? () => this.removeMatcap(c.id) : undefined,
+      })),
+    ];
+  }
+
+  private removeMatcap(id: string): void {
+    this.host.viewer.materials.removeSceneMatcap(id);
+    refreshControls();
+    this.refresh();
   }
 
   protected override mineEmpty(): string {
@@ -409,7 +473,20 @@ export class MaterialsView extends TileView {
   }
 
   protected override watch(): string {
-    return this.scene ? JSON.stringify(this.scene.list()) : '';
+    const v = this.host.viewer;
+    return JSON.stringify([this.scene?.list() ?? [], v.materials.sceneMatcaps().map((m) => m.id), v.getMaterial() === 'matcap' ? v.materials.sceneMatcapIndex() : -1]);
+  }
+
+  /** A change made in the Material panel (its picker, its keys) shows here at once, not at the next look. */
+  protected override onMount(): () => void {
+    const again = (): void => this.repaint();
+    window.addEventListener(CONTROLS_REFRESH_EVENT, again);
+    return () => window.removeEventListener(CONTROLS_REFRESH_EVENT, again);
+  }
+
+  /** Scene: the active object's material, and the matcap showing in Matcap (two marks, joined). */
+  protected override same(t: { item: TileItem }, now: string): boolean {
+    return now.split('|').includes(t.item.id);
   }
 
   protected override tail(): string {
@@ -418,12 +495,23 @@ export class MaterialsView extends TileView {
 
   protected inUse(): string | null {
     // Scene: the material the active object uses. Library: the matcap in use.
-    if (this.ctx.where() === 'mine') return this.scene?.active() ?? null;
     const v = this.host.viewer;
-    return v.getMaterial() === 'matcap' ? (MATCAP_ASSETS[v.materials.getMaterialState().matcapIndex]?.id ?? null) : null;
+    if (this.ctx.where() === 'mine') {
+      const cap = v.getMaterial() === 'matcap' ? MATCAP_ASSETS[v.materials.getMaterialState().matcapIndex]?.id : undefined;
+      return [this.scene?.active(), cap ? SCENE_MATCAP + cap : undefined].filter(Boolean).join('|') || null;
+    }
+    if (v.getMaterial() === 'matcap') return MATCAP_ASSETS[v.materials.getMaterialState().matcapIndex]?.id ?? null;
+    // Lit: the preset the active object's material came from, while its name and values still match.
+    const id = this.scene?.active();
+    const m = id ? this.scene?.list().find((x) => x.id === id) : undefined;
+    return m ? (MATERIAL_PRESETS.find((p) => samePreset(m, p))?.id ?? null) : null;
   }
 
   protected use(item: TileItem): void {
+    if (this.ctx.where() === 'mine' && item.id.startsWith(SCENE_MATCAP)) {
+      this.useMatcap(item.id.slice(SCENE_MATCAP.length));
+      return;
+    }
     if (this.ctx.where() === 'mine') {
       if (!this.scene) return;
       if (this.scene.active() === null) {
@@ -435,7 +523,21 @@ export class MaterialsView extends TileView {
       this.repaint();
       return;
     }
-    const index = MATCAP_ASSETS.findIndex((m) => m.id === item.id);
+    const preset = MATERIAL_PRESETS.find((p) => p.id === item.id);
+    if (preset) {
+      if (!this.scene) return;
+      const assigned = this.scene.addPreset({ name: preset.label, albedo: preset.albedo, roughness: preset.roughness, metalness: preset.metalness });
+      if (!assigned) this.ctx.say("Added to the scene's materials.");
+      refreshControls();
+      this.repaint();
+      return;
+    }
+    this.useMatcap(item.id);
+  }
+
+  /** Uses a matcap, adding it to the scene's own list if it is not there. */
+  private useMatcap(id: string): void {
+    const index = MATCAP_ASSETS.findIndex((m) => m.id === id);
     if (index < 0) return;
     const v = this.host.viewer;
     v.setMaterial('matcap');

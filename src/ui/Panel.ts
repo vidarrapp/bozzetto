@@ -437,13 +437,13 @@ export class MaterialControls {
       // trigger swatch shows the active matcap; the handle is reused
       // across rebuilds so refresh (2..9 hotkeys, look restores)
       // just re-syncs the ring and the trigger.
-      if (mats.matcaps().length > 1) {
+      {
         if (!this.mcPicker) {
           this.mcPicker = matcapPicker(
-            () => this.viewer.materials.matcaps(),
-            () => this.viewer.materials.getMaterialState().matcapIndex,
+            () => this.viewer.materials.sceneMatcaps(),
+            () => this.viewer.materials.sceneMatcapIndex(),
             (i) => {
-              this.viewer.materials.setMatcapIndex(i);
+              this.viewer.materials.useSceneMatcap(i);
               window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
             },
           );

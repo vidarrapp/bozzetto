@@ -247,11 +247,12 @@ export class AssetLibrary {
     return () => this.listeners.delete(fn);
   }
 
-  /** Show the window, on a tab if one is asked for (else the last one), with the focus inside it. */
-  open(tab?: LibraryTabId): void {
+  /** Show the window, on a tab (and a side) if one is asked for (else the last one), with the focus inside it. */
+  open(tab?: LibraryTabId, where?: LibraryWhere): void {
     if (this.disposed) return;
     if (!this.el.isConnected) document.body.appendChild(this.el);
     if (tab) this.tab = tab;
+    if (where) this.whereNow = where;
     const was = this.opened;
     this.opened = true;
     this.el.hidden = false;

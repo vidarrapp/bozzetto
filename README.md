@@ -179,6 +179,9 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 
 ### Unreleased
 
+- **Preset materials in the asset library.** The Materials tab has Clays and casts (wax clay, wet clay, plasteline, plaster, plastic and more) and Metals (steel, silver, gold, copper, bronze and more) as rendered balls; a tap adds the material to the scene and gives it to the selected object.
+- **The Material menu shows only what is in the scene.** It lists the scene's materials, New* and Browse…, which opens the asset library on the Materials tab.
+- **A scene keeps its own matcaps.** The Material panel's matcap picker lists the matcaps the scene holds and ends with Browse…; the asset library adds a matcap to the scene when you tap it, and its Scene side lists them with a button to remove one.
 - **The asset library opens in the middle and a little bigger.** About 560 by 520, centred between the top strip and the tool bar; a window you have moved or resized stays where you put it.
 
 ### v0.7.25
