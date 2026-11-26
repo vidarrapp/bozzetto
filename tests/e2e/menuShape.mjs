@@ -10,11 +10,13 @@ const HELP = ['Help topics', 'Hotkeys', 'About and credits'];
 
 /** What Sculpt's File and Edit hold, and its View in each workspace of the page (studioShell.mjs reads them too). */
 export const SCULPT_FILE = 'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
-const VIEW_LOOKS = 'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Proportion guide|Poly group colours|References|Arrange references|Hotkeys on tools';
+const VIEW_LOOKS = 'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools';
+/** The proportion guide is offered where there is a figure to measure: Sculpt and Armature, not Paint or Present. */
+const VIEW_LOOKS_GUIDE = VIEW_LOOKS.replace('Move light|', 'Move light|Proportion guide|');
 const RESET_BAR = '|Reset tool bar';
 const VIEW_WORKSPACES = 'Asset library|Hide interface|Armature|Sculpt|Paint|Present';
 export const SCULPT_VIEW = {
-  sculpt: `${VIEW_LOOKS}${RESET_BAR}|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|${VIEW_WORKSPACES}`,
+  sculpt: `${VIEW_LOOKS_GUIDE}${RESET_BAR}|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|${VIEW_WORKSPACES}`,
   paint: `${VIEW_LOOKS}${RESET_BAR}|Scene panel|Layers panel|Tool panel|Material panel|Reference panel|${VIEW_WORKSPACES}`,
   present: `${VIEW_LOOKS}|Lighting panel|Camera panel|Render panel|Material panel|Output panel|${VIEW_WORKSPACES}`,
 };
@@ -30,7 +32,7 @@ const FILE_RANK = new Map([
 
 const viewRank = (label) => {
   if (label === 'Frame selected' || label === 'Frame all') return 0;
-  if (['Wireframe', 'Shadows', 'Poly group colours', 'Details', 'Move light', 'References', 'Arrange references', 'Hotkeys on tools', 'Reset tool bar'].includes(label)) return 1;
+  if (['Wireframe', 'Shadows', 'Poly group colours', 'Details', 'Move light', 'Proportion guide', 'References', 'Arrange references', 'Hotkeys on tools', 'Reset tool bar'].includes(label)) return 1;
   if (/ panel$/.test(label) || label === 'Asset library' || label === 'Hide interface') return 2;
   if (['Armature', 'Sculpt', 'Paint', 'Present'].includes(label)) return 3;
   return -1;
