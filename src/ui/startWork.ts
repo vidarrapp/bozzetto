@@ -61,7 +61,9 @@ export async function startSculpt(): Promise<void> {
   // the way out through the gallery link, so a reload, a closed tab or
   // iOS evicting the page left saved work that this silently RESUMED
   // instead of replacing - the one thing this tile promises not to do.
-  const hasWork = await store.hasSavedScene().catch(() => false);
+  const armatures = await import('../armature/persist');
+  // The scene's armature goes with it: a new scene has none.
+  const hasWork = (await store.hasSavedScene().catch(() => false)) || (await armatures.hasArmature());
   // Work that is its project's as saved (inProject) loses nothing: there
   // is no card for it, and no question either.
   const atRisk = hasWork && !(await inProject(store));
@@ -78,6 +80,7 @@ export async function startSculpt(): Promise<void> {
   }
   if (hasWork) {
     await store.clearSavedScene(true);
+    await armatures.clearArmature();
     // The look too: "new" has to mean new. Leaving it behind is how a
     // light set flat in one session kept arriving in the next one, with
     // a fresh sphere lit by it and no obvious cause.

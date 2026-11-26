@@ -2815,7 +2815,7 @@ export const suites = {
       t.ok(r.height > 120 && r.height < 200, `${id}: head handle ${r.height.toFixed(1)} cm above the foot`);
       t.ok(r.moved > 10, `${id}: the left hand reaches (${r.moved.toFixed(1)} cm)`);
       t.eq(r.preset, id, `${id}: the state names it`);
-      t.ok(/mannequin/i.test(r.option), `${id}: listed in the Figure select as "${r.option}"`);
+      t.eq(r.option, id.replace(/^mannequin-/, '').replace(/^./, (c) => c.toUpperCase()).replace('-', ', '), `${id}: listed in the Figure select as "${r.option}"`);
       // The right-hand lumps are the left ones mirrored in the bundle, a
       // negative scale that turns their faces inward unless the builder
       // reverses them.

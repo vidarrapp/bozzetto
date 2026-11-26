@@ -10,7 +10,12 @@
 //   Armature (the pixels change), in Sculpt with no object selected and after a tap on the row,
 //   and leaves an object's values alone;
 // - Remesh to a figure gives the figure the mannequin's material;
-// - the eye and the material come back after a reload, and a record from before has neither.
+// - the eye and the material come back after a reload, and a record from before has neither;
+// - armature at the start (0.7.27): a scene whose device keeps an armature shows the mannequin after
+//   a reload without Armature being entered (row, pixels, pose, material, in Sculpt, Paint and
+//   Present), hidden by its eye it stays hidden, an empty scene with only an armature does not show
+//   Create's empty state, a scene with no armature fetches no Armature code, and the first frame is
+//   not later with an armature than without.
 import { mkdirSync } from 'node:fs';
 import { openSculpt } from './lib.mjs';
 
@@ -334,6 +339,119 @@ export const suites = {
       return { albedo: m.albedo, roughness: m.roughness, metalness: m.metalness };
     });
     t.ok((await row(page))?.eye === 'on' && show(await mannequin(page)) === show(def), `an old record with neither loads shown, with the scene's default material (${show(def)})`);
+
+    // --- 7. the armature at the start of the page -----------------------------------------------------------
+    // Posed and given its own material in a visit to Armature, then kept.
+    await goKey(page, 'Armature');
+    const posed = await page.evaluate(() => {
+      const a = window.__armature.armature;
+      const bone = a.boneNames().find((n) => /arm/i.test(n) && !/fore|lower/i.test(n)) ?? a.boneNames()[3];
+      a.setPoseEuler(bone, 0, 0, 60, false);
+      window.__armature.commit();
+      window.__sculpt.armature.setSurface({ albedo: '#c03020', roughness: 0.4, metalness: 0.2 });
+      return { pose: JSON.stringify(window.__armature.state()), bone };
+    });
+    await page.evaluate(() => window.__armature.save());
+    await goKey(page, 'Sculpt');
+    await page.waitForTimeout(1200);
+    const requestsAt = [];
+    page.on('request', (r) => requestsAt.push(r.url()));
+    const glbCount = () => requestsAt.filter((u) => /\/assets\/armature\/[^/]+\.glb/.test(u)).length;
+    const standing = (pg) =>
+      pg.evaluate(() => ({
+        mannequin: !!window.__bozzetto.scene.getObjectByName('armature')?.visible,
+        row: !!document.querySelector('.panel--scene [data-role="armature-row"]'),
+        armature: !!window.__armature,
+      }));
+    const t0 = Date.now();
+    await openSculpt(page, base);
+    const bootWith = Date.now() - t0;
+    await setPanel(page, 'scene', true);
+    await page.waitForFunction(() => !!document.querySelector('.panel--scene [data-role="armature-row"]'), null, { timeout: 60_000 });
+    await page.waitForFunction(() => !!window.__armature && !document.querySelector('.sculpt-toast[data-state="running"]'), null, { timeout: 60_000 });
+    await page.waitForTimeout(500);
+    t.eq(await page.evaluate(() => document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent), 'Sculpt', 'after the reload the page stays in Sculpt');
+    const st = await standing(page);
+    t.ok(st.mannequin && st.row && st.armature, `after a reload the mannequin stands in Sculpt without entering Armature (${show(st)})`);
+    t.eq(await page.evaluate(() => JSON.stringify(window.__armature.state())), posed.pose, `with its pose (${posed.bone})`);
+    const back = await mannequin(page);
+    t.ok(Math.abs(back.roughness - 0.4) < 1e-6 && back.albedo.toLowerCase() === '#c03020', `and its material (${show(back)})`);
+    const at3 = await torso(page);
+    const here = await patch(page, at3);
+    await page.screenshot({ path: `${SHOTS}/reload-sculpt.png` });
+    t.ok(await page.evaluate(() => window.__sculpt.viewer.camera !== null), 'the view is there');
+    for (const name of ['Paint', 'Present']) {
+      await goKey(page, name);
+      t.ok(await page.evaluate(() => !!window.__bozzetto.scene.getObjectByName('armature')?.visible), `${name}: the mannequin shows after the reload`);
+    }
+    await goKey(page, 'Sculpt');
+    t.ok(apart(await patch(page, at3), here) < 25, 'back in Sculpt the pixels are as they were');
+    // Hidden by its eye, it stays hidden after the reload.
+    await page.click('.panel--scene [data-role="armature-eye"]');
+    await page.waitForTimeout(300);
+    const shownPx = here;
+    const hiddenPx = await patch(page, at3);
+    t.ok(apart(shownPx, hiddenPx) > 40, 'the eye hides it');
+    await page.waitForTimeout(1200);
+    await openSculpt(page, base);
+    await setPanel(page, 'scene', true);
+    await page.waitForFunction(() => !!document.querySelector('.panel--scene [data-role="armature-row"]') && !!window.__armature, null, { timeout: 60_000 });
+    await page.waitForTimeout(500);
+    t.eq((await row(page))?.eye, 'off', 'hidden by its eye, the row says so after the reload');
+    t.ok(apart(await patch(page, at3), hiddenPx) < 25, 'and the pixels stay empty where it stood');
+    await page.click('.panel--scene [data-role="armature-eye"]');
+    await page.waitForTimeout(1200);
+    // An empty scene with only an armature does not show Create's empty state.
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      for (const m of [...session.getMeshes()]) session.deleteMesh(m);
+    });
+    await page.waitForTimeout(1500);
+    t.ok(await page.evaluate(() => !document.querySelector('.panel--scene.panel--scene-empty') && !!document.querySelector('.panel--scene [data-role="armature-row"]')), 'a scene with only an armature shows its row, not the Create empty state');
+    // A scene with no armature fetches nothing of Armature, and its first frame is no later.
+    await page.evaluate(
+      () =>
+        new Promise((ok) => {
+          const r = indexedDB.open('bozzetto-sculpt');
+          r.onsuccess = () => {
+            const tx = r.result.transaction('scene', 'readwrite');
+            tx.objectStore('scene').delete('currentArmature');
+            tx.oncomplete = () => ok(null);
+          };
+        }),
+    );
+    const glbBefore = glbCount();
+    const t1 = Date.now();
+    await openSculpt(page, base);
+    const bootWithout = Date.now() - t1;
+    await page.waitForTimeout(3000);
+    const none = await standing(page);
+    t.ok(!none.armature && !none.mannequin && !none.row && glbCount() === glbBefore, `with no armature the page fetches no mannequin file and loads no Armature (${show(none)}, ${glbCount() - glbBefore} files)`);
+    console.log(`  armatureScene: page ready in ${bootWith} ms with an armature, ${bootWithout} ms without`);
+    t.ok(bootWith < bootWithout + 3000, `the first frame is within noise of without (${bootWith} ms with, ${bootWithout} ms without)`);
+
+    // A figure made from the armature keeps the mannequin away after a reload.
+    await goKey(page, 'Armature');
+    await page.evaluate(() => window.__armature.save());
+    await setPanel(page, 'armature', true);
+    await page.evaluate(() => (window.__sculpt.figure.settings().resolution = 48));
+    await page.waitForTimeout(300);
+    await page.evaluate(() => document.querySelector('.panel--armature [data-role="remesh-figure"]').click());
+    await page.waitForFunction(() => window.__sculpt.session.getMeshes().some((m) => window.__sculpt.session.getMeshName(m) === 'Figure'), null, { timeout: 120_000 });
+    await goKey(page, 'Sculpt');
+    await page.evaluate(() => window.__sculpt.persist.flush());
+    await page.waitForTimeout(500);
+    t.ok(!(await standing(page)).mannequin, 'in the visit the figure has taken the mannequin away');
+    await openSculpt(page, base);
+    await setPanel(page, 'scene', true);
+    await page.waitForFunction(() => !!window.__armature && !document.querySelector('.sculpt-toast[data-state="running"]'), null, { timeout: 60_000 });
+    await page.waitForTimeout(1500);
+    const afterFigure = await page.evaluate(() => ({
+      mannequin: !!window.__bozzetto.scene.getObjectByName('armature')?.visible,
+      row: !!document.querySelector('.panel--scene [data-role="armature-row"]'),
+      figure: window.__sculpt.session.getMeshes().some((m) => window.__sculpt.session.getMeshName(m) === 'Figure'),
+    }));
+    t.ok(!afterFigure.mannequin && !afterFigure.row && afterFigure.figure, `after a reload the figure is there and the mannequin stays away (${show(afterFigure)})`);
     t.eq(errors.length, 0, `no page errors (${errors.join('; ')})`);
   },
 };

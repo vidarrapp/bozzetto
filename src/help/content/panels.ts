@@ -30,7 +30,7 @@ export const PANELS: Topic[] = [
     blocks: [
       p('The **Model** panel, on the left, acts on the active object rather than on a tool. It has these sections, from the top. The object\'s colour, roughness and metalness are in the **Material** panel, next to it.'),
       h('Figure'),
-      p('At the top, only while the scene has an armature (once you have been to **Armature**).'),
+      p('At the top, only while the scene has an armature (a scene made from an armature, or one you have been to **Armature** in).'),
       options(
         ['Resolution', 'The voxel grid the posed mannequin is remeshed on. It is the same control as in the Armature tab\'s Figure section.'],
         ['Remesh to a figure', 'Makes one new object named **Figure** from the mannequin as it is posed, in one undo step. Pressed again, it adds **Figure 2**. Until a figure exists the mannequin is drawn in every workspace and listed in the **Scene** tab, and a stroke on it asks first.'],

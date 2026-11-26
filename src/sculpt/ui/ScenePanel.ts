@@ -314,7 +314,7 @@ export class ScenePanel extends SidePanel {
 
   /** The scene has nothing in it: no object and no armature. */
   private isSceneEmpty(): boolean {
-    return this.session.getMeshes().length === 0 && !this.armatureRow?.();
+    return this.session.getMeshes().length === 0 && !this.armatureRow?.() && !this.armaturePending?.();
   }
 
   private baseMeshTile(info: BaseMeshInfo): HTMLButtonElement {
@@ -720,6 +720,8 @@ export class ScenePanel extends SidePanel {
     }
   }
 
+  /** The armature is being loaded at the page's start: the scene is not empty yet. */
+  armaturePending: (() => boolean) | null = null;
   /**
    * The scene's armature, while its mannequin stands in the scene as it is posed and no figure has
    * been made from it: a row of its own, marked by the armature's icon, with an eye (shown as on in
@@ -770,7 +772,7 @@ export class ScenePanel extends SidePanel {
     if (this.renaming && !this.session.getMeshes().includes(this.renaming)) this.renaming = null;
     const armature = this.armatureRow?.() ?? null;
     // An empty scene shows the Create choices in the panel, where the list and its Create button go.
-    this.root.classList.toggle('panel--scene-empty', this.session.getMeshes().length === 0 && !armature);
+    this.root.classList.toggle('panel--scene-empty', this.session.getMeshes().length === 0 && !armature && !this.armaturePending?.());
     this.listEl.replaceChildren(
       ...this.session.getMeshes().map((mesh) => {
         const row = div('outliner__row');
