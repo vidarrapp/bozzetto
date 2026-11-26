@@ -61,6 +61,12 @@ export interface ArmatureFile {
    */
   forScene?: boolean;
   /**
+   * A figure was made from this armature (Remesh to a figure) and stands in the scene, so the
+   * mannequin stays away after a reload as it does in the visit. Absent in a record from before:
+   * no figure. Cleared when the mannequin is chosen again or the figure's step is undone.
+   */
+  figured?: boolean;
+  /**
    * The mannequin as a thing in the scene: hidden by its eye on the Scene
    * row, and its own material (the Material tab's Surface section). Absent
    * in a record from before: shown, with the scene's default material.
@@ -123,6 +129,35 @@ export async function loadArmature(): Promise<ArmatureFile | null> {
     return rec && rec.kind === 'bozzetto-armature' && rec.state ? rec : null;
   } catch {
     return null;
+  }
+}
+
+/** The kept record's figured mark, or null when the device keeps no armature. Cheaper than loading it whole for the page's start. */
+export async function armatureFigured(): Promise<boolean | null> {
+  try {
+    const rec = (await withNamedStore(STORE, 'readonly', (s) => s.get(KEY))) as ArmatureFile | undefined;
+    return rec && rec.kind === 'bozzetto-armature' && rec.state ? rec.figured === true : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Write the figured mark into the kept record (nothing when there is none). */
+export async function markFigured(on: boolean): Promise<void> {
+  try {
+    await withNamedStore(STORE, 'readwrite', (s) => {
+      const get = s.get(KEY);
+      get.onsuccess = () => {
+        const rec = get.result as ArmatureFile | undefined;
+        if (!rec || (rec.figured === true) === on) return;
+        if (on) rec.figured = true;
+        else delete rec.figured;
+        s.put(rec, KEY);
+      };
+      return get;
+    });
+  } catch {
+    // Not remembered.
   }
 }
 

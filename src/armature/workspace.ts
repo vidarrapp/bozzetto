@@ -4,7 +4,7 @@ import type { SidePanel } from '../sculpt/ui/SidePanel';
 import { statusToast, type StatusToast } from '../sculpt/ui/statusToast';
 import type { ArmatureHost } from './host';
 import type { ArmatureMount } from './mode';
-import { hasArmature } from './persist';
+import { armatureFigured } from './persist';
 
 /**
  * Armature as a workspace of the Sculpt page, loaded when it is first entered
@@ -36,6 +36,8 @@ export interface ArmaturePage {
   hold(on: boolean, from: WorkspaceId | null): void;
   /** The armature's state changed in a way the page's panels show (the Scene row, the Model tab's Figure section). */
   changed(): void;
+  /** The device's record says whether a figure was made from the armature: known before the load, for the page's own bookkeeping. */
+  figured(on: boolean): void;
 }
 
 /** What the page asks of the armature, whether or not its code has been loaded. */
@@ -50,6 +52,8 @@ export interface ArmatureSlot {
    * when there is no record.
    */
   preload(): Promise<void>;
+  /** A start-up load found a record and has not ended: the scene is not empty, it is waiting for its armature. */
+  pending(): boolean;
   /** Resolves once the load a first entry began has ended (at once when none began). */
   ready(): Promise<void>;
   /** The loaded workspace's own handle, or null before the first entry. */
@@ -85,6 +89,7 @@ export function armatureWorkspace(page: ArmaturePage): ArmatureSlot {
   const panels = (): Workspace['panels'] => mount?.workspace.panels ?? none;
 
   let quietTimer = 0;
+  let waiting = false;
   const showNotice = (): void => {
     window.clearTimeout(quietTimer);
     notice ??= statusToast('Loading Armature…');
@@ -97,6 +102,7 @@ export function armatureWorkspace(page: ArmaturePage): ArmatureSlot {
       const { mountArmatureMode } = await import('./mode');
       mount = await mountArmatureMode(host.viewer, host);
       window.clearTimeout(quietTimer);
+      waiting = false;
       notice?.clear();
       notice = null;
       if (!wanted) {
@@ -112,6 +118,8 @@ export function armatureWorkspace(page: ArmaturePage): ArmatureSlot {
     } catch (err) {
       console.error(err);
       window.clearTimeout(quietTimer);
+      waiting = false;
+      page.changed();
       (notice ?? statusToast('Loading Armature…')).fail('Armature could not be loaded. Check the connection and try again.');
       notice = null;
       loading = null;
@@ -156,9 +164,15 @@ export function armatureWorkspace(page: ArmaturePage): ArmatureSlot {
     workspace,
     present: () => mount !== null,
     preload: async () => {
-      if (loading || !(await hasArmature())) return;
-      loading ??= load(true);
+      if (loading) return;
+      const figured = await armatureFigured();
+      if (figured === null || loading) return;
+      page.figured(figured);
+      waiting = true;
+      page.changed();
+      loading = load(true);
     },
+    pending: () => waiting,
     ready: () => loading ?? Promise.resolve(),
     mount: () => mount,
     name: () => mount?.armatureName() ?? 'Armature',

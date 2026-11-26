@@ -1696,6 +1696,7 @@ export async function mountArmatureMode(viewer: Viewer, host: ArmatureHost): Pro
     ...(link && syncedAt === edits ? { synced: true } : {}),
     symmetry: armature.symmetry,
     units: UNITS,
+    ...(host.figureMade() ? { figured: true } : {}),
     ...(eyeOff || ownSurface ? { mannequin: { ...(eyeOff ? { hidden: true } : {}), ...(ownSurface ? { material: { ...ownSurface } } : {}) } } : {}),
   });
   /** The library project Save to library writes to (project.ts), kept in the autosave record. */

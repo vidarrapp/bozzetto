@@ -1,6 +1,7 @@
 import { Box3, Color as ThreeColor, Euler, Matrix4, Quaternion, Raycaster, Sphere, Vector2, Vector3 } from 'three';
 import { mat4 } from 'gl-matrix';
 import { CM_PER_M, formatLength, LEGACY_ARMATURE_SCALE, UNITS, type UnitsMarker } from '../viewer/units';
+import { markFigured } from '../armature/persist';
 import { lookTimes } from '../viewer/lookUnits';
 import { armatureWorkspace, type ArmatureSlot } from '../armature/workspace';
 import type { ArmatureHost } from '../armature/host';
@@ -424,6 +425,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       figureWas = !figureWas;
       armatureSlot.figureChanged();
     }
+    if (armatureSlot?.present()) void markFigured(figureMade());
   };
   viewer.setShadowSubject(() => {
     shadowBox.makeEmpty();
@@ -2424,13 +2426,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   /** The figure last made, and the step of this scene's history that made it. */
   let figureMesh: SculptMesh | null = null;
   let figureStep: unknown = null;
+  /** The device's record says a figure was made from the armature (read at the page's start, kept up to date below). */
+  let figureKept = false;
   /**
    * Whether a figure made from the mannequin stands in the scene: its step is still in the history
    * (undoing it brings the mannequin back, redoing it takes it away again) or, once the step has
    * fallen off the end of a long history, while the object is in the scene.
    */
   const figureMade = (): boolean => {
-    if (!figureMesh) return false;
+    // After a reload no step is left in the history: the record's mark stands while a "Figure" does.
+    if (!figureMesh) return figureKept && session.getMeshes().some((m) => session.getMeshName(m) === 'Figure');
     const history = session.getStateManager() as unknown as { _undos: unknown[]; _curUndoIndex: number };
     const at = history._undos.indexOf(figureStep);
     if (at !== -1) return at <= history._curUndoIndex;
@@ -2485,6 +2490,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     persist.markDirty();
     figureWas = true;
     armatureSlot?.figureChanged();
+    void markFigured(true);
     const ms = performance.now() - t0;
     perfLog.record('figure remesh', ms, `resolution ${Math.round(resolution)}`);
     status.done(`Figure made (${(ms / 1000).toFixed(1)} s)`);
@@ -2568,6 +2574,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   armatureSlot = armatureWorkspace({
     host: armatureHost,
     hold: (on) => holdForArmature(on),
+    figured: (on) => {
+      figureKept = on;
+      figureWas = on;
+    },
     changed: () => {
       scenePanel?.refresh();
       modelPanel?.refreshFigure();
@@ -2592,14 +2602,22 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         });
         if (!yes) return;
       }
+      // Chosen again: a figure made from the old mannequin no longer keeps this one away.
+      if (figureKept || figureMesh) {
+        figureKept = false;
+        figureMesh = null;
+        void markFigured(false);
+      }
       studio.go('armature');
       await slot.ready();
       await slot.mount()?.choose(id);
+      syncFigure();
       scenePanel?.refresh();
     })();
   };
   // The first object of an empty scene is brought into view.
   scenePanel!.onCreatedFirst = () => frameModel();
+  scenePanel!.armaturePending = () => !!armatureSlot?.pending();
   scenePanel!.armatureRow = () =>
     mannequinStands() && armatureSlot
       ? { name: armatureSlot.label(), shown: inArmatureWorkspace || armatureSlot.shown(), selected: armatureSelected }

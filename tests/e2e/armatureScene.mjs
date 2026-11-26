@@ -429,6 +429,29 @@ export const suites = {
     t.ok(!none.armature && !none.mannequin && !none.row && glbCount() === glbBefore, `with no armature the page fetches no mannequin file and loads no Armature (${show(none)}, ${glbCount() - glbBefore} files)`);
     console.log(`  armatureScene: page ready in ${bootWith} ms with an armature, ${bootWithout} ms without`);
     t.ok(bootWith < bootWithout + 3000, `the first frame is within noise of without (${bootWith} ms with, ${bootWithout} ms without)`);
+
+    // A figure made from the armature keeps the mannequin away after a reload.
+    await goKey(page, 'Armature');
+    await page.evaluate(() => window.__armature.save());
+    await setPanel(page, 'armature', true);
+    await page.evaluate(() => (window.__sculpt.figure.settings().resolution = 48));
+    await page.waitForTimeout(300);
+    await page.evaluate(() => document.querySelector('.panel--armature [data-role="remesh-figure"]').click());
+    await page.waitForFunction(() => window.__sculpt.session.getMeshes().some((m) => window.__sculpt.session.getMeshName(m) === 'Figure'), null, { timeout: 120_000 });
+    await goKey(page, 'Sculpt');
+    await page.evaluate(() => window.__sculpt.persist.flush());
+    await page.waitForTimeout(500);
+    t.ok(!(await standing(page)).mannequin, 'in the visit the figure has taken the mannequin away');
+    await openSculpt(page, base);
+    await setPanel(page, 'scene', true);
+    await page.waitForFunction(() => !!window.__armature && !document.querySelector('.sculpt-toast[data-state="running"]'), null, { timeout: 60_000 });
+    await page.waitForTimeout(1500);
+    const afterFigure = await page.evaluate(() => ({
+      mannequin: !!window.__bozzetto.scene.getObjectByName('armature')?.visible,
+      row: !!document.querySelector('.panel--scene [data-role="armature-row"]'),
+      figure: window.__sculpt.session.getMeshes().some((m) => window.__sculpt.session.getMeshName(m) === 'Figure'),
+    }));
+    t.ok(!afterFigure.mannequin && !afterFigure.row && afterFigure.figure, `after a reload the figure is there and the mannequin stays away (${show(afterFigure)})`);
     t.eq(errors.length, 0, `no page errors (${errors.join('; ')})`);
   },
 };
