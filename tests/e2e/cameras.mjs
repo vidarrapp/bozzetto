@@ -99,9 +99,20 @@ async function orbit(page, from, dx) {
   await settle(page);
 }
 
-/** What the hint has said: how many notices carry its words. */
-const hints = (page) => page.evaluate((h) => [...document.querySelectorAll('.sculpt-toast')].filter((n) => n.textContent === h).length, HINT);
-const clearToasts = (page) => page.evaluate(() => document.querySelectorAll('.sculpt-toast').forEach((n) => n.remove()));
+/** What the hint has said since `watchHints`: how many notices carried its words (a notice goes by itself after a moment). */
+const watchHints = (page) =>
+  page.evaluate((h) => {
+    window.__hints = [];
+    new MutationObserver((list) => {
+      for (const m of list) for (const n of m.addedNodes) if (n.nodeType === 1 && n.classList.contains('sculpt-toast') && n.textContent === h) window.__hints.push(performance.now());
+    }).observe(document.body, { childList: true });
+  }, HINT);
+const hints = (page) => page.evaluate(() => window.__hints.length);
+/** The least time between two notices, in ms (Infinity with fewer than two). */
+const hintGap = (page) => page.evaluate(() => window.__hints.reduce((m, t, i, a) => (i ? Math.min(m, t - a[i - 1]) : m), Infinity));
+const clearToasts = async (page) => {
+  await page.evaluate(() => (window.__hints = []));
+};
 
 /** A PNG as bytes, for the board. */
 const png = async (page, color) =>
@@ -335,7 +346,7 @@ export const suites = {
       t.ok(gap(v, locked) < dist(locked) * 1e-6 && v.lens === locked.lens, `${what}: the view stays (${fmt(locked)}, now ${fmt(v)})`);
     };
 
-    await clearToasts(page);
+    await watchHints(page);
     await orbit(page, empty, 120);
     await stays('a mouse orbit');
     t.eq(await hints(page), 1, 'the first blocked try says the camera is locked, in the quiet status place');
@@ -344,7 +355,6 @@ export const suites = {
     await stays('the wheel');
     await page.mouse.wheel(0, 400);
     await stays('the wheel out');
-    t.eq(await hints(page), 1, 'a second try a moment later does not say it again');
     // A right drag zooms and a middle drag pans.
     await page.mouse.move(...empty);
     await page.mouse.down({ button: 'right' });
@@ -383,14 +393,16 @@ export const suites = {
     await page.mouse.up();
     await page.keyboard.up('Shift');
     await stays('the Shift snap');
-    // Before the hint's gap is over, no second notice; after a wait, one more.
-    t.eq(await hints(page), 1, 'all of it said so once');
+    // Many tries, few notices: never two within a few seconds of each other.
+    const said = await hints(page);
+    const gapMs = await hintGap(page);
+    t.ok(said >= 1 && said < 6 && gapMs >= 3900, `ten tries said it ${said} time(s), never twice within four seconds (least gap ${Math.round(gapMs)} ms)`);
     await sleep(4500);
     await clearToasts(page);
     await page.mouse.move(...empty);
     await page.mouse.wheel(0, -200);
     await frames(page, 2);
-    t.eq(await hints(page), 1, 'and again once a few seconds have passed');
+    t.eq(await hints(page), 1, 'and once more when a few seconds have passed');
 
     // A stroke still lands through a locked camera.
     const s = await page.evaluate(() => {
@@ -415,8 +427,8 @@ export const suites = {
     // Present's turntable is refused the same way.
     await page.evaluate(() => window.__sculpt.present.enter());
     await page.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 8000 });
-    await clearToasts(page);
     await sleep(4200);
+    await clearToasts(page);
     await page.evaluate(() => window.__sculpt.present.setTurning(true));
     await frames(page, 3);
     t.ok(!(await page.evaluate(() => window.__sculpt.present.isTurning())), 'the turntable does not start while a locked camera is in use');
@@ -612,7 +624,14 @@ export const suites = {
     t.eq(JSON.stringify(now), JSON.stringify(was), `Save file and open: the cameras, the lock, the tie and the one in use come back (${JSON.stringify(now)})`);
     const lockedBlocked = await page.evaluate(() => window.__sculpt.viewer.isViewLocked());
     t.ok(lockedBlocked, 'and the opened scene is locked through the camera in use');
-    // With pictures: the tie finds its picture by id.
+    // With pictures: the tie finds its picture by id. (Opening a file with none emptied the board: add one and tie it.)
+    await openPanel(page, 'Reference');
+    const ref2 = await addPicture(page, '#20b040', 'Back.png');
+    await page.evaluate((r) => {
+      const c = window.__sculpt.session.cameras;
+      c.setReference(c.inUse(), r);
+    }, ref2);
+    await frames(page);
     const withPics = await page.evaluate(async () => {
       const b = await window.__sculpt.fileActions.packFile(true);
       return Array.from(new Uint8Array(await b.arrayBuffer()));
@@ -626,9 +645,10 @@ export const suites = {
       const b = window.__sculpt.reference.board;
       const c = window.__sculpt.session.cameras;
       const pic = b.list()[0];
-      return { pic: !!pic, tied: pic ? c.cameraOf(pic.id) === c.inUse() && c.inUse() !== null : false };
+      return { pic: !!pic, tied: pic ? c.cameraOf(pic.id) === c.inUse() && c.inUse() !== null : false, id: pic?.id };
     });
-    t.ok(tie.pic && tie.tied, `Save file with pictures: the picture comes back tied to its camera (${JSON.stringify(tie)})`);
+    tie.same = tie.id === ref2;
+    t.ok(tie.pic && tie.tied && tie.same, `Save file with pictures: the picture comes back tied to its camera (${JSON.stringify(tie)})`);
 
     // A file from before cameras opens with none.
     const old = await page.evaluate(async () => {
