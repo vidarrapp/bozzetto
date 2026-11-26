@@ -3,7 +3,7 @@ import { launchSummary } from './launch';
 import { settings } from './settings';
 
 /**
- * The frame meter: P, or Preferences > Diagnostics, where the choice is
+ * The frame meter: Shift+P, or Preferences > Diagnostics, where the choice is
  * kept, so a device that should show it keeps showing it across reloads.
  * Where each frame's time goes against the display's budget, which side
  * is short, and the renderer's own diagnostics (backend, size, AO, DoF,

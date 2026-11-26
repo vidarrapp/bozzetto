@@ -26,7 +26,7 @@ import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import { softAo, type SoftGTAONode } from './gtao';
 import type { Material, Matrix4, Object3D, SkinnedMesh, Texture } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
-import { Controls, type ScreenPoint, type ZoomFocus } from './Controls';
+import { Controls, ORTHO_FOV, type ScreenPoint, type ZoomFocus } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
 import { Lighting } from './Lighting';
 import type { LightId, LightingState } from './Lighting';
@@ -186,6 +186,8 @@ export interface LookState {
     position: number[];
     target: number[];
     focalLength: number;
+    /** Absent (older saves) is perspective. */
+    projection?: 'orthographic';
     dof: DoFState;
   };
   /** Material mode (lit / a matcap), stored as `defaults.material`. */
@@ -489,6 +491,10 @@ export class Viewer {
   private currentMode = 'lit';
   /** Lens focal length (35mm-equivalent mm); drives the camera FOV. */
   private focalLength = DEFAULT_FOCAL_LENGTH;
+  /** Orthographic: a very long lens from far away (Controls.ORTHO_FOV); the focal length stays for going back. */
+  private orthographic = false;
+  /** The quiet label that says which straight view a Shift rotation has snapped to. */
+  private readonly snapEl: HTMLDivElement;
   /** Frame ordinal targeted by the timeline/scrubber. */
   private targetIndex = -1;
   /** Frame ordinal whose geometry is currently displayed. */
@@ -794,12 +800,21 @@ export class Viewer {
     this.environment.onLoading = (loading) => {
       this.envLoadingEl.hidden = !loading;
     };
+    this.snapEl = document.createElement('div');
+    this.snapEl.className = 'env-loading view-snap';
+    this.snapEl.setAttribute('role', 'status');
+    this.snapEl.hidden = true;
+    container.appendChild(this.snapEl);
     this.captureGuide = new CaptureGuide(container);
 
     this.currentMode = this.materials.has(manifest.defaults.material)
       ? manifest.defaults.material
       : 'lit';
     this.controls = new Controls(this.camera, this.renderer.domElement);
+    this.controls.onSnap = (name) => {
+      this.snapEl.hidden = name === null;
+      if (name !== null && this.snapEl.textContent !== name) this.snapEl.textContent = name;
+    };
     this.controls.setSurfacePick((at) => this.surfaceUnder(at));
 
     const tier: Tier = manifest.config.tiers.includes('hd') ? 'hd' : 'sd';
@@ -2190,8 +2205,35 @@ export class Viewer {
   /** Set the lens (35mm-equivalent mm), dollying to keep the subject framed. */
   setFocalLength(mm: number): void {
     const oldFov = this.camera.fov;
-    this.camera.setFocalLength(mm);
     this.focalLength = mm;
+    // Orthographic keeps the lens for going back and shows nothing of it.
+    if (this.orthographic) return;
+    this.camera.setFocalLength(mm);
+    this.controls.dollyForFov(oldFov, this.camera.fov);
+    this.invalidate();
+  }
+
+  /** The camera's FOV from the lens, or the orthographic stand-in's. */
+  private applyLens(): void {
+    if (this.orthographic) {
+      this.camera.fov = ORTHO_FOV;
+      this.camera.updateProjectionMatrix();
+    } else {
+      this.camera.setFocalLength(this.focalLength);
+    }
+  }
+
+  isOrthographic(): boolean {
+    return this.orthographic;
+  }
+
+  /** Switch between perspective and orthographic; what is in view keeps its size. */
+  setOrthographic(on: boolean): void {
+    if (on === this.orthographic) return;
+    const oldFov = this.camera.fov;
+    this.orthographic = on;
+    this.controls.setOrthographic(on);
+    this.applyLens();
     this.controls.dollyForFov(oldFov, this.camera.fov);
     this.invalidate();
   }
@@ -2206,6 +2248,7 @@ export class Viewer {
     position: number[];
     target: number[];
     focalLength: number;
+    projection?: 'orthographic';
     dof: DoFState;
   } {
     const s = this.controls.getState();
@@ -2214,6 +2257,7 @@ export class Viewer {
       position: s.position,
       target: s.target,
       focalLength: this.focalLength,
+      ...(this.orthographic ? { projection: 'orthographic' as const } : {}),
       dof: this.getDoFState(),
     };
   }
@@ -2264,6 +2308,8 @@ export class Viewer {
     const cam = look.camera;
     if (cam) {
       if (cam.focalLength) this.setFocalLength(cam.focalLength);
+      // Before the camera is placed: the switch dollies for the lens, and the saved place is the one to end on.
+      this.setOrthographic(cam.projection === 'orthographic');
       if (cam.position?.length === 3 && cam.target?.length === 3) {
         this.controls.setState(cam.position, cam.target);
       }
@@ -2848,6 +2894,7 @@ export class Viewer {
     this.container.removeEventListener('pointercancel', this.onTapCancel, true);
     this.reticle.remove();
     this.envLoadingEl.remove();
+    this.snapEl.remove();
     this.captureGuide.dispose();
     this.controls.dispose();
     this.streamer.dispose();
@@ -2872,6 +2919,7 @@ export class Viewer {
       // Bounds first: the restored camera is clamped to this subject's
       // dolly limits, so they have to be this subject's already.
       this.fitSubjectBounds(box, false);
+      this.setOrthographic(cam.projection === 'orthographic');
       this.controls.setState(cam.position, cam.target);
     } else {
       this.fitSubjectBounds(box, !!cam.autoFrame);
@@ -4125,8 +4173,8 @@ export class Viewer {
     const h = this.container.clientHeight;
     this.camera.aspect = w / h;
     // Re-apply the lens so the focal length stays fixed across aspect changes
-    // (setFocalLength recomputes the FOV and the projection matrix).
-    this.camera.setFocalLength(this.focalLength);
+    // (recomputes the FOV and the projection matrix).
+    this.applyLens();
     this.renderer.setSize(w, h);
     this.invalidate(); // a new size: the still frame's sum is reallocated
   };

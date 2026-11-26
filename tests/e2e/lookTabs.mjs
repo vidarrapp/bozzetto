@@ -118,9 +118,9 @@ export const suites = {
 
     await tapTab(page, 'panel--camera');
     t.ok((await isOpen(page, 'panel--camera')) && !(await isOpen(page, 'panel--lighting')), 'Camera opens and Lighting closes (one panel a side)');
-    t.eq((await rowsOf(page, 'panel--camera')).join(), 'Lens,Depth of field', 'Camera: Lens and Depth of field');
+    t.eq((await rowsOf(page, 'panel--camera')).join(), 'Projection,Lens,Depth of field', 'Camera: Projection, Lens and Depth of field');
     await page.evaluate(() => document.querySelector('.panel--camera .dof-rows').closest('.section').querySelector('.checkbox input').click());
-    t.eq((await rowsOf(page, 'panel--camera')).join(), 'Lens,Depth of field,Aperture,Focus', 'with Depth of field on, Aperture and Focus follow');
+    t.eq((await rowsOf(page, 'panel--camera')).join(), 'Projection,Lens,Depth of field,Aperture,Focus', 'with Depth of field on, Aperture and Focus follow');
     await page.screenshot({ path: `${SHOTS}/sculpt-present-camera.png` });
 
     await tapTab(page, 'panel--render');

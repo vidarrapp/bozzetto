@@ -459,6 +459,7 @@ export function sanitizeLook(v: unknown): Partial<LookState> | undefined {
           position: vec3(camera.position),
           target: vec3(camera.target),
           focalLength: num(camera.focalLength, 1, 10000),
+          projection: oneOf(camera.projection, ['orthographic'] as const),
           dof: isRec(camera.dof)
             ? defined({
                 enabled: bool(dof.enabled),

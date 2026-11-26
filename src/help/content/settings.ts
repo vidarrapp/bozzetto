@@ -32,7 +32,7 @@ export const SETTINGS: Topic[] = [
       options(['Adaptive quality', 'When frames keep missing the display, ambient occlusion, then the shadows, then the resolution are lightened a step at a time, between strokes, and brought back when there is room.']),
       h('Diagnostics'),
       options(
-        ['Frame meter', 'Frame rate, where each frame\'s time goes (CPU, GPU and the display\'s budget) and which side is short. **P** shows and hides it.'],
+        ['Frame meter', 'Frame rate, where each frame\'s time goes (CPU, GPU and the display\'s budget) and which side is short. **Shift+P** shows and hides it.'],
         ['Stall log', 'Every pause between frames longer than 300 ms, and how long the heavy jobs took, newest first.'],
         ['Input log', 'Pointer and touch events as the browser delivers them, and what Sculpt did with each.'],
         ['Passkey check…', 'Whether this device can sign in with a passkey, in the browser and from the Home Screen, and whether the bot check loads. It opens in place of this page.'],

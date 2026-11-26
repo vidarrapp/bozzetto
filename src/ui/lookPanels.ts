@@ -577,6 +577,8 @@ class LightingPanel extends LookPanel {
 // --- Camera -----------------------------------------------------------------
 
 class CameraPanel extends LookPanel {
+  private projection?: HTMLSelectElement;
+  private lensRow?: HTMLElement;
   private dofCheckbox?: HTMLInputElement;
   private dofRows?: HTMLDivElement;
 
@@ -586,13 +588,39 @@ class CameraPanel extends LookPanel {
 
   protected build(body: HTMLElement): void {
     const sec = section(body, 'Camera');
-    sec.appendChild(
-      steppedSlider('Lens', LENS_STEPS, this.viewer.getFocalLength(), (mm) => `${mm}mm`, (mm) => this.viewer.setFocalLength(mm)),
+    const projection = selectEl(
+      [
+        ['perspective', 'Perspective'],
+        ['orthographic', 'Orthographic'],
+      ],
+      this.viewer.isOrthographic() ? 'orthographic' : 'perspective',
     );
+    projection.setAttribute('aria-label', 'Projection');
+    projection.addEventListener('change', () => {
+      this.viewer.setOrthographic(projection.value === 'orthographic');
+      this.syncProjection();
+    });
+    this.projection = projection;
+    sec.appendChild(labelRow('Projection', projection));
+    this.lensRow = steppedSlider('Lens', LENS_STEPS, this.viewer.getFocalLength(), (mm) => `${mm}mm`, (mm) => this.viewer.setFocalLength(mm));
+    sec.appendChild(this.lensRow);
+    this.syncProjection();
     this.buildDoF(sec);
   }
 
+  /** The select as the viewer has it (the P key changes it too); the lens means nothing in orthographic. */
+  private syncProjection(): void {
+    const ortho = this.viewer.isOrthographic();
+    if (this.projection) this.projection.value = ortho ? 'orthographic' : 'perspective';
+    const lens = this.lensRow;
+    if (!lens) return;
+    lens.classList.toggle('is-off', ortho);
+    const slider = lens.querySelector('input');
+    if (slider) slider.disabled = ortho;
+  }
+
   protected sync(): void {
+    this.syncProjection();
     if (!this.dofCheckbox) return;
     const on = this.viewer.getDoFState().enabled;
     this.dofCheckbox.checked = on;

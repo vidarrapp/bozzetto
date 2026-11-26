@@ -2,6 +2,7 @@
 
 ## Open questions for Vidar
 
+- [ ] 2026-11-26: Shift and the view snap with a mouse. Today Shift held BEFORE a drag on empty canvas pans (as the hotkey guide has it: Cmd or Shift + drag), so the snap comes only when Shift goes down during a rotate, or with a finger orbit. ZBrush's way would be Shift at the press rotates and snaps, which takes Shift away from pan (Cmd + drag would still pan). Keep as is, or make Shift at the press snap? (blocks: nothing; a small change either way)
 - [x] 2026-11-25: More light types. Decided 2026-11-25: add spot lights (placed in the scene, with cone and penumbra, drawn in the scene); area lights wait while Vidar looks into three's area lights, which cast no shadows; a ray traced render mode is only an idea for now.
 - [ ] 2026-11-25: The 2k HDRI originals are not in the repo or in this session (only the six 1k files are). Vidar to add them again, as `public/assets/env/<id>-2k.hdr`, or send them. (blocks: the 2k environment background)
 - [x] 2026-11-25: Environment pictures and the background blur. Decided 2026-11-25: 1k is used for lighting and a 2k picture is loaded only when the environment background is on; the background blur becomes a proper Gaussian or lens blur, with bokeh from the camera's depth of field settings.
@@ -146,6 +147,8 @@
 
 ## Later
 
+- Orthographic is a very long lens (0.5 degrees from far away), not a true orthographic projection (0.7.31): parallel lines converge by a fraction of a degree and the floor grows with the distance. A true orthographic projection touches the occlusion, paint, depth of field, cavity, shadows' fit, gizmo scale and picking code; it belongs with the Rust core's camera.
+- `fingers` fails now and then after other suites ("a pen landing while a finger orbits takes the stroke") and passes alone; seen once the view snap was merged (0.7.31). Check it if it recurs.
 - `armatureAddress` fails now and then under load on the project case (the default mannequin instead of the project's), and passes alone; seen in the 0.7.14 and 0.7.29 passes. Not reproduced on its own; the likely cause is the test's replace question or mock route timing out. Check the question and the routes first if it recurs.
 - After Remesh to a figure, the mannequin stays away after a reload because the armature record is marked and an object named "Figure" is in the scene (0.7.29). Renaming that object would bring the mannequin back beside it; a firmer tie (the figure's own id) belongs with the scene format on the Rust core.
 - GitHub Actions minutes are used up for November (Vidar, 2026-11-25); CI runs again from 1 December. Until then each release is checked locally with the same steps CI runs (typecheck, function checks, both builds, the CI's e2e suites) plus the suites the change touches, before `main` moves.

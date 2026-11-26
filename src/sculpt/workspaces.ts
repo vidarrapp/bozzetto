@@ -56,7 +56,7 @@ export interface SculptPage {
     hasWork(): boolean;
     state(): string | null;
     frame(): { w: number; h: number } | null;
-    lens(): number | null;
+    lens(): number | 'orthographic' | null;
   };
   /** Whether Paint is on, for the details' wording. */
   isPaint(): boolean;

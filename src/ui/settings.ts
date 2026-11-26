@@ -42,7 +42,7 @@ export interface SettingsValues {
    * behind a panel is blurred at any setting (appearance.ts).
    */
   panelOpacity: number;
-  /** The frame meter (P), kept across reloads so a device keeps showing it. */
+  /** The frame meter (Shift+P), kept across reloads so a device keeps showing it. */
   meter: OnOff;
   /** The stall log overlay (what ?perfdebug=1 shows), in every mode. */
   stallLog: OnOff;
