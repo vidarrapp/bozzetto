@@ -633,7 +633,7 @@ export const suites = {
       await p.click('.bz-device-off');
       await pickObj();
       await waitWindow(p);
-      t.eq(await p.textContent('.bz-device__why'), 'Import OBJ needs to keep the file on this device.', 'Import OBJ with saving off asks the question again, with the reason');
+      t.eq(await p.textContent('.bz-device__why'), 'Import model needs to keep the file on this device.', 'Import model with saving off asks the question again, with the reason');
       t.eq((await windowState(p)).title, 'Keep your work on this device?', 'as the first question');
       await p.keyboard.press('Escape');
       t.ok((await p.locator('.bz-device').count()) === 0 && new URL(p.url()).searchParams.get('sculpt') === null, 'Esc cancels the import');

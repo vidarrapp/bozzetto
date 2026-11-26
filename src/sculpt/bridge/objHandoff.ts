@@ -1,7 +1,7 @@
 import { withNamedStore } from './ScenePersist';
 
 /**
- * The gallery's Create > Import OBJ, carried into Sculpt. The gallery and
+ * The gallery's Create > Import model, carried into Sculpt. The gallery and
  * Sculpt are separate page loads (`/?sculpt=1` boots the app afresh), so
  * the picked file goes through IndexedDB, as the Armature mode's figure
  * does (armature/persist SculptHandoff): the gallery puts it, and Sculpt
@@ -14,10 +14,14 @@ export interface ObjHandoff {
   v: 1;
   /** Names this handoff, for the gallery's "asked already" (ui/openToken, `obj:<id>`). */
   id: string;
-  /** The object's name: the file's, without `.obj`. */
+  /** The object's name: the file's, without its extension. */
   name: string;
-  /** The file, as text. */
+  /** An OBJ file, as text ('' when `bytes` carries the file). */
   text: string;
+  /** The file's bytes, for a model that is not text (GLB, STL, PLY) and with `format`. */
+  bytes?: ArrayBuffer;
+  /** What `bytes` is; absent for an OBJ in `text`. */
+  format?: 'glb' | 'gltf' | 'stl' | 'ply';
   /** Whether to turn a Z-up export to Y-up, as File > Import OBJ's toggle does. */
   zUp: boolean;
   /**
@@ -42,7 +46,7 @@ const MAX_NAME = 200;
 /** An object's name from a file's: no extension, no control characters, at most 200 characters. */
 export function objName(fileName: string): string {
   const name = fileName
-    .replace(/\.obj$/i, '')
+    .replace(/\.(obj|glb|gltf|stl|ply)$/i, '')
     .replace(/[\u0000-\u001f\u007f]/g, '')
     .trim()
     .slice(0, MAX_NAME);
@@ -50,13 +54,21 @@ export function objName(fileName: string): string {
 }
 
 /** Put the file for Sculpt to take. Throws when storage refuses it, which the gallery says. */
-export async function saveObjHandoff(file: { name: string; text: string; zUp?: boolean; units?: 'cm' }): Promise<ObjHandoff> {
+export async function saveObjHandoff(file: {
+  name: string;
+  text?: string;
+  bytes?: ArrayBuffer;
+  format?: 'glb' | 'gltf' | 'stl' | 'ply';
+  zUp?: boolean;
+  units?: 'cm';
+}): Promise<ObjHandoff> {
   const rec: ObjHandoff = {
     kind: 'bozzetto-obj',
     v: 1,
     id: Math.random().toString(36).slice(2, 12),
     name: objName(file.name),
-    text: file.text,
+    text: file.text ?? '',
+    ...(file.bytes && file.format ? { bytes: file.bytes, format: file.format } : {}),
     zUp: file.zUp === true,
     ...(file.units === 'cm' ? { units: 'cm' as const } : {}),
     savedAt: Date.now(),
@@ -74,14 +86,16 @@ export async function takeObjHandoff(): Promise<ObjHandoff | null> {
     const rec = (await withNamedStore(STORE, 'readonly', (s) => s.get(KEY))) as Partial<ObjHandoff> | undefined;
     if (!rec) return null;
     await withNamedStore(STORE, 'readwrite', (s) => s.delete(KEY));
-    if (rec.kind !== 'bozzetto-obj' || typeof rec.text !== 'string' || typeof rec.id !== 'string') return null;
+    const hasBytes = rec.bytes instanceof ArrayBuffer && ['glb', 'gltf', 'stl', 'ply'].includes(rec.format as string);
+    if (rec.kind !== 'bozzetto-obj' || (typeof rec.text !== 'string' && !hasBytes) || typeof rec.id !== 'string') return null;
     if (typeof rec.savedAt !== 'number' || Math.abs(Date.now() - rec.savedAt) > FRESH_MS) return null;
     return {
       kind: 'bozzetto-obj',
       v: 1,
       id: rec.id,
       name: objName(typeof rec.name === 'string' ? rec.name : ''),
-      text: rec.text,
+      text: typeof rec.text === 'string' ? rec.text : '',
+      ...(hasBytes ? { bytes: rec.bytes, format: rec.format } : {}),
       zUp: rec.zUp === true,
       ...(rec.units === 'cm' ? { units: 'cm' as const } : {}),
       savedAt: rec.savedAt,

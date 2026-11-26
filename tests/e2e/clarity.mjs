@@ -16,9 +16,9 @@ export const suites = {
     await page.click('.card--new');
     await page.waitForSelector('.create-choice');
     const titles = await page.evaluate(() => [...document.querySelectorAll('.create-choice__title')].map((e) => e.textContent));
-    t.eq(titles.join(' | '), 'New Sculpt | New Armature | Import OBJ', 'a guest is offered New Sculpt, New Armature and Import OBJ, no timelapse');
+    t.eq(titles.join(' | '), 'New scene | New armature | Import model', 'a guest is offered New scene, New armature and Import model, no timelapse');
     const rec = await page.evaluate(() => [...document.querySelectorAll('.create-choice')].map((b) => ({ rec: b.classList.contains('create-choice--recommended'), bg: getComputedStyle(b).backgroundColor })));
-    t.ok(rec[0].rec && !rec[1].rec && !rec[2].rec, 'New Sculpt alone is the recommended choice');
+    t.ok(rec[0].rec && !rec[1].rec && !rec[2].rec, 'New scene alone is the recommended choice');
     t.eq(rec[0].bg, 'rgb(198, 255, 0)', 'in lime');
     t.ok(!/Martian/i.test(await fam(page, '.create-choice__title')), 'the choices are in Familjen Grotesk');
     t.eq(await page.evaluate(() => getComputedStyle(document.querySelector('.create-choice__title')).textTransform), 'none', 'in sentence case');

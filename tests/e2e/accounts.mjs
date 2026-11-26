@@ -1649,8 +1649,8 @@ async function memberCreate(server, o, a, t) {
     timelapse: document.querySelector('.create-overlay [data-kind="timelapse"] .create-choice__hint')?.textContent ?? '',
   }));
   t.ok(
-    menu.titles === 'New Sculpt, New Armature, Import OBJ' && menu.timelapse === '',
-    `signed in as a member, Create offers New Sculpt, New Armature and Import OBJ, no timelapse (${show(menu)})`,
+    menu.titles === 'New scene, New armature, Import model' && menu.timelapse === '',
+    `signed in as a member, Create offers New scene, New armature and Import model, no timelapse (${show(menu)})`,
   );
   // The uploader is owner-only in the menu but still opens by its address.
   await p.goto(`${server.base}/create/`, { waitUntil: 'domcontentloaded' });

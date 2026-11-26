@@ -406,7 +406,7 @@ export const suites = {
     t.ok(gap(p, want) < 3, `middle drag: the point under the press followed the mouse (${gap(p, want).toFixed(2)} px off)`);
   },
 
-  // File > New sculpt frames its sphere, wherever the last scene left the view.
+  // File > New scene frames its sphere, wherever the last scene left the view.
   async newSculptFrames(page, base, t) {
     await openForInput(page, base);
     // The view somewhere else: far off and to the side, as a large scene leaves it.

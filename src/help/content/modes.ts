@@ -10,7 +10,7 @@ export const MODES: Topic[] = [
     blocks: [
       h('The File menu in Sculpt'),
       options(
-        ['New sculpt', 'Starts over with an empty scene, and the Scene panel\'s choices to add something. It asks first if the current objects would be lost.'],
+        ['New scene', 'Starts over with an empty scene, and the Scene panel\'s choices to add something. It asks first if the current objects would be lost.'],
         ['Open…', 'Opens a .bozz file, the scene format. It asks first if the current objects would be replaced.'],
         ['Open recent', 'A list beside the menu of the last ten projects you opened or saved, in Sculpt, Armature or Present, newest first, each with its mode, where it lives and when. Choosing one opens it in its own mode, and asks first if the current work would be replaced. One that has been deleted or that you can no longer reach is said so and leaves the list. **Clear list** empties it. Files you opened from disk are not listed. Signing out removes the ones that needed your account.'],
         ['Rename…', 'Asks for a new name for the scene. You can also tap the name in the top bar. A new scene starts as "Study" and today\'s date.'],
@@ -18,8 +18,8 @@ export const MODES: Topic[] = [
         ['Save to library', 'Signed in, it saves to **My projects** on the site, where only you see it (the site\'s owner saves to **Projects**). Signed out, the item is not there: **Sign in to save to library** takes its place where the site has accounts. The menu line under it says where it will go. Hotkey **Ctrl+S**; signed out, Ctrl+S keeps the scene in this browser straight away.'],
         ['Keep on this device', 'Keeps a copy in this browser\'s storage and shows it on the gallery\'s device cards. "On this device only. A reinstall or clearing the browser loses it."'],
         ['Export OBJ', 'Downloads an .obj file. If the object was imported from an OBJ, you get its level 0 in the file\'s own vertex and face order, so another app can match it up. Otherwise you get every object as triangles, at the level on screen. The line under the item says which. Poly groups are written as `g` lines.'],
-        ['Import OBJ…', 'Adds an .obj file to the scene. Its `g` and `o` lines become poly groups.'],
-        ['Z-up OBJ import', 'A checkbox. Tick it for OBJ files from Blender and most 3D apps, which have Z pointing up, so that they are rotated to stand up in Sculpt.'],
+        ['Import model…', 'Adds a model file to the scene: .obj, .glb, .stl, .ply, or a .gltf that holds everything in itself. Every mesh in the file comes in as one object, and an OBJ\'s `g` and `o` lines, or a GLB\'s mesh names, become poly groups. Only the shape is read: colours, materials, textures, rigs and animations are left out. A file that cannot be read says why, and the scene stays as it was.'],
+        ['Z-up OBJ import', 'A checkbox. Tick it for OBJ, STL and PLY files from Blender and most 3D apps, which have Z pointing up, so that they are rotated to stand up in Sculpt.'],
         ['Publish…', 'Opens the Publish window, when you are signed in.'],
         ['Close', 'Goes back to where you came from: the gallery, Community, My projects or Owner tools, as the hint says.'],
       ),
