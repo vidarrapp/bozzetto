@@ -19,6 +19,8 @@ const LAMP_FRONT = 4;
 const LAMP_BACK = 2.2;
 /** A press this close to a lamp, in CSS pixels, is on it (a finger's reach). */
 const LAMP_REACH_PX = 28;
+/** The longest the cone's outline is drawn, in cm (the scene's units). */
+const CONE_REACH = 30;
 const QUIET = '#a3a3a3';
 const CONE_SEGMENTS = 48;
 const CONE_SPOKES = 8;
@@ -154,7 +156,9 @@ export class SpotLamps {
       l.group.visible = true;
       l.group.position.copy(this.pos);
       l.group.lookAt(this.aim);
-      const reach = Math.max(this.pos.distanceTo(this.aim), 1e-3);
+      // The outline shows the cone's direction and spread near the lamp, not all the way to the aim:
+      // drawn to the aim it was a huge funnel across the view. A quarter of the way, at most CONE_REACH.
+      const reach = Math.max(Math.min(this.pos.distanceTo(this.aim) * 0.25, CONE_REACH), 1e-3);
       const spread = reach * Math.tan(placed.angle);
       l.cone.scale.set(spread, spread, reach);
       l.cone.visible = placed.enabled;
