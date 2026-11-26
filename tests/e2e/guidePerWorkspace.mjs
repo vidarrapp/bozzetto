@@ -30,7 +30,7 @@ async function go(page, to, name) {
 }
 
 /** What the keys of Present are by default: the keys that did something there before, and the light keys. */
-const PRESENT_DEFAULT_KEYS = ['Space', 'Shift+1', 'Shift+2', 'Shift+3', 'Shift+4', 'Ctrl+S', 'Tab', 'Esc', 'H', 'P', 'Ctrl+,', 'F', 'A', '←', '→', 'Shift+S', 'Shift+W', 'L', '1', '2', '3'];
+const PRESENT_DEFAULT_KEYS = ['Space', 'Shift+1', 'Shift+2', 'Shift+3', 'Shift+4', 'Ctrl+S', 'Tab', 'Esc', 'H', 'P', 'Shift+P', 'Ctrl+,', 'F', 'A', '←', '→', 'Shift+S', 'Shift+W', 'L', '1', '2', '3'];
 
 export const suites = {
   async guidePerWorkspace(page, base, t) {

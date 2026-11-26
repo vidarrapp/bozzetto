@@ -10,7 +10,7 @@ export interface ShortcutHandlers {
   toggleChrome?: () => void;
   /** Toggle the hotkey guide overlay (H). */
   toggleHelp?: () => void;
-  /** Toggle the frame meter (P), which remembers the choice. */
+  /** Toggle the frame meter (Shift+P), which remembers the choice. */
   toggleFps?: () => void;
   /** Called after a command that changes panel-reflected state, to re-sync it. */
   refresh?: () => void;
@@ -107,6 +107,10 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
         // framing the selection land in the same place - the key still
         // means what it means in sculpt mode.
         viewer.focusSubject();
+        return;
+      case 'view.projection':
+        viewer.setOrthographic(!viewer.isOrthographic());
+        handlers.refresh?.();
         return;
       case 'view.ground':
         viewer.cycleGround();

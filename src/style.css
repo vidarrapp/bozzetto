@@ -1312,6 +1312,11 @@ html.is-page :is(#app, #admin, .page-scroll).page-scroll {
   font-size: 11px;
 }
 
+/* A row whose control means nothing now (the lens, in orthographic). */
+.is-off {
+  opacity: 0.45;
+}
+
 /* --- environment loading hint --- */
 .env-loading {
   position: absolute;

@@ -43,8 +43,8 @@ export interface Readout {
   level?: { at: number; of: number } | null;
   /** Present: the size in pixels of the image Save image writes. */
   frame?: { w: number; h: number } | null;
-  /** Present: the lens, in mm (35mm equivalent), shown after the image size. */
-  lens?: number | null;
+  /** Present: the lens, in mm (35mm equivalent), shown after the image size; 'orthographic' where the view has no lens. */
+  lens?: number | 'orthographic' | null;
   /**
    * Other pairs for a workspace of its own (the owner's Present of a
    * published project: Timelapse 240 frames, Stage Forms), after the name:
@@ -453,7 +453,7 @@ export class TitleStrip {
     set(this.trisItem, this.trisVal, r.tris == null ? null : r.tris.toLocaleString('en-US'));
     set(this.levelItem, this.levelVal, r.level ? `${r.level.at}/${r.level.of}` : null);
     set(this.frameItem, this.frameVal, r.frame ? `${r.frame.w} \u00d7 ${r.frame.h}` : null);
-    set(this.lensItem, this.lensVal, r.lens == null ? null : `${Math.round(r.lens)} mm`);
+    set(this.lensItem, this.lensVal, r.lens == null ? null : r.lens === 'orthographic' ? 'Orthographic' : `${Math.round(r.lens)} mm`);
     const wanted = (r.extras ?? []).filter((x): x is { key: string; value: string } => x.value !== null);
     for (const [key, e] of this.extraEls) {
       if (wanted.some((x) => x.key === key)) continue;

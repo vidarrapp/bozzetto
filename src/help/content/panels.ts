@@ -268,7 +268,8 @@ export const PANELS: Topic[] = [
       p('Hold **L** and move the pointer to swing the key light: across for around, up and down for height. Without a keyboard, choose **View**, **Move light**, then drag once on the view; it lets go after that drag, and **Esc** or choosing it again cancels. It is in Sculpt, Armature and Present. In Sculpt and Armature it moves the key light. In Present, **1**, **2** and **3** pick which light it moves, **Key**, **Fill** or **Rim** (**Key** each time you enter Present); the status line names the one picked, and while **L** is held, and for a moment after a pick, a small marker shows for each light that is on, around the model in the direction its light comes from: orange for the picked one, grey for the others. The markers are never in a saved image, a turntable or a thumbnail. A light that is switched off can still be turned, and the status line says it is off. Dragging moves the light by what you drag from where you touch down, so a finger can start anywhere.'),
       h('Camera'),
       options(
-        ['Lens', 'The focal length: 35, 50, 55, 80, 105 or 135 mm, in 35mm-equivalent terms.'],
+        ['Projection', 'Perspective or Orthographic. **P** switches it too. Orthographic shows no perspective, so objects do not shrink with distance and parallel edges stay parallel.'],
+        ['Lens', 'The focal length: 35, 50, 55, 80, 105 or 135 mm, in 35mm-equivalent terms. Greyed while the projection is Orthographic.'],
         ['Depth of field', 'Blurs what is in front of and behind the point of focus. The two rows below show only while it is on.'],
         ['Aperture', 'The f-stop, from f/1.4 to f/16. A lower number blurs more.'],
         ['Focus', 'Slides the focus plane through the subject. Double-click the view (double-tap on touch) to focus on a point instead, and move this slider to let that go.'],

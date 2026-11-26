@@ -109,6 +109,7 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 | Middle drag, `Shift`+drag, or two fingers | Pan |
 | Right drag, scroll, or pinch | Zoom |
 | `F` / `A` | Frame the model / the whole scene |
+| `P` | Perspective or orthographic |
 | `Shift`, while orbiting | Snap to the nearest straight view |
 | `Tab` | Hide and show the interface |
 | `H` | Hotkeys |
@@ -181,6 +182,7 @@ The size and strength keys, symmetry, the mask, undo and redo, subdivision and t
 ### Unreleased
 
 - **Hold Shift while orbiting to snap the view.** The view turns to the nearest straight view (Front, Back, Left, Right, Top or Bottom) and stays there, moving to the next as you turn past halfway. A small label names the view while you drag, and letting go of Shift turns freely again from where the view is. It works with the mouse, the Pencil and a finger, in every workspace.
+- **Orthographic view, on `P`.** The Camera tab in Present has a Projection choice, Perspective or Orthographic, and `P` switches it in Sculpt, Paint, Armature and Present. What is in view keeps its size across the switch, the lens is greyed while it is orthographic, and the look saves it. The frame meter moved to `Shift`+`P`.
 
 ### v0.7.27
 

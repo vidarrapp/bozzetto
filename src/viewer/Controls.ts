@@ -32,6 +32,17 @@ const NEAR_OF_DISTANCE = 1 / 50;
 const NEAR_OF_RADIUS = 1 / 100;
 const FAR_OF_RADIUS = 100;
 
+/**
+ * Orthographic is a very long lens from far away (visually the same, and
+ * everything that reads the projection keeps working): the vertical FOV
+ * the camera takes on, in degrees. The dolly limits are those of the default 50mm
+ * lens (about 27 degrees up and down), pushed out by ORTHO_REACH, so zoom has the limits it has in
+ * perspective, and the near plane stays just in front of the subject (a
+ * depth range of ORTHO_DEPTH subject radii) so depth keeps its precision.
+ */
+export const ORTHO_FOV = 0.5;
+const ORTHO_REACH = Math.tan((13.5 * Math.PI) / 180) / Math.tan((ORTHO_FOV * Math.PI) / 360);
+const ORTHO_DEPTH = 40;
 /** How far off the vertical a Top or Bottom view sits, so its heading is kept (radians). */
 const POLE_TILT = 1e-5;
 /** OrbitControls' states for a rotation: the mouse or pen, and one finger. */
@@ -179,6 +190,8 @@ export class Controls {
   private panAnchor: Vector3 | null = null;
   private readonly holdP = new Vector3();
   private readonly holdQ = new Vector3();
+  /** The view is the orthographic stand-in (see ORTHO_FOV). */
+  private ortho = false;
   /** The real Shift key, as the last event said (never the on-screen Smooth button). */
   private shiftDown = false;
   /**
@@ -523,16 +536,23 @@ export class Controls {
     const r = this.radius;
     if (r === null) return;
     const c = this.controls;
-    c.minDistance = r * MIN_DISTANCE;
-    c.maxDistance = Math.max(r * MAX_DISTANCE, this.fitDistance(r) * MAX_OF_FIT);
+    const reach = this.ortho ? ORTHO_REACH : 1;
+    c.minDistance = r * MIN_DISTANCE * reach;
+    c.maxDistance = Math.max(r * MAX_DISTANCE * reach, this.fitDistance(r) * MAX_OF_FIT);
     const dist = this.camera.position.distanceTo(c.target);
-    const near = Math.max(Math.min(r * NEAR_OF_RADIUS, dist * NEAR_OF_DISTANCE), 1e-6);
+    let near = Math.max(Math.min(r * NEAR_OF_RADIUS, dist * NEAR_OF_DISTANCE), 1e-6);
+    if (this.ortho) near = Math.max(near, dist - ORTHO_DEPTH * r);
     const far = Math.max(r * FAR_OF_RADIUS, c.maxDistance + 2 * r, this.farFloor);
     if (near !== this.camera.near || far !== this.camera.far) {
       this.camera.near = near;
       this.camera.far = far;
       this.camera.updateProjectionMatrix();
     }
+  }
+
+  /** Whether the view is the orthographic stand-in; the caller then dollies for the lens (dollyForFov). */
+  setOrthographic(on: boolean): void {
+    this.ortho = on;
   }
 
   /** The far plane's floor (see farFloor); the next syncLimits applies it. */

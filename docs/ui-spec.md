@@ -144,7 +144,8 @@ no separate touch density. An earlier draft of this spec had one, with
   Save rig…, Import rig…, Manage in one row), Lights (Shadows, each light
   with Enabled, Intensity, Azimuth, Elevation, Colour, Casts shadow and
   Softness, Rotate rig) and Environment light (HDRI, Intensity, Rotation).
-  **Camera**: Lens, Depth of field with Aperture and Focus. **Render**: Tone
+  **Camera**: Projection (Perspective or Orthographic; `view.projection`, P),
+  Lens (greyed in Orthographic), Depth of field with Aperture and Focus. **Render**: Tone
   (Tone mapping), Ambient occlusion (Model, Strength, Radius), Background and
   ground (Background, Bg colour or Bg blur and Bg brightness, Ground, the
   surface rows, Pedestal width, Floor offset), Developer with ?dev, and Reset
@@ -263,7 +264,7 @@ place, each only where the place has it.
   In Paint the panel toggles are Scene, Layers, Material, Tool and Reference.
   In the viewer there is one subject, so one Frame all, on F. Cycle ground
   is G only, and stays in the hotkey guide.
-- **Straight views.** Holding the real Shift key while the
+- **Straight views and projection.** Holding the real Shift key while the
   view is being rotated (OrbitControls' own rotate state: a mouse, Pencil or
   one-finger orbit, in every workspace) turns it to the nearest of Front,
   Back, Left, Right, Top and Bottom, level, with distance, target and lens
@@ -271,7 +272,14 @@ place, each only where the place has it.
   Shift lets go (which carries on freely from the snapped view). Shift at the
   start of a press that a stroke takes (Smooth, Ctrl+Shift loop mask) never
   rotates, so it never snaps; a Shift press that falls through to the
-  controls pans, as before. The on-screen Smooth button is not Shift.
+  controls pans, as before. The on-screen Smooth button is not Shift. P
+  (`view.projection`, in the Navigation group, in each workspace's guide)
+  switches Perspective and Orthographic; the frame meter is Shift+P.
+  Orthographic is a very long lens (0.5 degrees) from far away, on the one
+  camera: what is in view keeps its size across the switch, zoom keeps the
+  limits of the default 50mm lens, and the near plane stays just in front of the
+  subject. It is saved with the look (`camera.projection`) and absent means
+  perspective. Its limit is that edges converge by a fraction of a degree.
 - **Help:** Help topics, Hotkeys, About and credits, from one list.
 
 **File**
@@ -420,7 +428,8 @@ document itself scrolls, and there is no CSS switch to turn that off.
 - It is the one band that runs edge to edge.
 - In Present from Sculpt the readout is `Image W × H` (the size in pixels of
   the picture Save image writes: the window at its saving ratio) and
-  `Lens N mm`, values in Martian Mono, both following the Camera tab live.
+  `Lens N mm` (`Lens Orthographic` while the projection is orthographic),
+  values in Martian Mono, both following the Camera tab live.
   A step of the path that cannot be pressed is dim and says why in its title
   and, held for a moment by a finger or the Pencil, in a small box under the
   strip (plain words that say what to do: "Present works from Sculpt. Go to
